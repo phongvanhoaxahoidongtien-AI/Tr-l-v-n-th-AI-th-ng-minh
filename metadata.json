@@ -1,0 +1,7 @@
+{
+  "name": "Trợ lý văn thư AI thông minh",
+  "description": "Chuẩn hóa văn bản hành chính theo Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW cho Cán bộ công chức",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
