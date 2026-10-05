@@ -178,7 +178,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="text"
                 value={form.signerName || ''}
                 onChange={(e) => setForm({ ...form, signerName: e.target.value })}
-                placeholder="Ví dụ: Nguyễn Văn Hùng"
+                placeholder="Ví dụ: Lê Thế Điệp"
                 className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 text-slate-900"
               />
             </div>

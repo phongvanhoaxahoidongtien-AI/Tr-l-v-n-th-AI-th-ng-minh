@@ -50,12 +50,18 @@ export default defineConfig(() => {
                   shouldApplyAgency,
                 } = data;
 
-                const systemPrompt = `Bạn là Tiểu Bảo – Trợ lý văn thư chuyên nghiệp.
+                const systemPrompt = `Bạn là Tiểu Bảo Bối – Trợ lý văn thư thông minh 1.0 chuyên nghiệp.
 Nhiệm vụ: Chuẩn hóa văn bản theo Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW.
 
-Quy tắc:
+Quy tắc quan trọng:
 - Áp đúng thể thức theo loại văn bản được chọn (${docType || 'Văn bản hành chính'}).
-- Kiểm tra và sửa lỗi chính tả tiếng Việt.
+- QUỐC HIỆU VÀ TIÊU NGỮ:
+  + Nếu là văn bản hành chính theo Nghị định 30 (Công văn, Quyết định, Tờ trình, Kế hoạch, Báo cáo...): Tiêu đề Quốc ngữ BẮT BUỘC PHẢI LÀ:
+    CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+    Độc lập - Tự do - Hạnh phúc
+    TUYỆT ĐỐI KHÔNG ĐƯỢC để là 'ĐẢNG CỘNG SẢN VIỆT NAM' kể cả khi nội dung có nhắc đến Chi bộ hay Bí thư.
+  + Chỉ khi loại văn bản là Văn bản Đảng theo Hướng dẫn 05-HD/VPTW mới dùng tiêu đề: ĐẢNG CỘNG SẢN VIỆT NAM.
+- Kiểm tra và sửa lỗi chính tả tiếng Việt, dấu câu, căn lề.
 - Kiểm tra văn phong hành chính.
 - Cài đặt cơ quan ban hành hiện tại của người dùng:
   + Tên cơ quan ban hành đã cài đặt: "${configuredAgency || 'Chưa cài đặt'}"
@@ -97,6 +103,104 @@ Quy tắc:
                     error: err?.message || 'Lỗi kết nối Gemini API, chuyển sang quy tắc Offline',
                   })
                 );
+              }
+            });
+          });
+
+          // Endpoint tải file Word trực tiếp từ Server để vượt qua giới hạn sandbox iframe
+          server.middlewares.use('/api/download-doc', async (req, res) => {
+            if (req.method !== 'POST') {
+              res.statusCode = 405;
+              res.end('Method not allowed');
+              return;
+            }
+            const chunks: Buffer[] = [];
+            req.on('data', (chunk) => {
+              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            });
+            req.on('end', () => {
+              try {
+                const body = Buffer.concat(chunks).toString('utf-8');
+                let html = '';
+                let filename = 'VanBan_ChuanHoa_ND30.doc';
+
+                // Hỗ trợ cả application/x-www-form-urlencoded và application/json
+                if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+                  const params = new URLSearchParams(body);
+                  html = params.get('html') || '';
+                  filename = params.get('filename') || filename;
+                } else {
+                  const data = JSON.parse(body || '{}');
+                  html = data.html || '';
+                  filename = data.filename || filename;
+                }
+
+                const wordDoc = `\ufeff<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+  <meta charset='utf-8'>
+  <title>${filename}</title>
+  <!--[if gte mso 9]>
+  <xml>
+    <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+    </w:WordDocument>
+  </xml>
+  <![endif]-->
+  <style>
+    @page Section1 {
+      size: 21.0cm 29.7cm;
+      margin: 2.0cm 2.0cm 2.0cm 3.0cm;
+      mso-header-margin: 36.0pt;
+      mso-footer-margin: 36.0pt;
+      mso-paper-source: 0;
+    }
+    div.Section1 { page: Section1; }
+    body {
+      font-family: 'Times New Roman', serif;
+      font-size: 14pt;
+      line-height: 1.5;
+      color: #000000;
+      text-align: justify;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: none;
+      mso-table-lspace: 0pt;
+      mso-table-rspace: 0pt;
+    }
+    td {
+      padding: 0;
+      border: none;
+      mso-border-alt: none;
+      vertical-align: top;
+    }
+    p {
+      margin: 0;
+      padding: 0;
+      margin-bottom: 6pt;
+    }
+  </style>
+</head>
+<body>
+  <div class="Section1">
+    ${html}
+  </div>
+</body>
+</html>`;
+
+                const asciiName = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+                const utf8Name = encodeURIComponent(filename);
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/msword; charset=utf-8');
+                res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`);
+                res.setHeader('Cache-Control', 'no-cache');
+                res.end(Buffer.from(wordDoc, 'utf-8'));
+              } catch (e: any) {
+                res.statusCode = 500;
+                res.end('Error: ' + e?.message);
               }
             });
           });

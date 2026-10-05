@@ -18,6 +18,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { TemplatesView } from './components/TemplatesView';
 import { AcademicView } from './components/AcademicView';
 import { GuidelinesModal } from './components/GuidelinesModal';
+import { FloatingMascotChat } from './components/FloatingMascotChat';
 
 import { 
   Sparkles, FileText, GraduationCap, ShieldCheck, Download, 
@@ -29,7 +30,7 @@ const DEFAULT_AGENCY_SETTINGS: AgencySettings = {
   shortLocation: 'Đông Tiến',
   parentAgency: 'UBND Thị xã Bỉm Sơn',
   signerTitle: 'CHỦ TỊCH',
-  signerName: 'Nguyễn Văn Hùng',
+  signerName: 'Lê Thế Điệp',
   department: 'Văn phòng HĐND & UBND'
 };
 
@@ -95,7 +96,7 @@ export default function App() {
     setCurrentStep(2);
     setMaxAccessibleStep(2);
     setCurrentTab('normalize');
-    setMascotMessage(`Đã nạp văn bản thử nghiệm: "${sample.title}". Nhấn "Tiểu Bảo chuẩn hóa ngay" để tôi phân tích nhé!`);
+    setMascotMessage(`Đã nạp văn bản thử nghiệm: "${sample.title}". Nhấn "Tiểu Bảo Bối chuẩn hóa ngay" để em phân tích nhé!`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -104,7 +105,7 @@ export default function App() {
     if (!inputText.trim()) return;
 
     setIsProcessing(true);
-    setMascotMessage('Tiểu Bảo đang phân tích thể thức, kiểm tra chính tả tiếng Việt và đối chiếu cơ quan...');
+    setMascotMessage('Tiểu Bảo Bối đang phân tích thể thức 2 cột, kiểm tra chính tả tiếng Việt và đối chiếu cơ quan...');
 
     try {
       const willOverride = overrideAccepted !== undefined ? overrideAccepted : userAcceptedAgencyOverride;
@@ -121,9 +122,9 @@ export default function App() {
       setMaxAccessibleStep(4);
 
       if (res.canhBaoCoQuan) {
-        setMascotMessage('⚠️ Tôi phát hiện có sự khác biệt về tên cơ quan hoặc địa danh trong văn bản so với Cài đặt của đồng chí! Hãy xem phần cảnh báo bên dưới nhé.');
+        setMascotMessage('⚠️ Đồng chí ơi, Tiểu Bảo Bối phát hiện có sự khác biệt về tên cơ quan hoặc địa danh trong văn bản so với Cài đặt! Hãy xem phần cảnh báo bên dưới nhé.');
       } else {
-        setMascotMessage(`🎉 Tuyệt vời! Điểm thể thức đã tăng từ ${res.diemTruoc} lên ${res.diemSau}/100. Đã sửa xong ${res.soLoi} lỗi!`);
+        setMascotMessage(`🎉 Tuyệt vời! Điểm thể thức đã tăng từ ${res.diemTruoc} lên ${res.diemSau}/100. Em đã sửa xong ${res.soLoi} lỗi theo đúng Nghị định 30 ạ!`);
       }
     } catch (err: any) {
       console.error(err);
@@ -435,12 +436,20 @@ export default function App() {
               />
             )}
 
-            {/* Step 4: Xuất file */}
+            {/* Step 4: Chỉnh sửa và xuất file */}
             {currentStep === 4 && normalizeResult && (
               <Step4Export
                 normalizedText={normalizeResult.noiDungChuanHoa}
                 selectedType={selectedType}
                 agencySettings={agencySettings}
+                analysisReport={normalizeResult.analysisReport}
+                originalText={inputText}
+                onUpdateNormalizedText={(newText) => {
+                  setNormalizeResult({
+                    ...normalizeResult,
+                    noiDungChuanHoa: newText
+                  });
+                }}
                 onReset={() => {
                   setInputText('');
                   setNormalizeResult(null);
@@ -488,7 +497,7 @@ export default function App() {
               ★
             </div>
             <div>
-              <span className="font-bold text-slate-800">Trợ lý văn thư AI 1.0</span> — Chuẩn hóa văn bản hành chính theo Nghị định 30/2020/NĐ-CP & Hướng dẫn 05-HD/VPTW
+              <span className="font-bold text-slate-800">Trợ lý văn thư thông minh 1.0</span> (Tiểu Bảo Bối) — Chuẩn hóa văn bản hành chính theo Nghị định 30/2020/NĐ-CP & Hướng dẫn 05-HD/VPTW
             </div>
           </div>
 
@@ -514,6 +523,13 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Floating Chat Widget Tiểu Bảo Bối */}
+      <FloatingMascotChat
+        agencySettings={agencySettings}
+        openSettings={() => setIsSettingsOpen(true)}
+        openGuidelines={() => setIsGuidelinesOpen(true)}
+      />
 
       {/* Modals */}
       <SettingsModal

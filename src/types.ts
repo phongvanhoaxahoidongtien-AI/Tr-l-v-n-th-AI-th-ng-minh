@@ -22,6 +22,54 @@ export interface AgencySettings {
   geminiApiKey?: string; // Optional custom Gemini key
 }
 
+export interface DetectedElements {
+  agencyName: string | null;
+  parentAgency: string | null;
+  docTypeName: string | null;
+  docCode: string | null;
+  location: string | null;
+  dateStr: string | null;
+  countryHeader: string | null;
+  motto: string | null;
+  subject: string | null;
+  recipients: string[];
+  signerAuthority: string | null;
+  signerTitle: string | null;
+  signerName: string | null;
+}
+
+export interface ReviewIssue {
+  id: string;
+  type: 'can_xem_lai' | 'can_sua';
+  title: string;
+  count: number;
+  description: string;
+  examples: Array<{ snippet: string; countWords?: number; suggestion?: string }>;
+  basis: string; // "Căn cứ: Văn phong hành chính...", "Căn cứ: Rà soát trước khi ký"...
+}
+
+export interface AutoFixItem {
+  id: string;
+  title: string;
+  count?: number;
+  description: string;
+}
+
+export interface PassedItem {
+  id: string;
+  title: string;
+  detail?: string;
+}
+
+export interface DocumentAnalysisReport {
+  detected: DetectedElements;
+  missingInDoc: string[]; // e.g. ['Địa danh', 'Ngày', 'Tháng', 'Năm', 'Số văn bản', 'Kính gửi', 'Nơi nhận']
+  reviewIssues: ReviewIssue[];
+  autoFixItems: AutoFixItem[];
+  passedItems: PassedItem[];
+  summaryText: string;
+}
+
 export interface NormalizeResult {
   diemTruoc: number;
   diemSau: number;
@@ -35,6 +83,7 @@ export interface NormalizeResult {
   spellingErrors?: Array<{ wrong: string; right: string; context?: string }>;
   formatErrors?: string[];
   styleErrors?: string[];
+  analysisReport?: DocumentAnalysisReport;
 }
 
 export type AppTab = 'home' | 'normalize' | 'templates' | 'academic' | 'guidelines' | 'settings';

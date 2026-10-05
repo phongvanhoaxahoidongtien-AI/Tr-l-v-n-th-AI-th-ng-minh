@@ -9,6 +9,45 @@ export interface SampleDoc {
 
 export const SAMPLE_DOCUMENTS: SampleDoc[] = [
   {
+    id: 'sample-dang-ban-nguyen',
+    title: 'Quyết định Chi bộ Bản Nguyên (Chuẩn HD 05 của Đảng)',
+    docTypeId: 'dang-quyet-dinh',
+    docTypeName: 'Quyết định của Đảng',
+    description: 'Chi bộ Bản Nguyên, Đảng bộ Phường Đông Tiến - kiểm tra nhận dạng 2 cột tiêu đề Đảng, nơi nhận & người ký Lê Thế Điệp',
+    content: `ĐẢNG BỘ PHƯỜNG ĐÔNG TIẾN
+CHI BỘ TỔ DÂN PHỐ BẢN NGUYÊN
+*
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Số: ……-QĐ/CB
+Bản Nguyên, ngày …… tháng …… năm 2026
+
+QUYẾT ĐỊNH
+Về việc phân công nhiệm vụ cho đảng viên Chi bộ năm 2026
+
+CHI BỘ TỔ DÂN PHỐ BẢN NGUYÊN
+Căn cứ Điều lệ Đảng Cộng sản Việt Nam;
+Căn cứ Quy chế làm việc của Chi bộ nhiệm kỳ 2025 - 2027;
+Xét yêu cầu nhiệm vụ và năng lực của cán bộ, đảng viên,
+
+QUYẾT ĐỊNH:
+
+Điều 1. Phân công các đồng chí đảng viên phụ trách các tổ liên gia tự quản và phụ trách công tác tuyên truyền chủ trương của Đảng.
+Điều 2. Các đồng chí đảng viên trong Chi bộ có trách nhiệm xắp xếp công việc để hoàn thành tốt nhiệm vụ được giao. Cán bộ nào lơ là sẽ bị sử lý kỉ luật theo đúng qui chế.
+Điều 3. Quyết định này có hiệu lực kể từ ngày ký.
+
+Nơi nhận:
+Đảng ủy phường Đông Tiến (báo cáo);
+Chi ủy Chi bộ;
+Các đồng chí đảng viên Chi bộ;
+Lưu Chi bộ.
+
+T/M CHI BỘ
+BÍ THƯ
+(Ký, ghi rõ họ tên)
+Lê Thế Điệp`
+  },
+  {
     id: 'sample-cong-van-loi',
     title: 'Công văn PCCC (Sai địa danh Đông Sơn & lỗi chính tả)',
     docTypeId: 'cong-van',
@@ -64,7 +103,7 @@ Dự toán sơ bộ khoảng 200 triệu đồng. Kính mong cấp trên xem xé
 
 CHỦ TỊCH
 (Ký tên)
-Nguyễn Văn Hùng`
+Lê Thế Điệp`
   },
   {
     id: 'sample-giay-moi-thieu-the-thuc',

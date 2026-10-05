@@ -643,7 +643,7 @@ export const PARTY_DOC_TYPES: DocumentTypeItem[] = [
     id: 'dang-nghi-quyet',
     name: 'Nghị quyết của Đảng',
     category: 'dang',
-    shortDesc: 'Văn bản của Đại hội hoặc Ban Chấp hành, Ban Thường vụ cấp ủy lãnh đạo toàn diện',
+    shortDesc: 'Văn bản của Đại hội hoặc Ban Chấp hành, Ban Thường vụ, Chi bộ lãnh đạo toàn diện',
     isPopular: true,
     codePrefix: 'NQ/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW ngày 23/11/2021 của Văn phòng Trung ương Đảng',
@@ -662,7 +662,8 @@ Về việc lãnh đạo thực hiện nhiệm vụ phát triển kinh tế, tr�
 Chi bộ Tổ dân phố 1 họp ngày 12 tháng 10 năm 2025, sau khi thảo luận Báo cáo công tác của Chi ủy;
 QUYẾT NGHỊ:
 1. Tiếp tục đẩy mạnh học tập và làm theo tư tưởng, đạo đức, phong cách Hồ Chí Minh.
-2. Vận động 100% đảng viên gương mẫu tham gia ngày thứ Bảy tình nguyện dọn dẹp vệ sinh môi trường...
+2. Vận động 100% đảng viên gương mẫu tham gia ngày thứ Bảy tình nguyện dọn dẹp vệ sinh môi trường.
+3. Chi ủy phân công các đồng chí đảng viên phụ trách từng cụm dân cư, kịp thời nắm bắt tâm tư nguyện vọng của quần chúng nhân dân.
 
 T/M CHI BỘ
 BÍ THƯ
@@ -674,7 +675,7 @@ Trần Đình Khang`
     id: 'dang-quyet-dinh',
     name: 'Quyết định của Đảng',
     category: 'dang',
-    shortDesc: 'Quyết định kết nạp Đảng, chỉ định cấp ủy, phân công nhiệm vụ',
+    shortDesc: 'Quyết định kết nạp Đảng, chỉ định cấp ủy, công nhận đảng viên, phân công nhiệm vụ',
     isPopular: true,
     codePrefix: 'QĐ/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW',
@@ -694,18 +695,53 @@ BAN THƯỜNG VỤ ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
 Căn cứ Điều lệ Đảng Cộng sản Việt Nam;
 Căn cứ Quy chế làm việc của Ban Chấp hành Đảng bộ phường nhiệm kỳ 2020 - 2025,
 QUYẾT ĐỊNH:
-Điều 1. Phân công các đồng chí Đảng ủy viên phụ trách theo dõi, chỉ đạo các chi bộ...`
+Điều 1. Phân công các đồng chí Đảng ủy viên phụ trách theo dõi, chỉ đạo các chi bộ trực thuộc.
+Điều 2. Các đồng chí được phân công có trách nhiệm định kỳ hằng tháng tham dự sinh hoạt chi bộ, hướng dẫn nghiệp vụ công tác Đảng.
+Điều 3. Văn phòng Đảng ủy và các đồng chí có tên tại Điều 1 chịu trách nhiệm thi hành Quyết định này./.
+
+Nơi nhận:
+- Thường trực Thị ủy (báo cáo);
+- Các chi bộ trực thuộc;
+- Các đ/c Đảng ủy viên;
+- Lưu: VP Đảng ủy.
+
+T/M BAN THƯỜNG VỤ
+BÍ THƯ
+(Ký, đóng dấu)
+
+Lê Thế Điệp`
   },
   {
     id: 'dang-chi-thi',
     name: 'Chỉ thị của Đảng',
     category: 'dang',
     shortDesc: 'Văn bản của cấp ủy lãnh đạo, chỉ đạo quán triệt các nhiệm vụ chính trị trọng tâm',
+    isPopular: true,
     codePrefix: 'CT/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW',
     standardStructure: 'Cấp ủy ban hành, Nội dung chỉ đạo các chi bộ và tổ chức chính trị - xã hội',
-    defaultTemplate: `CHỈ THỊ CỦA BAN THƯỜNG VỤ ĐẢNG ỦY
-Về việc tăng cường sự lãnh đạo của Đảng đối với công tác chuyển đổi số và cải cách thủ tục hành chính`
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 08-CT/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 10 tháng 01 năm 2026
+
+CHỈ THỊ
+Về việc tăng cường sự lãnh đạo của Đảng đối với công tác cải cách hành chính và chuyển đổi số năm 2026
+
+Thời gian qua, công tác cải cách hành chính và chuyển đổi số trên địa bàn phường đã đạt được những kết quả tích cực...
+Ban Thường vụ Đảng ủy phường yêu cầu các chi bộ, Mặt trận Tổ quốc và các đoàn thể:
+1. Tiếp tục quán triệt sâu sắc các chủ trương của Đảng, chính sách pháp luật của Nhà nước về chuyển đổi số.
+2. Nâng cao vai trò tiền phong, gương mẫu của cán bộ, đảng viên trong sử dụng dịch vụ công trực tuyến.
+3. Giao Ủy ban nhân dân phường cụ thể hóa thành kế hoạch chi tiết triển khai đồng bộ.
+
+T/M BAN THƯỜNG VỤ
+BÍ THƯ
+(Ký, đóng dấu)
+
+Lê Thế Điệp`
   },
   {
     id: 'dang-ket-luan',
@@ -716,8 +752,177 @@ Về việc tăng cường sự lãnh đạo của Đảng đối với công t�
     codePrefix: 'KL/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW',
     standardStructure: 'KẾT LUẬN CỦA BAN THƯỜNG VỤ ĐẢNG ỦY PHƯỜNG, Đánh giá tình hình, Các chủ trương chỉ đạo kết luận',
-    defaultTemplate: `KẾT LUẬN
-CỦA BAN THƯỜNG VỤ ĐẢNG ỦY TẠI CUỘC HỌP GIAO BAN ĐÁNH GIÁ CÔNG TÁC THÁNG 9 NĂM 2025`
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 15-KL/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 28 tháng 09 năm 2025
+
+KẾT LUẬN
+CỦA BAN THƯỜNG VỤ ĐẢNG ỦY TẠI CUỘC HỌP GIAO BAN ĐÁNH GIÁ CÔNG TÁC THÁNG 9 NĂM 2025
+
+Ngày 28 tháng 9 năm 2025, Ban Thường vụ Đảng ủy phường họp giao ban thường kỳ đánh giá tình hình thực hiện nhiệm vụ chính trị tháng 9.
+Sau khi nghe báo cáo và ý kiến thảo luận của các đồng chí dự họp, Ban Thường vụ Đảng ủy kết luận như sau:
+I. ĐÁNH GIÁ TÌNH HÌNH
+Trong tháng 9, kinh tế - xã hội trên địa bàn duy trì ổn định, an ninh chính trị được giữ vững...
+II. MỘT SỐ NHIỆM VỤ TRỌNG TÂM THÁNG 10
+1. Tập trung rà soát các chỉ tiêu phát triển kinh tế - xã hội quý IV/2025.
+2. Chỉ đạo các chi bộ tổ chức sinh hoạt chuyên đề quý IV nghiêm túc, đúng quy định.
+
+T/M BAN THƯỜNG VỤ
+BÍ THƯ
+(Ký, đóng dấu)
+
+Lê Thế Điệp`
+  },
+  {
+    id: 'dang-quy-che',
+    name: 'Quy chế của Đảng',
+    category: 'dang',
+    shortDesc: 'Quy chế làm việc của Ban Chấp hành, Ban Thường vụ, Ủy ban Kiểm tra Đảng ủy',
+    codePrefix: 'QC/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Quy định chức trách, nhiệm vụ, quyền hạn, nguyên tắc và chế độ làm việc',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 01-QC/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 15 tháng 08 năm 2025
+
+QUY CHẾ LÀM VIỆC
+CỦA BAN CHẤP HÀNH ĐẢNG BỘ PHƯỜNG ĐÔNG TIẾN KHÓA X, NHIỆM KỲ 2025 - 2030
+
+Căn cứ Điều lệ Đảng Cộng sản Việt Nam;
+Căn cứ Quy chế làm việc mẫu của Ban Bí thư Trung ương Đảng,
+Ban Chấp hành Đảng bộ phường Đông Tiến ban hành Quy chế làm việc gồm các chương, điều sau:
+Chương I: Nhiệm vụ và quyền hạn của Ban Chấp hành Đảng bộ
+Điều 1. Ban Chấp hành Đảng bộ là cơ quan lãnh đạo cao nhất của Đảng bộ giữa hai kỳ Đại hội...`
+  },
+  {
+    id: 'dang-quy-dinh',
+    name: 'Quy định của Đảng',
+    category: 'dang',
+    shortDesc: 'Quy định về công tác đảng viên, bảo vệ chính trị nội bộ, phân cấp quản lý cán bộ',
+    codePrefix: 'QyĐ/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Phạm vi điều chỉnh, đối tượng áp dụng, nội dung quy định cụ thể và tổ chức thực hiện',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 04-QyĐ/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 20 tháng 07 năm 2025
+
+QUY ĐỊNH
+Về trách nhiệm nêu gương của cán bộ, đảng viên, trước hết là Ủy viên Ban Chấp hành Đảng bộ phường
+
+Căn cứ Quy định số 08-QĐi/TW ngày 25/10/2018 của Ban Chấp hành Trung ương Đảng;
+Ban Thường vụ Đảng ủy phường Đông Tiến quy định trách nhiệm nêu gương của cán bộ, đảng viên như sau:
+Điều 1. Phạm vi điều chỉnh và đối tượng áp dụng
+Quy định này áp dụng đối với tất cả đảng viên thuộc Đảng bộ phường Đông Tiến, trước hết là các đồng chí Ủy viên Ban Chấp hành...`
+  },
+  {
+    id: 'dang-thong-bao',
+    name: 'Thông báo của Đảng',
+    category: 'dang',
+    shortDesc: 'Thông báo ý kiến kết luận của cấp ủy, phân công nhiệm vụ, kết quả kỳ họp Đảng bộ',
+    isPopular: true,
+    codePrefix: 'TB/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Nội dung thông báo kết luận, chỉ đạo hoặc phân công của cấp ủy gửi các tổ chức đảng trực thuộc',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 22-TB/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 14 tháng 10 năm 2025
+
+THÔNG BÁO
+Phân công nhiệm vụ Thường trực Đảng ủy và các Ủy viên Ban Thường vụ Đảng ủy phường khóa X
+
+Ban Thường vụ Đảng ủy phường Đông Tiến thông báo phân công nhiệm vụ cụ thể như sau:
+1. Đồng chí Lê Thế Điệp - Bí thư Đảng ủy: Lãnh đạo toàn diện các mặt công tác của Đảng bộ phường; phụ trách công tác tổ chức, cán bộ...
+2. Đồng chí Trần Văn Nam - Phó Bí thư thường trực Đảng ủy: Phụ trách công tác tuyên giáo, dân vận...`
+  },
+  {
+    id: 'dang-thong-cao',
+    name: 'Thông cáo của Đảng',
+    category: 'dang',
+    shortDesc: 'Thông cáo báo chí về kết quả Đại hội, Hội nghị bất thường của Ban Chấp hành Đảng bộ',
+    codePrefix: 'TC/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Nội dung thông cáo chính thức gửi cán bộ, đảng viên và nhân dân về sự kiện quan trọng',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 02-TC/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 02 tháng 06 năm 2025
+
+THÔNG CÁO
+Về kết quả Hội nghị Ban Chấp hành Đảng bộ phường Đông Tiến lần thứ năm
+
+Ngày 02 tháng 6 năm 2025, Ban Chấp hành Đảng bộ phường Đông Tiến đã họp Hội nghị lần thứ năm khóa X.
+Hội nghị đã thảo luận và quyết nghị các nội dung quan trọng về phương án nhân sự và điều chỉnh quy hoạch cán bộ nhiệm kỳ 2025 - 2030...`
+  },
+  {
+    id: 'dang-huong-dan',
+    name: 'Hướng dẫn của Đảng',
+    category: 'dang',
+    shortDesc: 'Hướng dẫn nghiệp vụ công tác Đảng, quy trình sinh hoạt chi bộ, đánh giá xếp loại đảng viên',
+    isPopular: true,
+    codePrefix: 'HD/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Mục đích yêu cầu, Đối tượng áp dụng, Các bước quy trình hướng dẫn cụ thể, Tổ chức thực hiện',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 05-HD/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 08 tháng 11 năm 2025
+
+HƯỚNG DẪN
+Kiểm điểm, đánh giá, xếp loại chất lượng đối với tổ chức đảng, đảng viên năm 2025
+
+Thực hiện Hướng dẫn của Thị ủy Bỉm Sơn về đánh giá, xếp loại chất lượng tổ chức đảng và đảng viên hằng năm;
+Đảng ủy phường hướng dẫn các chi bộ trực thuộc triển khai thực hiện như sau:
+I. MỤC ĐÍCH, YÊU CẦU
+Đánh giá đúng thực chất kết quả lãnh đạo, chỉ đạo và ý thức rèn luyện của đảng viên trong năm...
+II. ĐỐI TƯỢNG VÀ NỘI DUNG ĐÁNH GIÁ
+1. Đối với tập thể chi ủy, chi bộ.
+2. Đối với cá nhân đảng viên.`
+  },
+  {
+    id: 'dang-chuong-trinh',
+    name: 'Chương trình của Đảng',
+    category: 'dang',
+    shortDesc: 'Chương trình hành động thực hiện Nghị quyết Đại hội Đảng bộ, chương trình công tác toàn khóa',
+    codePrefix: 'CTr/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Mục tiêu, nhiệm vụ trọng tâm, các chỉ tiêu cụ thể, giải pháp thực hiện và phân công trách nhiệm',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 03-CTr/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 16 tháng 07 năm 2025
+
+CHƯƠNG TRÌNH HÀNH ĐỘNG
+Thực hiện Nghị quyết Đại hội đại biểu Đảng bộ phường Đông Tiến lần thứ X, nhiệm kỳ 2025 - 2030
+
+Nhằm đưa Nghị quyết Đại hội Đảng bộ phường vào cuộc sống, Ban Chấp hành Đảng bộ phường xây dựng Chương trình hành động với các mục tiêu, nhiệm vụ chủ yếu:
+I. MỤC TIÊU TỔNG QUÁT
+Xây dựng Đảng bộ và hệ thống chính trị trong sạch, vững mạnh; phát huy dân chủ và sức mạnh khối đại đoàn kết toàn dân...
+II. CÁC NHIỆM VỤ VÀ GIẢI PHÁP CHỦ YẾU`
   },
   {
     id: 'dang-ke-hoach',
@@ -728,8 +933,49 @@ CỦA BAN THƯỜNG VỤ ĐẢNG ỦY TẠI CUỘC HỌP GIAO BAN ĐÁNH GIÁ C�
     codePrefix: 'KH/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW',
     standardStructure: 'Mục đích yêu cầu, Nội dung kiểm tra giám sát, Thời gian, Phân công tổ chức',
-    defaultTemplate: `KẾ HOẠCH
-Kiểm tra, giám sát của Đảng ủy đối với việc lãnh đạo thực hiện quy chế dân chủ ở cơ sở năm 2026`
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 18-KH/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 10 tháng 02 năm 2026
+
+KẾ HOẠCH
+Kiểm tra, giám sát của Đảng ủy đối với việc lãnh đạo thực hiện quy chế dân chủ ở cơ sở năm 2026
+
+Thực hiện Chương trình kiểm tra, giám sát toàn khóa của Ban Chấp hành Đảng bộ phường;
+Đảng ủy phường Đông Tiến ban hành Kế hoạch kiểm tra, giám sát năm 2026 với các nội dung sau:
+I. MỤC ĐÍCH, YÊU CẦU
+Kịp thời phát hiện ưu điểm để phát huy, nhận diện tồn tại hạn chế để chấn chỉnh, uốn nắn...
+II. ĐỐI TƯỢNG VÀ NỘI DUNG KIỂM TRA
+1. Đối tượng: Chi ủy Chi bộ Tổ dân phố 2, Tổ dân phố 5.
+2. Nội dung: Việc lãnh đạo, chỉ đạo công tác thực hiện Quy chế dân chủ ở cơ sở.`
+  },
+  {
+    id: 'dang-de-an',
+    name: 'Đề án của Đảng',
+    category: 'dang',
+    shortDesc: 'Đề án nâng cao chất lượng sinh hoạt chi bộ, phát triển đảng viên, kiện toàn bộ máy',
+    codePrefix: 'ĐA/ĐU',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Sự cần thiết, căn cứ xây dựng đề án, thực trạng tình hình, mục tiêu, giải pháp và kinh phí tổ chức',
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 02-ĐA/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 15 tháng 09 năm 2025
+
+ĐỀ ÁN
+Nâng cao chất lượng sinh hoạt chi bộ và năng lực lãnh đạo của tổ chức đảng cơ sở giai đoạn 2025 - 2030
+
+Phần thứ nhất: SỰ CẦN THIẾT VÀ CĂN CỨ XÂY DỰNG ĐỀ ÁN
+1. Sự cần thiết
+Chi bộ là tế bào của Đảng, là nơi trực tiếp giáo dục, rèn luyện và quản lý đảng viên...
+2. Căn cứ xây dựng Đề án
+Căn cứ Điều lệ Đảng và Kết luận số 18-KL/TW của Ban Bí thư về tiếp tục thực hiện Chỉ thị 10-CT/TW...`
   },
   {
     id: 'dang-bao-cao',
@@ -740,8 +986,55 @@ Kiểm tra, giám sát của Đảng ủy đối với việc lãnh đạo thự
     codePrefix: 'BC/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW',
     standardStructure: 'I. Đánh giá công tác tư tưởng chính trị; II. Công tác tổ chức cán bộ; III. Công tác kiểm tra giám sát',
-    defaultTemplate: `BÁO CÁO
-Tổng kết công tác xây dựng Đảng năm 2025 và phương hướng, nhiệm vụ trọng tâm năm 2026`
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 68-BC/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 20 tháng 12 năm 2025
+
+BÁO CÁO
+Tổng kết công tác xây dựng Đảng năm 2025 và phương hướng, nhiệm vụ trọng tâm năm 2026
+
+Năm 2025, trong điều kiện có nhiều thuận lợi đan xen khó khăn thách thức, Đảng bộ phường Đông Tiến đã đoàn kết, nỗ lực phấn đấu đạt nhiều kết quả quan trọng:
+Phần thứ nhất: KẾT QUẢ THỰC HIỆN NHIỆM VỤ NĂM 2025
+I. Công tác xây dựng Đảng và hệ thống chính trị
+1. Công tác chính trị, tư tưởng: Tổ chức học tập, quán triệt đầy đủ các chỉ thị, nghị quyết của Trung ương.
+2. Công tác tổ chức, cán bộ, đảng viên: Trong năm đã kết nạp 12 quần chúng ưu tú vào Đảng.
+3. Công tác kiểm tra, giám sát: Tiến hành kiểm tra 04 chi bộ theo kế hoạch.`
+  },
+  {
+    id: 'dang-bien-ban',
+    name: 'Biên bản sinh hoạt Đảng',
+    category: 'dang',
+    shortDesc: 'Biên bản cuộc họp chi bộ định kỳ, sinh hoạt chuyên đề, hội nghị cấp ủy',
+    isPopular: true,
+    codePrefix: 'BB/CB',
+    decreeRef: 'Hướng dẫn 05-HD/VPTW',
+    standardStructure: 'Thời gian, địa điểm, thành phần dự họp, chủ trì, thư ký, diễn biến cuộc họp và kết luận biểu quyết',
+    defaultTemplate: `ĐẢNG BỘ PHƯỜNG ĐÔNG TIẾN
+CHI BỘ TỔ DÂN PHỐ 1
+Số: 10-BB/CB
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 03 tháng 10 năm 2025
+
+BIÊN BẢN
+Hội nghị sinh hoạt thường kỳ Chi bộ Tổ dân phố 1 tháng 10 năm 2025
+
+Thời gian: Vào hồi 19 giờ 30 phút, ngày 03 tháng 10 năm 2025.
+Địa điểm: Tại Nhà văn hóa Tổ dân phố 1, phường Đông Tiến.
+Chủ trì: Đồng chí Trần Đình Khang - Bí thư Chi bộ.
+Thư ký: Đồng chí Nguyễn Thị Mai - Chi ủy viên.
+Thành phần tham dự: Tổng số đảng viên của Chi bộ: 28 đồng chí. Có mặt: 26 đồng chí. Vắng mặt: 02 đồng chí (có lý do).
+
+NỘI DUNG SINH HOẠT:
+1. Đồng chí Bí thư Chi bộ thông tin thời sự và quán triệt các văn bản chỉ đạo mới của Đảng ủy phường.
+2. Đánh giá tình hình thực hiện nhiệm vụ công tác tháng 9 và thảo luận phương hướng tháng 10.
+3. Ý kiến phát biểu của các đảng viên trong chi bộ.
+4. Biểu quyết kết luận: 100% đảng viên nhất trí thông qua Nghị quyết chi bộ tháng 10.`
   },
   {
     id: 'dang-to-trinh',
@@ -752,8 +1045,30 @@ Tổng kết công tác xây dựng Đảng năm 2025 và phương hướng, nhi
     codePrefix: 'TTr/ĐU',
     decreeRef: 'Hướng dẫn 05-HD/VPTW',
     standardStructure: 'Kính gửi Ban Thường vụ Thị ủy, Lý do đề nghị, Tiêu chuẩn đảng viên, Kiến nghị',
-    defaultTemplate: `TỜ TRÌNH
-Về việc đề nghị kết nạp quần chúng ưu tú vào Đảng Cộng sản Việt Nam`
+    defaultTemplate: `ĐẢNG BỘ THỊ XÃ BỈM SƠN
+ĐẢNG ỦY PHƯỜNG ĐÔNG TIẾN
+Số: 26-TTr/ĐU
+
+ĐẢNG CỘNG SẢN VIỆT NAM
+
+Đông Tiến, ngày 15 tháng 10 năm 2025
+
+TỜ TRÌNH
+Về việc đề nghị kết nạp quần chúng ưu tú vào Đảng Cộng sản Việt Nam
+
+Kính gửi: Ban Thường vụ Thị ủy Bỉm Sơn.
+
+Căn cứ Điều lệ Đảng Cộng sản Việt Nam;
+Xét đề nghị của Chi bộ Trường Tiểu học Đông Tiến về việc đề nghị kết nạp quần chúng ưu tú Lê Thị Lan vào Đảng;
+Ban Thường vụ Đảng ủy phường Đông Tiến đã tiến hành thẩm tra lý lịch, nhận thấy quần chúng Lê Thị Lan có phẩm chất đạo đức tốt, chấp hành nghiêm chủ trương của Đảng, hoàn thành xuất sắc nhiệm vụ chuyên môn được giao.
+
+Ban Thường vụ Đảng ủy phường kính trình Ban Thường vụ Thị ủy xem xét, quyết định kết nạp quần chúng Lê Thị Lan vào Đảng Cộng sản Việt Nam./.
+
+T/M BAN THƯỜNG VỤ
+BÍ THƯ
+(Ký, đóng dấu)
+
+Lê Thế Điệp`
   }
 ];
 

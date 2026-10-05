@@ -48,13 +48,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold tracking-tight text-white drop-shadow-sm font-serif">
-                  Trợ lý văn thư 1.0
+                  Trợ lý văn thư thông minh 1.0
                 </span>
                 <span className="bg-amber-400/90 text-red-950 text-xs font-bold px-2 py-0.5 rounded-full shadow-xs">
-                  AI Thông Minh
+                  Tiểu Bảo Bối
                 </span>
               </div>
-              <p className="text-xs text-amber-200 font-medium tracking-wide hidden sm:block">
+              <p className="text-xs text-amber-200 font-medium tracking-wide hidden sm:block font-serif">
                 Chuẩn hóa văn bản hành chính chỉ trong tích tắc!
               </p>
             </div>

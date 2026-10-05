@@ -188,7 +188,7 @@
       <div class="brand">
         <div class="emblem">★</div>
         <div>
-          <div class="brand-title">Trợ lý văn thư 1.0 (Bản Offline Độc Lập)</div>
+          <div class="brand-title">Trợ lý văn thư thông minh 1.0 (Tiểu Bảo Bối)</div>
           <div class="brand-sub">Chuẩn hóa văn bản hành chính chỉ trong tích tắc!</div>
         </div>
       </div>
@@ -201,12 +201,12 @@
 
   <div class="main-container">
     
-    <!-- Hero Mascot Tiểu Bảo -->
+    <!-- Hero Mascot Tiểu Bảo Bối -->
     <div class="hero-card">
-      <div class="mascot-avatar">👨‍💼</div>
+      <div class="mascot-avatar" style="border-color: #f43f5e; background: #fff1f2;">👧</div>
       <div class="speech-bubble">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 0.25rem;">Tiểu Bảo - Trợ lý văn thư AI</div>
-        <p id="mascotMessage">Chào đồng chí! Tôi là Tiểu Bảo. Hãy chọn một trong các tính năng bên dưới hoặc gửi văn bản để tôi hỗ trợ rà soát thể thức theo Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW nhé!</p>
+        <div style="font-weight: 700; color: #9f1239; margin-bottom: 0.25rem;">Tiểu Bảo Bối - Trợ lý văn thư thông minh 1.0</div>
+        <p id="mascotMessage">Dạ chào đồng chí! Em là Tiểu Bảo Bối. Hãy chọn một trong các tính năng bên dưới hoặc gửi văn bản để em hỗ trợ rà soát thể thức 2 cột chuẩn Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW nhé!</p>
         <div id="activeAgencyBadge" class="agency-tag">Cơ quan: UBND Phường Đông Tiến (Đông Tiến)</div>
       </div>
     </div>
@@ -252,9 +252,10 @@
       <div style="background: white; border-radius: 12px; padding: 1.25rem; border: 1px solid var(--border);">
         <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem;">🧪 Thử nghiệm nhanh với văn bản mẫu có lỗi:</h4>
         <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-          <button class="btn btn-outline" onclick="loadSampleDoc(0)">📌 Công văn (Sai địa danh Đông Sơn + lỗi chính tả)</button>
-          <button class="btn btn-outline" onclick="loadSampleDoc(1)">📌 Tờ trình (Ghi sai UBND Bỉm Sơn)</button>
-          <button class="btn btn-outline" onclick="loadSampleDoc(2)">📌 Giấy mời (Sai thể thức tiêu ngữ & ngày tháng)</button>
+          <button class="btn btn-outline" onclick="loadSampleDoc(0)">📌 Quyết định Chi bộ Bản Nguyên (Chuẩn HD 05 của Đảng)</button>
+          <button class="btn btn-outline" onclick="loadSampleDoc(1)">📌 Công văn (Sai địa danh Đông Sơn + lỗi chính tả)</button>
+          <button class="btn btn-outline" onclick="loadSampleDoc(2)">📌 Tờ trình (Ghi sai UBND Bỉm Sơn)</button>
+          <button class="btn btn-outline" onclick="loadSampleDoc(3)">📌 Giấy mời (Sai thể thức tiêu ngữ & ngày tháng)</button>
         </div>
       </div>
     </div>
@@ -425,12 +426,16 @@
 
     const SAMPLE_DOCS = [
       {
+        title: "Quyết định Chi bộ Bản Nguyên (Chuẩn HD 05 của Đảng)",
+        content: "ĐẢNG BỘ PHƯỜNG ĐÔNG TIẾN\\nCHI BỘ TỔ DÂN PHỐ BẢN NGUYÊN\\n*\\nĐẢNG CỘNG SẢN VIỆT NAM\\n\\nSố: ……-QĐ/CB\\nBản Nguyên, ngày …… tháng …… năm 2026\\n\\nQUYẾT ĐỊNH\\nVề việc phân công nhiệm vụ cho đảng viên Chi bộ năm 2026\\n\\nCHI BỘ TỔ DÂN PHỐ BẢN NGUYÊN\\nCăn cứ Điều lệ Đảng Cộng sản Việt Nam;\\nCăn cứ Quy chế làm việc của Chi bộ nhiệm kỳ 2025 - 2027;\\nXét yêu cầu nhiệm vụ công tác,\\n\\nQUYẾT ĐỊNH:\\n\\nĐiều 1. Phân công các đồng chí đảng viên phụ trách các tổ liên gia tự quản và tuyên truyền chủ trương của Đảng.\\nĐiều 2. Các đồng chí đảng viên có trách nhiệm xắp xếp công việc để hoàn thành tốt nhiệm vụ được giao. Cán bộ nào lơ là sẽ bị sử lý kỉ luật theo đúng qui chế.\\n\\nNơi nhận:\\nĐảng ủy phường Đông Tiến (báo cáo);\\nChi ủy Chi bộ;\\nCác đồng chí đảng viên Chi bộ;\\nLưu Chi bộ.\\n\\nT/M CHI BỘ\\nBÍ THƯ\\nLê Thế Điệp"
+      },
+      {
         title: "Công văn PCCC (Sai địa danh Đông Sơn & lỗi chính tả)",
         content: "UBND HUYỆN ĐÔNG SƠN\\nPHÒNG NỘI VỤ\\nSố: 23/CV-NV\\nV/v tăng cường kiểm tra PCCC và sắp xếp cán bộ\\n\\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\\nĐộc lập - Tự do - Hạnh phúc\\n\\nĐông Sơn, ngày 12 tháng 10 năm 2025\\n\\nKính gửi: Các phòng ban, đơn vị trực thuộc.\\n\\nThực hiện ý kiến chỉ đạo của cấp trên về việc sử lý nghiêm các vi phạm an toàn phòng cháy và bổ xung lực lượng cứu nạn, đề nghị các cơ quan:\\n\\n1. Tiến hành xắp xếp lại khu vực để hồ sơ giấy tờ, không để gần nguồn điện, nguồn nhiệt.\\n2. Kiểm tra lại toàn bộ trang thiết bị chữa cháy, nếu thiếu thì đề xuất bổ xung kịp thời.\\n3. Cán bộ nào lơ là, không chấp hành qui định sẽ bị sử lý kỷ luật theo đúng qui chế nội bộ.\\n\\nYêu cầu các đồng chí làm gấp và báo cáo về cho chúng tôi trước ngày 20/10.\\n\\nTrưởng phòng\\n(Ký tên)\\nTrần Văn Nam"
       },
       {
         title: "Tờ trình xin kinh phí (Ghi sai cơ quan Bỉm Sơn)",
-        content: "ỦY BAN NHÂN DÂN\\nTHỊ XÃ BỈM SƠN\\nSố: 08/TTr-UBND\\n\\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\\nĐộc lập - Tự do - Hạnh phúc\\n\\nBỉm Sơn, ngày 05 tháng 11 năm 2025\\n\\nTỜ TRÌNH\\nVề việc xin hỗ trợ kinh phí chỉnh trang đường hoa đón Tết\\n\\nKính gửi: Sở Tài chính tỉnh Thanh Hóa.\\n\\nĐể phục vụ bà con nhân dân vui xuân đón tết nguyên đán 2026, cơ quan chúng tôi thấy rằng cần thiết phải tu sửa lại hệ thống đèn chiếu sáng và đường hoa cây cảnh.\\n\\nDự toán sơ bộ khoảng 200 triệu đồng. Kính mong cấp trên xem xét bố chí nguồn vốn cho địa phương sớm nhất có thể./.\\n\\nCHỦ TỊCH\\n(Ký tên)\\nNguyễn Văn Hùng"
+        content: "ỦY BAN NHÂN DÂN\\nTHỊ XÃ BỈM SƠN\\nSố: 08/TTr-UBND\\n\\nCỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\\nĐộc lập - Tự do - Hạnh phúc\\n\\nBỉm Sơn, ngày 05 tháng 11 năm 2025\\n\\nTỜ TRÌNH\\nVề việc xin hỗ trợ kinh phí chỉnh trang đường hoa đón Tết\\n\\nKính gửi: Sở Tài chính tỉnh Thanh Hóa.\\n\\nĐể phục vụ bà con nhân dân vui xuân đón tết nguyên đán 2026, cơ quan chúng tôi thấy rằng cần thiết phải tu sửa lại hệ thống đèn chiếu sáng và đường hoa cây cảnh.\\n\\nDự toán sơ bộ khoảng 200 triệu đồng. Kính mong cấp trên xem xét bố chí nguồn vốn cho địa phương sớm nhất có thể./.\\n\\nCHỦ TỊCH\\n(Ký tên)\\nLê Thế Điệp"
       },
       {
         title: "Giấy mời họp (Sai quy chuẩn tiêu ngữ & ngày tháng)",

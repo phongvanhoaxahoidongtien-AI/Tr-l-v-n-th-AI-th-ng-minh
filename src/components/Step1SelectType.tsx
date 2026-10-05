@@ -84,7 +84,7 @@ export const Step1SelectType: React.FC<Step1SelectTypeProps> = ({
           <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
           Văn bản của Đảng (Hướng dẫn 05-HD/VPTW)
           <span className="ml-1 text-xs bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full">
-            Văn phòng TW
+            15 loại
           </span>
         </button>
       </div>

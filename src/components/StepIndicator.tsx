@@ -14,10 +14,10 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({
   maxAccessibleStep
 }) => {
   const steps = [
-    { number: 1 as StepNumber, title: '1. Loại văn bản', subtitle: '29 loại NĐ 30 & Đảng', icon: FileType },
+    { number: 1 as StepNumber, title: '1. Loại văn bản', subtitle: '29 loại NĐ 30 & 15 loại HD 05', icon: FileType },
     { number: 2 as StepNumber, title: '2. Gửi văn bản', subtitle: 'Tải file Word / Dán', icon: Upload },
-    { number: 3 as StepNumber, title: '3. Ý kiến chuyên gia', subtitle: 'Tiểu Bảo chuẩn hóa', icon: BrainCircuit },
-    { number: 4 as StepNumber, title: '4. Xuất file', subtitle: 'Tải Word / Sao chép', icon: FileCheck }
+    { number: 3 as StepNumber, title: '3. Phân tích văn bản', subtitle: 'Báo cáo chuẩn hóa', icon: BrainCircuit },
+    { number: 4 as StepNumber, title: '4. Chỉnh sửa & Xuất file', subtitle: 'Sửa 3 hạng mục & Tải Word', icon: FileCheck }
   ];
 
   return (

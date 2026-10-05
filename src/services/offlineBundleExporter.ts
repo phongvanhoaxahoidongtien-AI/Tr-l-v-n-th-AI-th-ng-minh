@@ -379,7 +379,7 @@ export function generateSingleHtmlBundle(): string {
       <div class="brand">
         <div class="emblem">★</div>
         <div>
-          <div class="brand-title">Trợ lý văn thư 1.0 (Offline)</div>
+          <div class="brand-title">Trợ lý văn thư thông minh 1.0 (Tiểu Bảo Bối)</div>
           <div class="brand-sub">Chuẩn hóa văn bản hành chính chỉ trong tích tắc!</div>
         </div>
       </div>
@@ -392,12 +392,12 @@ export function generateSingleHtmlBundle(): string {
 
   <div class="main-container">
     
-    <!-- Hero Mascot Tiểu Bảo -->
+    <!-- Hero Mascot Tiểu Bảo Bối -->
     <div class="hero-card">
-      <div class="mascot-avatar">👨‍💼</div>
+      <div class="mascot-avatar" style="border-color: #f43f5e; background: #fff1f2;">👧</div>
       <div class="speech-bubble">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 0.25rem;">Tiểu Bảo - Trợ lý văn thư AI</div>
-        <p id="mascotMessage">Chào đồng chí! Tôi là Tiểu Bảo. Hãy chọn một trong các tính năng bên dưới hoặc gửi văn bản để tôi hỗ trợ rà soát thể thức theo Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW nhé!</p>
+        <div style="font-weight: 700; color: #9f1239; margin-bottom: 0.25rem;">Tiểu Bảo Bối - Trợ lý văn thư thông minh 1.0</div>
+        <p id="mascotMessage">Dạ chào đồng chí! Em là Tiểu Bảo Bối. Hãy chọn một trong các tính năng bên dưới hoặc gửi văn bản để em hỗ trợ rà soát thể thức 2 cột chuẩn Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW nhé!</p>
         <div id="activeAgencyBadge" class="agency-tag">Cơ quan: UBND Phường Đông Tiến (Đông Tiến)</div>
       </div>
     </div>
@@ -798,8 +798,12 @@ export function generateSingleHtmlBundle(): string {
       const a = document.createElement('a');
       a.href = url;
       a.download = (currentDocType.name || 'van-ban') + '-chuan-hoa-ND30.doc';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(function() {
+        if (document.body.contains(a)) document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 60000);
     }
 
     // Init
