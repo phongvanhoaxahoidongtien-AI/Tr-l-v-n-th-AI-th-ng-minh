@@ -457,6 +457,7 @@ export default function App() {
                   setCurrentTab('home');
                 }}
                 openGuidelines={() => setIsGuidelinesOpen(true)}
+                onBack={() => setCurrentStep(3)}
               />
             )}
 

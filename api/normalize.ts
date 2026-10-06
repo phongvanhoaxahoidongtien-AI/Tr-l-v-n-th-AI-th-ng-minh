@@ -1,63 +1,14 @@
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
-import dotenv from 'dotenv';
-import {GoogleGenAI} from '@google/genai';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { GoogleGenAI } from '@google/genai';
 
-dotenv.config();
+function getSystemPrompt(docType: string, docCategory: string, configuredAgency: string, configuredLocation: string, shouldApplyAgency: boolean): string {
+  const isToTrinh = /Tờ trình/i.test(docType);
+  const isQuyetDinh = /Quyết định/i.test(docType);
+  const isCongVan = /Công văn/i.test(docType);
+  const isDang = docCategory === 'dang' || /Đảng|Chi bộ|cấp ủy/i.test(docType);
 
-export default defineConfig(() => {
-  return {
-    plugins: [
-      react(),
-      tailwindcss(),
-      {
-        name: 'api-server',
-        configureServer(server) {
-          server.middlewares.use('/api/normalize', async (req, res) => {
-            if (req.method !== 'POST') {
-              res.statusCode = 405;
-              res.end(JSON.stringify({error: 'Method not allowed'}));
-              return;
-            }
-            let body = '';
-            req.on('data', (chunk) => {
-              body += chunk;
-            });
-            req.on('end', async () => {
-              try {
-                const data = JSON.parse(body || '{}');
-                const apiKey = process.env.GEMINI_API_KEY || data.apiKey;
-                if (!apiKey) {
-                  res.statusCode = 200;
-                  res.setHeader('Content-Type', 'application/json');
-                  res.end(
-                    JSON.stringify({
-                      useOfflineFallback: true,
-                      message: 'Chưa cấu hình GEMINI_API_KEY, chuyển sang bộ quy tắc Offline',
-                    })
-                  );
-                  return;
-                }
-                const ai = new GoogleGenAI({apiKey});
-                const {
-                  text,
-                  docType,
-                  docCategory,
-                  configuredAgency,
-                  configuredLocation,
-                  shouldApplyAgency,
-                } = data;
-
-                const isToTrinh = /Tờ trình/i.test(docType || '');
-                const isQuyetDinh = /Quyết định/i.test(docType || '');
-                const isCongVan = /Công văn/i.test(docType || '');
-                const isDang = docCategory === 'dang' || /Đảng|Chi bộ|cấp ủy/i.test(docType || '');
-
-                let systemPrompt = '';
-                if (isToTrinh) {
-                  systemPrompt = `Bạn là Tiểu Bảo Bối – Chuyên gia chuẩn hóa Tờ trình theo đúng Nghị định 30/2020/NĐ-CP.
+  if (isToTrinh) {
+    return `Bạn là Tiểu Bảo Bối – Chuyên gia chuẩn hóa Tờ trình theo đúng Nghị định 30/2020/NĐ-CP.
 Nhiệm vụ duy nhất: Chuẩn hóa Tờ trình đạt độ chính xác tuyệt đối về thể thức.
 
 1. QUY TẮC XỬ LÝ TIÊU ĐỀ QUỐC NGỮ (BẮT BUỘC)
@@ -97,8 +48,10 @@ Cài đặt cơ quan người dùng: Cơ quan: "${configuredAgency || 'Chưa cà
   "goiY": ["Tuân thủ Nghị định 30/2020/NĐ-CP"],
   "cacMucDaChinh": ["Đã tách Quốc hiệu", "Đã chuẩn hóa Tiêu ngữ", "Đã format Kính gửi"]
 }`;
-                } else if (isQuyetDinh) {
-                  systemPrompt = `Bạn là Tiểu Bảo Bối – Chuyên gia chuẩn hóa Quyết định theo đúng Nghị định 30/2020/NĐ-CP.
+  }
+
+  if (isQuyetDinh) {
+    return `Bạn là Tiểu Bảo Bối – Chuyên gia chuẩn hóa Quyết định theo đúng Nghị định 30/2020/NĐ-CP.
 Nhiệm vụ duy nhất: Chuẩn hóa Quyết định đạt độ chính xác tuyệt đối về thể thức.
 
 1. QUY TẮC XỬ LÝ TIÊU ĐỀ QUỐC NGỮ (BẮT BUỘC)
@@ -138,8 +91,10 @@ Cài đặt cơ quan người dùng: Cơ quan: "${configuredAgency || 'Chưa cà
   "goiY": ["Tuân thủ Nghị định 30/2020/NĐ-CP"],
   "cacMucDaChinh": ["Đã căn giữa QUYẾT ĐỊNH", "Đã căn lề chuẩn"]
 }`;
-                } else {
-                  systemPrompt = `Bạn là Tiểu Bảo Bối – Trợ lý văn thư thông minh chuyên sâu về chuẩn hóa văn bản hành chính Việt Nam theo Nghị định 30/2020/NĐ-CP và văn bản của Đảng theo Hướng dẫn 05-HD/VPTW.
+  }
+
+  // General Prompt (Công văn và 29 loại văn bản NĐ 30 & HD 05)
+  return `Bạn là Tiểu Bảo Bối – Trợ lý văn thư thông minh chuyên sâu về chuẩn hóa văn bản hành chính Việt Nam theo Nghị định 30/2020/NĐ-CP và văn bản của Đảng theo Hướng dẫn 05-HD/VPTW.
 
 NHIỆM VỤ CỐT LÕI: Chuẩn hóa văn bản đạt thể thức hoàn hảo, đặc biệt là xử lý đúng Tiêu đề Quốc ngữ và bố cục 2 cột theo đúng Phụ lục I Nghị định 30/2020.
 
@@ -185,148 +140,55 @@ ${!isDang ? `- Đối với Văn bản hành chính (Nghị định 30):
   "goiY": ["Gợi ý 1", "Gợi ý 2"],
   "cacMucDaChinh": ["Đã tách Quốc hiệu", "Đã chuẩn hóa Tiêu ngữ", "Đã xóa lặp lại", "Đã sửa chính tả"]
 }`;
-                }
+}
 
-                const response = await ai.models.generateContent({
-                  model: 'gemini-3.8-flash',
-                  contents: `Văn bản cần rà soát và chuẩn hóa (${docCategory || 'Nghị định 30/2020/NĐ-CP'} - Loại: ${docType}):\n\n${text}`,
-                  config: {
-                    systemInstruction: systemPrompt,
-                    responseMimeType: 'application/json',
-                    temperature: 0.2,
-                  },
-                });
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
 
-                const content = response.text || '';
-                res.statusCode = 200;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(content);
-              } catch (err: any) {
-                console.error('Gemini API Error:', err);
-                res.statusCode = 200;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(
-                  JSON.stringify({
-                    useOfflineFallback: true,
-                    error: err?.message || 'Lỗi kết nối Gemini API, chuyển sang quy tắc Offline',
-                  })
-                );
-              }
-            });
-          });
+  try {
+    const data = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const apiKey = process.env.GEMINI_API_KEY || data.apiKey;
 
-          // Endpoint tải file Word trực tiếp từ Server để vượt qua giới hạn sandbox iframe
-          server.middlewares.use('/api/download-doc', async (req, res) => {
-            if (req.method !== 'POST') {
-              res.statusCode = 405;
-              res.end('Method not allowed');
-              return;
-            }
-            const chunks: Buffer[] = [];
-            req.on('data', (chunk) => {
-              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            });
-            req.on('end', () => {
-              try {
-                const body = Buffer.concat(chunks).toString('utf-8');
-                let html = '';
-                let filename = 'VanBan_ChuanHoa_ND30.doc';
-
-                // Hỗ trợ cả application/x-www-form-urlencoded và application/json
-                if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-                  const params = new URLSearchParams(body);
-                  html = params.get('html') || '';
-                  filename = params.get('filename') || filename;
-                } else {
-                  const data = JSON.parse(body || '{}');
-                  html = data.html || '';
-                  filename = data.filename || filename;
-                }
-
-                const wordDoc = `\ufeff<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-  <meta charset='utf-8'>
-  <title>${filename}</title>
-  <!--[if gte mso 9]>
-  <xml>
-    <w:WordDocument>
-      <w:View>Print</w:View>
-      <w:Zoom>100</w:Zoom>
-      <w:DoNotOptimizeForBrowser/>
-    </w:WordDocument>
-  </xml>
-  <![endif]-->
-  <style>
-    @page Section1 {
-      size: 21.0cm 29.7cm;
-      margin: 2.0cm 2.0cm 2.0cm 3.0cm;
-      mso-header-margin: 36.0pt;
-      mso-footer-margin: 36.0pt;
-      mso-paper-source: 0;
+    if (!apiKey) {
+      res.status(200).json({
+        useOfflineFallback: true,
+        message: 'Chưa cấu hình GEMINI_API_KEY, chuyển sang bộ quy tắc Offline chuyên sâu'
+      });
+      return;
     }
-    div.Section1 { page: Section1; }
-    body {
-      font-family: 'Times New Roman', serif;
-      font-size: 14pt;
-      line-height: 1.5;
-      color: #000000;
-      text-align: justify;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      border: none;
-      mso-table-lspace: 0pt;
-      mso-table-rspace: 0pt;
-    }
-    td {
-      padding: 0;
-      border: none;
-      mso-border-alt: none;
-      vertical-align: top;
-    }
-    p {
-      margin: 0;
-      padding: 0;
-      margin-bottom: 6pt;
-    }
-  </style>
-</head>
-<body>
-  <div class="Section1">
-    ${html}
-  </div>
-</body>
-</html>`;
 
-                const asciiName = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-                const utf8Name = encodeURIComponent(filename);
-                res.statusCode = 200;
-                res.setHeader('Content-Type', 'application/msword; charset=utf-8');
-                res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`);
-                res.setHeader('Cache-Control', 'no-cache');
-                res.end(Buffer.from(wordDoc, 'utf-8'));
-              } catch (e: any) {
-                res.statusCode = 500;
-                res.end('Error: ' + e?.message);
-              }
-            });
-          });
-        },
-      },
-    ],
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modify—file watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
-    },
-  };
-});
+    const {
+      text,
+      docType = 'Công văn',
+      docCategory = 'hanh_chinh',
+      configuredAgency = '',
+      configuredLocation = '',
+      shouldApplyAgency = false
+    } = data;
 
+    const systemPrompt = getSystemPrompt(docType, docCategory, configuredAgency, configuredLocation, shouldApplyAgency);
+    const ai = new GoogleGenAI({ apiKey });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: `Văn bản cần rà soát và chuẩn hóa (${docCategory} - Loại: ${docType}):\n\n${text}`,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        temperature: 0.2
+      }
+    });
+
+    const content = response.text || '';
+    res.status(200).setHeader('Content-Type', 'application/json').send(content);
+  } catch (err: any) {
+    console.error('Gemini API Error in Vercel handler:', err);
+    res.status(200).json({
+      useOfflineFallback: true,
+      error: err?.message || 'Lỗi kết nối Gemini API, chuyển sang quy tắc Offline'
+    });
+  }
+}

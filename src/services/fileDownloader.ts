@@ -207,3 +207,29 @@ export async function copyFormattedDocument(htmlContent: string, plainText: stri
     return false;
   }
 }
+
+/**
+ * Tải file nhị phân Blob trực tiếp (dành cho file .docx chuẩn của thư viện docx)
+ */
+export function downloadBlobFile(blob: Blob, fileName: string): boolean {
+  try {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.target = '_blank';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+      URL.revokeObjectURL(url);
+    }, 120000);
+    return true;
+  } catch (e) {
+    console.error('Lỗi khi tải file docx blob:', e);
+    return false;
+  }
+}

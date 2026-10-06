@@ -366,8 +366,33 @@ export async function runDocumentNormalization(params: RunNormalizeParams): Prom
           canhBao = agencyDiff.warningMessage;
         }
 
-        // Đảm bảo cấu trúc người ký mặc định Lê Thế Điệp nếu chưa có
+        // Đảm bảo cấu trúc tài liệu hoàn chỉnh từ các trường AI trả về hoặc nội dung chuẩn hóa
         let finalContent = data.noiDungChuanHoa;
+        if (data.header) {
+          const parts: string[] = [];
+          if (data.header.tenCoQuan) parts.push(data.header.tenCoQuan);
+          if (data.header.soHieu) parts.push(data.header.soHieu);
+          parts.push('');
+          if (data.header.quocHieu) parts.push(data.header.quocHieu);
+          if (data.header.tieuNgu) parts.push(data.header.tieuNgu);
+          if (data.header.diaDanhNgayThang) parts.push(data.header.diaDanhNgayThang);
+          parts.push('');
+          if (data.tenLoaiVaTrichYeu) {
+            parts.push(data.tenLoaiVaTrichYeu);
+            parts.push('');
+          }
+          parts.push(data.noiDungChuanHoa);
+          if (data.noiNhan) {
+            parts.push('');
+            parts.push(data.noiNhan.startsWith('Nơi nhận') ? data.noiNhan : `Nơi nhận:\n${data.noiNhan}`);
+          }
+          if (data.chuKy) {
+            parts.push('');
+            parts.push(data.chuKy);
+          }
+          finalContent = parts.join('\n');
+        }
+
         const structured = parseDocumentStructure(
           finalContent, 
           agencySettings, 
@@ -376,8 +401,8 @@ export async function runDocumentNormalization(params: RunNormalizeParams): Prom
         );
         if (!structured.signerName) {
           structured.signerName = agencySettings.signerName || 'Lê Thế Điệp';
-          finalContent = reconstructNormalizedText(structured);
         }
+        finalContent = reconstructNormalizedText(structured);
 
         const report = analyzeDocumentText(rawText, agencySettings);
 
