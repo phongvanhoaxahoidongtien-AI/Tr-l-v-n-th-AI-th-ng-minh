@@ -1,0 +1,28 @@
+{
+  "system": "academic",
+  "subtype": "report",
+  "title": "Báo cáo Tổng kết Đề tài Khoa học & Công nghệ các cấp",
+  "paper": {
+    "size": "A4",
+    "widthMm": 210,
+    "heightMm": 297,
+    "orientation": "portrait"
+  },
+  "marginsMm": {
+    "top": 20,
+    "bottom": 20,
+    "left": 30,
+    "right": 20
+  },
+  "typography": {
+    "fontFamily": "Times New Roman",
+    "encoding": "Unicode (NFC)",
+    "bodySizePt": 13,
+    "bodyLineSpacing": 1.4,
+    "paragraphSpacingBeforePt": 0,
+    "paragraphSpacingAfterPt": 6,
+    "firstLineIndentCm": 1.25,
+    "align": "justify"
+  },
+  "protectedNodes": ["w:tbl", "w:drawing", "w:pict", "m:oMath", "m:oMathPara", "w:sdt"]
+}

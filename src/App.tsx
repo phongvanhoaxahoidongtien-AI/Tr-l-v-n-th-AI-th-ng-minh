@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   AppTab, StepNumber, AgencySettings, DocumentTypeItem, NormalizeResult 
 } from './types';
+import { getOfficerSalutation } from './utils/officerSalutation';
 import { ADMINISTRATIVE_DOC_TYPES, ALL_DOC_TYPES } from './data/documentTypes';
 import { SAMPLE_DOCUMENTS } from './data/sampleDocs';
 import { runDocumentNormalization, detectAgencyDifference } from './services/normalizerEngine';
@@ -26,12 +27,16 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_AGENCY_SETTINGS: AgencySettings = {
-  agencyName: 'UBND Phường Đông Tiến',
+  roleBlock: 'ubnd',
+  parentAgency: '', // Không tự ý thêm cơ quan cấp trên, để trống nếu người dùng không nhập
+  agencyName: 'ỦY BAN NHÂN DÂN PHƯỜNG ĐÔNG TIẾN',
   shortLocation: 'Đông Tiến',
-  parentAgency: 'UBND Thị xã Bỉm Sơn',
   signerTitle: 'CHỦ TỊCH',
   signerName: 'Lê Thế Điệp',
-  department: 'Văn phòng HĐND & UBND'
+  department: 'Văn phòng HĐND & UBND',
+  officerName: 'Lê Thế Điệp',
+  officerTitle: 'Công chức Văn phòng - Thống kê',
+  officerGreetingPrefix: 'đồng chí'
 };
 
 export default function App() {
@@ -56,6 +61,7 @@ export default function App() {
   const [maxAccessibleStep, setMaxAccessibleStep] = useState<StepNumber>(2);
   const [selectedType, setSelectedType] = useState<DocumentTypeItem>(ADMINISTRATIVE_DOC_TYPES[0]); // default: Công văn
   const [inputText, setInputText] = useState<string>('');
+  const [originalFileName, setOriginalFileName] = useState<string>('van_ban');
   const [isProcessing, setIsProcessing] = useState(false);
   const [normalizeResult, setNormalizeResult] = useState<NormalizeResult | null>(null);
   const [userAcceptedAgencyOverride, setUserAcceptedAgencyOverride] = useState(false);
@@ -96,7 +102,8 @@ export default function App() {
     setCurrentStep(2);
     setMaxAccessibleStep(2);
     setCurrentTab('normalize');
-    setMascotMessage(`Đã nạp văn bản thử nghiệm: "${sample.title}". Nhấn "Tiểu Bảo Bối chuẩn hóa ngay" để em phân tích nhé!`);
+    const salutation = getOfficerSalutation(agencySettings);
+    setMascotMessage(`Đã nạp văn bản thử nghiệm: "${sample.title}". ${salutation.shortName ? salutation.shortName : 'Đồng chí'} nhấn "Tiểu Bảo Bối chuẩn hóa ngay" để em phân tích nhé!`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -104,8 +111,9 @@ export default function App() {
   const handleExecuteNormalization = async (overrideAccepted?: boolean) => {
     if (!inputText.trim()) return;
 
+    const salutation = getOfficerSalutation(agencySettings);
     setIsProcessing(true);
-    setMascotMessage('Tiểu Bảo Bối đang phân tích thể thức 2 cột, kiểm tra chính tả tiếng Việt và đối chiếu cơ quan...');
+    setMascotMessage(`Tiểu Bảo Bối đang phân tích thể thức 2 cột, kiểm tra chính tả tiếng Việt và đối chiếu cơ quan cho ${salutation.shortName}...`);
 
     try {
       const willOverride = overrideAccepted !== undefined ? overrideAccepted : userAcceptedAgencyOverride;
@@ -122,9 +130,9 @@ export default function App() {
       setMaxAccessibleStep(4);
 
       if (res.canhBaoCoQuan) {
-        setMascotMessage('⚠️ Đồng chí ơi, Tiểu Bảo Bối phát hiện có sự khác biệt về tên cơ quan hoặc địa danh trong văn bản so với Cài đặt! Hãy xem phần cảnh báo bên dưới nhé.');
+        setMascotMessage(`⚠️ ${salutation.shortName} ơi, Tiểu Bảo Bối phát hiện có sự khác biệt về tên cơ quan hoặc địa danh trong văn bản so với Cài đặt! Hãy xem phần cảnh báo bên dưới nhé.`);
       } else {
-        setMascotMessage(`🎉 Tuyệt vời! Điểm thể thức đã tăng từ ${res.diemTruoc} lên ${res.diemSau}/100. Em đã sửa xong ${res.soLoi} lỗi theo đúng Nghị định 30 ạ!`);
+        setMascotMessage(`🎉 Tuyệt vời! Điểm thể thức đã tăng từ ${res.diemTruoc} lên ${res.diemSau}/100. Em đã sửa xong ${res.soLoi} lỗi theo đúng Nghị định 30 cho ${salutation.shortName} ạ!`);
       }
     } catch (err: any) {
       console.error(err);
@@ -144,13 +152,14 @@ export default function App() {
 
   // Người dùng bấm "Giữ nguyên theo văn bản gốc"
   const handleDismissAgencyFix = () => {
+    const salutation = getOfficerSalutation(agencySettings);
     if (normalizeResult) {
       setNormalizeResult({
         ...normalizeResult,
         canhBaoCoQuan: null
       });
     }
-    setMascotMessage('Đã giữ nguyên tên cơ quan và địa danh theo văn bản gốc của đồng chí.');
+    setMascotMessage(`Đã giữ nguyên tên cơ quan và địa danh theo văn bản gốc của ${salutation.shortName}.`);
   };
 
   // Tải file HTML offline độc lập
@@ -177,8 +186,8 @@ export default function App() {
         openGuidelines={() => setIsGuidelinesOpen(true)}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main Container: Mở rộng 100% khung hình khi ở Bước 4 để Live Preview A4 chuẩn 100% không bị co lại */}
+      <main className={`flex-1 w-full mx-auto py-6 transition-all duration-300 ${currentStep === 4 ? 'max-w-none px-2 sm:px-4 lg:px-6 xl:px-8' : 'max-w-7xl px-4 sm:px-6 lg:px-8'}`}>
         
         {/* Cute Mascot "Tiểu Bảo" Header Card */}
         <HeroMascot
@@ -413,6 +422,7 @@ export default function App() {
                 onRunNormalize={() => handleExecuteNormalization()}
                 isProcessing={isProcessing}
                 agencySettings={agencySettings}
+                setOriginalFileName={setOriginalFileName}
               />
             )}
 
@@ -444,6 +454,7 @@ export default function App() {
                 agencySettings={agencySettings}
                 analysisReport={normalizeResult.analysisReport}
                 originalText={inputText}
+                originalFileName={originalFileName}
                 onUpdateNormalizedText={(newText) => {
                   setNormalizeResult({
                     ...normalizeResult,
@@ -452,6 +463,7 @@ export default function App() {
                 }}
                 onReset={() => {
                   setInputText('');
+                  setOriginalFileName('van_ban');
                   setNormalizeResult(null);
                   setCurrentStep(1);
                   setCurrentTab('home');

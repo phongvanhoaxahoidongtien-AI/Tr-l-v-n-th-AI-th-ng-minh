@@ -1,0 +1,32 @@
+{
+  "system": "academic",
+  "subtype": "journal",
+  "title": "Bài báo Khoa học / Tạp chí chuyên ngành",
+  "paper": {
+    "size": "A4",
+    "widthMm": 210,
+    "heightMm": 297,
+    "orientation": "portrait"
+  },
+  "marginsMm": {
+    "top": 25,
+    "bottom": 20,
+    "left": 25,
+    "right": 20
+  },
+  "typography": {
+    "fontFamily": "Times New Roman",
+    "encoding": "Unicode (NFC)",
+    "bodySizePt": 12,
+    "bodyLineSpacing": 1.2,
+    "paragraphSpacingBeforePt": 0,
+    "paragraphSpacingAfterPt": 4,
+    "firstLineIndentCm": 0.63,
+    "align": "justify"
+  },
+  "issnProfile": {
+    "journalName": "Tạp chí Khoa học & Công nghệ Việt Nam",
+    "issn": "1859-4794"
+  },
+  "protectedNodes": ["w:tbl", "w:drawing", "w:pict", "m:oMath", "m:oMathPara", "w:sdt"]
+}

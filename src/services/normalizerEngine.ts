@@ -216,7 +216,8 @@ export function detectAgencyDifference(
 export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeResult {
   const { rawText, docType, docCategory, agencySettings, userAcceptedAgencyOverride } = params;
 
-  let content = cleanAIText(rawText, { preserveTables: true, stripNationalHeader: true });
+  // Giữ nguyên tiêu đề quốc ngữ khi chuẩn hóa (không tự ý xóa)
+  let content = cleanAIText(rawText, { preserveTables: true, stripNationalHeader: false });
   const errorList: string[] = [];
   const spellingFixes: Array<{ wrong: string; right: string; context?: string }> = [];
 
@@ -290,11 +291,10 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     }
   }
 
-  // 4. Chuẩn hóa cấu trúc và người ký mặc định
+  // 4. Chuẩn hóa cấu trúc và người ký
   const structured = parseDocumentStructure(content, agencySettings, isPartyDoc ? 'dang' : 'hanh_chinh', docType);
-  // Nếu người ký mặc định được áp dụng
-  if (!structured.signerName || structured.signerName === 'Nguyễn Văn Hùng') {
-    structured.signerName = agencySettings.signerName || 'Lê Thế Điệp';
+  if (!structured.signerName && userAcceptedAgencyOverride && agencySettings.signerName) {
+    structured.signerName = agencySettings.signerName;
   }
   content = reconstructNormalizedText(structured);
 
@@ -326,6 +326,26 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     canhBaoCoQuan: warningAgency,
     noiDungChuanHoa: content,
     goiY: suggestions,
+    cacMucDaChinh: structured.cacMucDaChinh || [
+      'Đã tách Quốc hiệu và Tiêu ngữ thành công',
+      'Đã ngăn nội dung không bị đẩy vào ô Cơ quan ban hành',
+      'Đã hỗ trợ xuống dòng cho Kính gửi và Nơi nhận',
+      'Đã thêm trường Quyền hạn ký'
+    ],
+    quocHieu: structured.countryHeader,
+    tieuNgu: structured.motto,
+    tenCoQuanChuQuan: structured.parentAgency,
+    tenCoQuanBanHanh: structured.agencyName,
+    soHieu: structured.docCode,
+    diaDanhNgayThang: structured.locationDate,
+    tenLoaiVanBan: structured.docTypeName,
+    trichYeu: structured.docSubjectShort || structured.docTitle,
+    kinhGui: structured.recipientsHeader,
+    noiDung: structured.bodyParagraphs.join('\n\n'),
+    quyenHanKy: structured.quyenHanKy,
+    chucVuNguoiKy: structured.signerTitle,
+    hoTenNguoiKy: structured.signerName,
+    noiNhan: structured.recipients.join('\n'),
     detectedAgencyInDoc: agencyDiff.detectedAgency || undefined,
     detectedLocationInDoc: agencyDiff.detectedLocation || undefined,
     analysisReport: report
@@ -360,49 +380,89 @@ export async function runDocumentNormalization(params: RunNormalizeParams): Prom
 
     if (response.ok) {
       const data = await response.json();
-      if (!data.useOfflineFallback && data.noiDungChuanHoa) {
+      if (!data.useOfflineFallback && (data.noiDungChuanHoa || data.noiDung)) {
         let canhBao = data.canhBaoCoQuan;
+        if (!canhBao && Array.isArray(data.canhBao) && data.canhBao.length > 0) {
+          canhBao = data.canhBao.join('\n');
+        }
         if (!canhBao && agencyDiff.hasDifference && !userAcceptedAgencyOverride) {
           canhBao = agencyDiff.warningMessage;
         }
 
-        // Đảm bảo cấu trúc tài liệu hoàn chỉnh từ các trường AI trả về hoặc nội dung chuẩn hóa
-        let finalContent = data.noiDungChuanHoa;
-        if (data.header) {
-          const parts: string[] = [];
-          if (data.header.tenCoQuan) parts.push(data.header.tenCoQuan);
-          if (data.header.soHieu) parts.push(data.header.soHieu);
+        const quocHieu = data.quocHieu || data.header?.quocHieu || (params.docCategory === 'dang' ? '' : 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM');
+        const tieuNgu = data.tieuNgu || data.header?.tieuNgu || (params.docCategory === 'dang' ? 'ĐẢNG CỘNG SẢN VIỆT NAM' : 'Độc lập - Tự do - Hạnh phúc');
+        const tenCoQuan = data.tenCoQuanBanHanh || data.header?.tenCoQuan || (userAcceptedAgencyOverride ? agencySettings.agencyName : (agencyDiff.detectedAgency || ''));
+        const tenCoQuanChuQuan = data.tenCoQuanChuQuan || data.header?.tenCoQuanChuQuan || (userAcceptedAgencyOverride ? agencySettings.parentAgency : '') || '';
+        const soHieu = data.soHieu || data.header?.soHieu || '';
+        const diaDanhNgayThang = data.diaDanhNgayThang || data.header?.diaDanhNgayThang || '';
+        const tenLoaiVanBan = data.tenLoaiVanBan || params.docType || 'CÔNG VĂN';
+        const trichYeu = data.trichYeu || data.header?.trichYeu || '';
+        const kinhGui = data.kinhGui || '';
+        const rawBody = data.noiDung || data.noiDungChuanHoa || '';
+        const quyenHanKy = data.quyenHanKy || '';
+        const chucVuNguoiKy = data.chucVuNguoiKy || data.chuKy || (userAcceptedAgencyOverride ? agencySettings.signerTitle : '') || '';
+        const hoTenNguoiKy = data.hoTenNguoiKy || (userAcceptedAgencyOverride ? agencySettings.signerName : '') || '';
+        const noiNhan = data.noiNhan || '';
+        const cacMucDaChinh = Array.isArray(data.cacMucDaChinh) ? data.cacMucDaChinh : [
+          'Đã tách Quốc hiệu và Tiêu ngữ thành công',
+          'Đã ngăn nội dung không bị đẩy vào ô Cơ quan ban hành',
+          'Đã hỗ trợ xuống dòng cho Kính gửi và Nơi nhận',
+          'Đã chuẩn hóa chính tả và Bullet chuẩn NĐ 30 / HD 05'
+        ];
+
+        // Tái tạo nội dung tài liệu chuẩn 2 cột
+        const parts: string[] = [];
+        if (tenCoQuanChuQuan) parts.push(tenCoQuanChuQuan);
+        parts.push(tenCoQuan);
+        parts.push(soHieu);
+        if (params.docType === 'Công văn' && trichYeu) parts.push(trichYeu.startsWith('V/v') ? trichYeu : `V/v ${trichYeu}`);
+        parts.push('');
+
+        if (quocHieu) parts.push(quocHieu);
+        if (tieuNgu) parts.push(tieuNgu);
+        if (diaDanhNgayThang) parts.push(diaDanhNgayThang);
+        parts.push('');
+
+        if (params.docType !== 'Công văn' && tenLoaiVanBan) {
+          parts.push(tenLoaiVanBan.toUpperCase());
+          if (trichYeu) parts.push(trichYeu);
           parts.push('');
-          if (data.header.quocHieu) parts.push(data.header.quocHieu);
-          if (data.header.tieuNgu) parts.push(data.header.tieuNgu);
-          if (data.header.diaDanhNgayThang) parts.push(data.header.diaDanhNgayThang);
-          parts.push('');
-          if (data.tenLoaiVaTrichYeu) {
-            parts.push(data.tenLoaiVaTrichYeu);
-            parts.push('');
-          }
-          parts.push(data.noiDungChuanHoa);
-          if (data.noiNhan) {
-            parts.push('');
-            parts.push(data.noiNhan.startsWith('Nơi nhận') ? data.noiNhan : `Nơi nhận:\n${data.noiNhan}`);
-          }
-          if (data.chuKy) {
-            parts.push('');
-            parts.push(data.chuKy);
-          }
-          finalContent = parts.join('\n');
         }
 
-        const structured = parseDocumentStructure(
-          finalContent, 
-          agencySettings, 
-          params.docCategory === 'dang' ? 'dang' : 'hanh_chinh', 
-          params.docType
-        );
-        if (!structured.signerName) {
-          structured.signerName = agencySettings.signerName || 'Lê Thế Điệp';
+        if (kinhGui && kinhGui.trim()) {
+          const kLines = kinhGui.split('\n').map((l: string) => l.trim()).filter(Boolean);
+          if (kLines.length === 1 && !kLines[0].startsWith('-')) {
+            parts.push(kLines[0].startsWith('Kính gửi:') ? kLines[0] : `Kính gửi: ${kLines[0]}`);
+          } else {
+            parts.push('Kính gửi:');
+            kLines.forEach((l: string) => parts.push(l.startsWith('Kính gửi:') ? l.replace('Kính gửi:', '').trim() : (l.startsWith('-') ? l : `- ${l}`)));
+          }
+          parts.push('');
         }
-        finalContent = reconstructNormalizedText(structured);
+
+        parts.push(rawBody);
+        parts.push('');
+
+        if (noiNhan && noiNhan.trim()) {
+          parts.push(noiNhan.startsWith('Nơi nhận') ? noiNhan : `Nơi nhận:\n${noiNhan}`);
+          parts.push('');
+        }
+
+        if (quyenHanKy || chucVuNguoiKy || hoTenNguoiKy) {
+          if (quyenHanKy === 'KT. CHỦ TỊCH') {
+            parts.push('KT. CHỦ TỊCH');
+            if (chucVuNguoiKy) parts.push(chucVuNguoiKy);
+          } else if (quyenHanKy) {
+            parts.push(quyenHanKy);
+            if (chucVuNguoiKy) parts.push(chucVuNguoiKy);
+          } else if (chucVuNguoiKy) {
+            parts.push(chucVuNguoiKy);
+          }
+          parts.push('(Ký, ghi rõ họ tên)');
+          if (hoTenNguoiKy) parts.push(hoTenNguoiKy);
+        }
+
+        const finalContent = parts.join('\n');
 
         const report = analyzeDocumentText(rawText, agencySettings);
 
@@ -414,6 +474,21 @@ export async function runDocumentNormalization(params: RunNormalizeParams): Prom
           canhBaoCoQuan: canhBao,
           noiDungChuanHoa: finalContent,
           goiY: Array.isArray(data.goiY) ? data.goiY : ['Tuân thủ đúng quy định Nghị định 30/2020/NĐ-CP & Hướng dẫn 05-HD/VPTW.'],
+          cacMucDaChinh,
+          quocHieu,
+          tieuNgu,
+          tenCoQuanChuQuan,
+          tenCoQuanBanHanh: tenCoQuan,
+          soHieu,
+          diaDanhNgayThang,
+          tenLoaiVanBan,
+          trichYeu,
+          kinhGui,
+          noiDung: rawBody,
+          quyenHanKy,
+          chucVuNguoiKy,
+          hoTenNguoiKy,
+          noiNhan,
           detectedAgencyInDoc: agencyDiff.detectedAgency || undefined,
           detectedLocationInDoc: agencyDiff.detectedLocation || undefined,
           analysisReport: report

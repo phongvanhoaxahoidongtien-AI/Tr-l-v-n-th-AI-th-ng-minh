@@ -1,16 +1,19 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
-    font-family: 'Times New Roman', Times, 'Tinos', serif;
+  *, ::before, ::after {
+    font-family: 'Times New Roman', Times, 'Tinos', serif !important;
+  }
+  html, body, input, textarea, select, button, p, span, div, h1, h2, h3, h4, h5, h6 {
+    font-family: 'Times New Roman', Times, 'Tinos', serif !important;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 }
 
-.font-times {
-  font-family: 'Times New Roman', Times, 'Tinos', serif;
+.font-times, .font-serif, .font-sans {
+  font-family: 'Times New Roman', Times, 'Tinos', serif !important;
 }
 
 @keyframes bounce-subtle {

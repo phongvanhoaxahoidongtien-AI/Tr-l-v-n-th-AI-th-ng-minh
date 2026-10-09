@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageCircle, X, Sparkles, Send, CheckCircle2, BookOpen, ShieldAlert } from 'lucide-react';
 import { AgencySettings } from '../types';
+import { getOfficerSalutation } from '../utils/officerSalutation';
 
 interface FloatingMascotChatProps {
   agencySettings: AgencySettings;
@@ -14,12 +15,28 @@ export const FloatingMascotChat: React.FC<FloatingMascotChatProps> = ({
   openGuidelines
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Array<{ sender: 'ai' | 'user'; text: string }>>([
+  const salutation = getOfficerSalutation(agencySettings);
+
+  const [messages, setMessages] = useState<Array<{ sender: 'ai' | 'user'; text: string }>>(() => [
     {
       sender: 'ai',
-      text: `Dạ chào đồng chí! Em là Tiểu Bảo Bối – Trợ lý văn thư thông minh 1.0. Đồng chí cần em giải đáp điều gì về thể thức Nghị định 30 hay Hướng dẫn 05 của Đảng không ạ?`
+      text: `Dạ ${salutation.salutationText}! Em là Tiểu Bảo Bối – Trợ lý văn thư thông minh 1.0. ${salutation.shortName ? salutation.shortName : 'Đồng chí'} cần em giải đáp điều gì về thể thức Nghị định 30 hay Hướng dẫn 05 của Đảng không ạ?`
     }
   ]);
+
+  // Update initial message when officer name changes
+  useEffect(() => {
+    setMessages(prev => {
+      if (prev.length === 1 && prev[0].sender === 'ai') {
+        return [{
+          sender: 'ai',
+          text: `Dạ ${salutation.salutationText}! Em là Tiểu Bảo Bối – Trợ lý văn thư thông minh 1.0. ${salutation.shortName ? salutation.shortName : 'Đồng chí'} cần em giải đáp điều gì về thể thức Nghị định 30 hay Hướng dẫn 05 của Đảng không ạ?`
+        }];
+      }
+      return prev;
+    });
+  }, [agencySettings.officerName, agencySettings.officerTitle, agencySettings.officerGreetingPrefix]);
+
   const [inputValue, setInputValue] = useState('');
 
   const quickPrompts = [
@@ -34,19 +51,19 @@ export const FloatingMascotChat: React.FC<FloatingMascotChatProps> = ({
     if (!query.trim()) return;
 
     const userMsg = { sender: 'user' as const, text: query };
-    let aiReply = "Dạ, Tiểu Bảo Bối đã ghi nhận câu hỏi của đồng chí!";
+    let aiReply = `Dạ, Tiểu Bảo Bối đã ghi nhận câu hỏi của ${salutation.shortName}!`;
 
     const lower = query.toLowerCase();
     if (lower.includes('tiêu ngữ') || lower.includes('gạch ngang')) {
-      aiReply = "Dạ theo Nghị định 30/2020/NĐ-CP, Tiêu ngữ 'Độc lập - Tự do - Hạnh phúc' được đặt dưới Quốc hiệu, chữ in thường, cỡ 13-14, đứng, đậm. Bên dưới có đường kẻ ngang bằng độ dài của dòng chữ, liền nét, nét mảnh (0.5 - 1pt) đồng chí nhé!";
+      aiReply = `Dạ theo Nghị định 30/2020/NĐ-CP, Tiêu ngữ 'Độc lập - Tự do - Hạnh phúc' được đặt dưới Quốc hiệu, chữ in thường, cỡ 13-14, đứng, đậm. Bên dưới có đường kẻ ngang bằng độ dài của dòng chữ, liền nét, nét mảnh (0.5 - 1pt) ${salutation.shortName} nhé!`;
     } else if (lower.includes('công văn') || lower.includes('số ký hiệu') || lower.includes('số')) {
-      aiReply = "Dạ, số ký hiệu Công văn gồm: Số thứ tự / Tên viết tắt loại văn bản - Tên viết tắt cơ quan. Ví dụ: Số: 45/UBND-VP hoặc Số: 12/CV-UBND ạ!";
+      aiReply = `Dạ, số ký hiệu Công văn gồm: Số thứ tự / Tên viết tắt loại văn bản - Tên viết tắt cơ quan. Ví dụ: Số: 45/UBND-VP hoặc Số: 12/CV-UBND ${salutation.shortName} nhé!`;
     } else if (lower.includes('ngày') || lower.includes('tháng') || lower.includes('địa danh')) {
       aiReply = `Dạ địa danh hiện tại đang áp dụng là "${agencySettings.shortLocation || 'Đông Tiến'}". Thời gian ghi bằng chữ in thường, nghiêng: "${agencySettings.shortLocation || 'Đông Tiến'}, ngày ... tháng ... năm ...". Các ngày dưới 10 và tháng 1, 2 phải ghi thêm số 0 ở trước (ví dụ ngày 05 tháng 02)!`;
     } else if (lower.includes('nơi nhận')) {
       aiReply = "Dạ từ 'Nơi nhận:' ghi cỡ 12, in thường, nghiêng đậm. Các dòng liệt kê cơ quan nhận bên dưới cỡ 11, thường, đứng, đầu dòng có gạch ngang (-), cuối mỗi dòng chấm phẩy (;), dòng cuối cùng '- Lưu: VT, ...' có dấu chấm (.) ạ!";
     } else {
-      aiReply = `Dạ đồng chí ơi, toàn bộ văn bản khi đưa vào hệ thống sẽ được em tự động chuẩn hóa sang định dạng 2 cột, căn lề chuẩn A4 (Trái 3cm, Trên 2cm, Dưới 2cm, Phải 1.5-2cm) và dùng đúng font Times New Roman theo quy định ạ!`;
+      aiReply = `Dạ ${salutation.shortName} ơi, toàn bộ văn bản khi đưa vào hệ thống sẽ được em tự động chuẩn hóa sang định dạng 2 cột, căn lề chuẩn A4 (Trái 3cm, Trên 2cm, Dưới 2cm, Phải 1.5-2cm) và dùng đúng font Times New Roman theo quy định ạ!`;
     }
 
     setMessages((prev) => [...prev, userMsg, { sender: 'ai', text: aiReply }]);

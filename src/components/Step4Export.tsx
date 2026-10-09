@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport } from '../types';
-import { generateDecree30A4Html, parseDocumentStructure } from '../services/decree30Formatter';
+import { generateDecree30A4Html, parseDocumentStructure, reconstructNormalizedText } from '../services/decree30Formatter';
 import { exportToDocxBlob } from '../services/docxExporter';
 import { downloadWordDocument, copyFormattedDocument, downloadBlobFile } from '../services/fileDownloader';
 import { InteractiveDocumentEditor } from './InteractiveDocumentEditor';
@@ -20,6 +20,7 @@ interface Step4ExportProps {
   onUpdateNormalizedText?: (text: string) => void;
   analysisReport?: DocumentAnalysisReport;
   originalText?: string;
+  originalFileName?: string;
   onBack?: () => void;
 }
 
@@ -32,6 +33,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
   onUpdateNormalizedText,
   analysisReport,
   originalText,
+  originalFileName,
   onBack
 }) => {
   // Mặc định hiển thị chế độ 'split' (Xem song song: Sửa trái, Xem A4 phải) chuẩn trolyvanthu
@@ -42,37 +44,67 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
   const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
 
-  // Phân tích cấu trúc tài liệu real-time
-  const structuredDoc = useMemo(() => {
+  // Tạo tên file xuất theo định dạng: "tên file gốc_mm_dd_yyyy.docx" (hoặc .doc)
+  const getExportFileName = (extension: 'docx' | 'doc') => {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const yyyy = String(now.getFullYear());
+    const baseName = (originalFileName || selectedType.name || 'VanBan')
+      .replace(/\.[^/.]+$/, '')
+      .trim()
+      .replace(/\s+/g, '_');
+    return `${baseName}_${mm}_${dd}_${yyyy}.${extension}`;
+  };
+
+  // Quản lý activeDoc trực tiếp để đồng bộ 100% thời gian thực từ Khung chỉnh sửa 3 hạng mục sang Live Preview A4
+  const [activeDoc, setActiveDoc] = useState(() => {
     return parseDocumentStructure(
       normalizedText, 
       agencySettings, 
       selectedType.category, 
       selectedType.name
     );
-  }, [normalizedText, agencySettings, selectedType.category, selectedType.name]);
+  });
 
-  // Tạo HTML A4 real-time theo nội dung đã chỉnh sửa
-  const a4PreviewHtml = useMemo(() => {
-    return generateDecree30A4Html(
+  // Khi normalizedText hoặc agencySettings thay đổi từ bên ngoài (hoặc chuyển sang bước 4)
+  React.useEffect(() => {
+    setActiveDoc(parseDocumentStructure(
       normalizedText, 
       agencySettings, 
-      selectedType.category,
+      selectedType.category, 
+      selectedType.name
+    ));
+  }, [normalizedText, agencySettings, selectedType.category, selectedType.name]);
+
+  const handleDocUpdate = (updated: any) => {
+    setActiveDoc(updated);
+    if (onUpdateNormalizedText) {
+      const newText = reconstructNormalizedText(updated);
+      onUpdateNormalizedText(newText);
+    }
+  };
+
+  // Tạo HTML A4 real-time theo nội dung đã chỉnh sửa (sử dụng activeDoc trực tiếp)
+  const a4PreviewHtml = useMemo(() => {
+    return generateDecree30A4Html(
+      activeDoc, 
+      agencySettings, 
+      selectedType.category, 
       selectedType.name
     );
-  }, [normalizedText, agencySettings, selectedType.category, selectedType.name]);
+  }, [activeDoc, agencySettings, selectedType.category, selectedType.name]);
 
   // Tải file .docx chuẩn thể thức bằng thư viện docx
   const handleDownloadDocx = async () => {
     try {
       setIsExportingDocx(true);
       setDownloadNotice('Đang khởi tạo file Word .docx chuẩn thể thức Nghị định 30...');
-      const blob = await exportToDocxBlob(structuredDoc, agencySettings);
-      const safeName = (selectedType.name || 'VanBan').replace(/\s+/g, '_');
-      const fileName = `${safeName}_ChuanHoa_ND30.docx`;
+      const blob = await exportToDocxBlob(activeDoc, agencySettings);
+      const fileName = getExportFileName('docx');
       const success = downloadBlobFile(blob, fileName);
       if (success) {
-        setDownloadNotice('✓ Đã tải tệp .docx chuẩn Microsoft Word thành công!');
+        setDownloadNotice(`✓ Đã tải tệp "${fileName}" chuẩn Microsoft Word thành công!`);
         setTimeout(() => setDownloadNotice(null), 3500);
       } else {
         handleDownloadWordDoc();
@@ -87,8 +119,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
 
   // Tải file Word (.doc) với công nghệ đa tầng giải quyết triệt để lỗi sandbox
   const handleDownloadWordDoc = async () => {
-    const safeName = (selectedType.name || 'VanBan').replace(/\s+/g, '_');
-    const fileName = `${safeName}_ChuanHoa_ND30.doc`;
+    const fileName = getExportFileName('doc');
 
     setDownloadNotice('Đang tải file Word (.doc) về máy...');
     const res = await downloadWordDocument({
@@ -98,7 +129,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
     });
 
     if (res.success) {
-      setDownloadNotice('✓ Đã tải file Word (.doc) về máy thành công!');
+      setDownloadNotice(`✓ Đã tải file Word "${fileName}" về máy thành công!`);
       setTimeout(() => setDownloadNotice(null), 4000);
     } else {
       setDownloadNotice(res.message || 'Trình duyệt đang chặn tải tự động. Vui lòng bấm "Sao chép sang Word" bên cạnh!');
@@ -138,14 +169,14 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
 
   // Danh sách các hạng mục đã được chuẩn hóa tự động
   const correctedItems = [
-    'Tách Quốc hiệu & Tiêu ngữ 2 cột chuẩn Phụ lục I NĐ 30',
-    'Chuẩn hóa Tiêu ngữ gạch ngang liền mảnh bằng độ dài dòng chữ',
-    'Xóa sạch mọi lần lặp lại Quốc hiệu trong phần nội dung',
+    'Đã tách Quốc hiệu và Tiêu ngữ thành công (không để sót vào thân bài hay cơ quan)',
+    'Đã ngăn nội dung không bị đẩy vào ô Cơ quan ban hành',
+    'Đã hỗ trợ xuống dòng cho Kính gửi và Nơi nhận (thẻ textarea chuyên dụng)',
+    'Đã thêm trường Quyền hạn ký (TM., T/M, KT., Q., KT. CHỦ TỊCH)',
     'Cố định phông chữ Times New Roman toàn văn bản',
     'Chuẩn hóa cỡ chữ nội dung 13-14pt & giãn dòng 1.5 lines',
     'Căn lề chuẩn A4: Trái 30mm, Phải 15mm, Trên 20mm, Dưới 20mm',
-    'Kính gửi & Nơi nhận mặc định tự động bắt đầu bằng dấu gạch ngang (-)',
-    'Bố cục chân trang 2 cột ẩn viền: Nơi nhận (trái) - Chữ ký (phải)'
+    'Bố cục 2 cột ẩn viền chuẩn Phụ lục I Nghị định 30/2020/NĐ-CP'
   ];
 
   return (
@@ -353,7 +384,14 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
               >
                 <ZoomOut className="w-3.5 h-3.5" />
               </button>
-              <span className="font-mono font-bold text-slate-700 min-w-[40px] text-center">{zoomLevel}%</span>
+              <button
+                type="button"
+                onClick={() => setZoomLevel(100)}
+                className="font-mono font-bold text-slate-800 hover:text-emerald-700 min-w-[45px] text-center cursor-pointer px-1 rounded hover:bg-white"
+                title="Đặt về chuẩn 100% Khổ A4 thực tế"
+              >
+                {zoomLevel}%
+              </button>
               <button
                 type="button"
                 onClick={() => setZoomLevel(Math.min(130, zoomLevel + 10))}
@@ -361,6 +399,14 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
                 title="Phóng to"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomLevel(100)}
+                className="text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded border border-emerald-300 ml-1 cursor-pointer transition-colors"
+                title="Hiển thị đúng 100% kích thước giấy A4 thực tế không co lại"
+              >
+                100% Chuẩn A4
               </button>
             </div>
           </div>
@@ -371,10 +417,10 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
       
       {/* CHẾ ĐỘ XEM SONG SONG (BỐ CỤC CHUẨN TROLYVANTHU) */}
       {viewMode === 'split' && (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
           
-          {/* CỘT TRÁI: THÔNG TIN CHỈNH SỬA 3 HẠNG MỤC (6 CỘT / 12) */}
-          <div className="xl:col-span-6 space-y-4 max-h-[920px] overflow-y-auto pr-1">
+          {/* CỘT TRÁI: THÔNG TIN CHỈNH SỬA 3 HẠNG MỤC */}
+          <div className="lg:col-span-4 xl:col-span-4 space-y-4 max-h-[960px] overflow-y-auto pr-1">
             <div className="flex items-center justify-between pb-1">
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2 font-serif">
                 <Edit3 className="w-4 h-4 text-rose-600" />
@@ -388,35 +434,39 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
               selectedType={selectedType}
               agencySettings={agencySettings}
               onUpdateText={handleTextChange}
+              onUpdateDoc={handleDocUpdate}
               analysisReport={analysisReport}
             />
           </div>
 
-          {/* CỘT PHẢI: LIVE PREVIEW BẢN IN A4 THỰC TẾ (6 CỘT / 12) */}
-          <div className="xl:col-span-6 bg-slate-200/90 rounded-2xl p-4 sm:p-6 border border-slate-300 max-h-[920px] overflow-y-auto shadow-inner flex flex-col items-center">
+          {/* CỘT PHẢI: LIVE PREVIEW BẢN IN A4 THỰC TẾ (100% kích thước chuẩn A4 không bị co lại) */}
+          <div className="lg:col-span-8 xl:col-span-8 bg-slate-200/90 rounded-2xl p-4 sm:p-6 border border-slate-300 max-h-[960px] overflow-x-auto overflow-y-auto shadow-inner flex flex-col items-center">
             
-            <div className="w-full mb-3 flex items-center justify-between text-xs text-slate-700 font-bold bg-white/80 p-2.5 rounded-xl border border-slate-300/80">
-              <span className="flex items-center gap-1.5">
+            <div className="w-full mb-3 flex items-center justify-between text-xs text-slate-700 font-bold bg-white/90 p-2.5 rounded-xl border border-slate-300/80 sticky top-0 z-10 backdrop-blur-xs">
+              <span className="flex items-center gap-1.5 text-slate-800">
                 <FileCheck className="w-4 h-4 text-emerald-600" />
-                Live Preview: Khổ A4 (Lề Trái 30mm, Phải 15mm, Trên/Dưới 20mm)
+                <span>Live Preview 100% Khổ A4 (210mm x 297mm • Lề Trái 30mm, Phải 15mm, Trên/Dưới 20mm)</span>
               </span>
 
               <div className="flex items-center gap-2">
+                <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold hidden md:inline">
+                  Tỷ lệ 100% Chuẩn thực tế
+                </span>
                 <button
                   type="button"
                   onClick={() => setViewMode('preview')}
                   className="text-blue-700 hover:text-blue-900 flex items-center gap-1 cursor-pointer font-bold"
                 >
                   <Maximize2 className="w-3.5 h-3.5" />
-                  Phóng to
+                  Toàn màn hình
                 </button>
               </div>
             </div>
 
-            {/* Khung mô phỏng tờ giấy A4 thật */}
+            {/* Khung mô phỏng các tờ giấy A4 thật (Rộng 794px ~ 210mm chuẩn 100% không co lại, có ngắt trang phụ lục) */}
             <div 
-              className="w-full max-w-[760px] bg-white transition-transform duration-200 origin-top shadow-2xl rounded-sm"
-              style={{ transform: `scale(${zoomLevel / 100})` }}
+              className="transition-transform duration-200 origin-top w-[794px] min-w-[794px] max-w-[794px] space-y-6"
+              style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
             >
               <div 
                 dangerouslySetInnerHTML={{ __html: a4PreviewHtml }}
@@ -436,6 +486,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
             selectedType={selectedType}
             agencySettings={agencySettings}
             onUpdateText={handleTextChange}
+            onUpdateDoc={handleDocUpdate}
             analysisReport={analysisReport}
           />
         </div>
@@ -466,7 +517,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
             </div>
           </div>
 
-          <div className="w-full max-w-[850px] bg-white shadow-2xl rounded-sm">
+          <div className="w-[794px] min-w-[794px] max-w-[794px] space-y-6">
             <div dangerouslySetInnerHTML={{ __html: a4PreviewHtml }} />
           </div>
         </div>

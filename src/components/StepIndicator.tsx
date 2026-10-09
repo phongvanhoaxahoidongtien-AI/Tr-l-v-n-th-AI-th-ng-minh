@@ -14,15 +14,17 @@ export const StepIndicator: React.FC<StepIndicatorProps> = ({
   maxAccessibleStep
 }) => {
   const steps = [
-    { number: 1 as StepNumber, title: '1. Loại văn bản', subtitle: '29 loại NĐ 30 & 15 loại HD 05', icon: FileType },
-    { number: 2 as StepNumber, title: '2. Gửi văn bản', subtitle: 'Tải file Word / Dán', icon: Upload },
-    { number: 3 as StepNumber, title: '3. Phân tích văn bản', subtitle: 'Báo cáo chuẩn hóa', icon: BrainCircuit },
-    { number: 4 as StepNumber, title: '4. Chỉnh sửa & Xuất file', subtitle: 'Sửa 3 hạng mục & Tải Word', icon: FileCheck }
+    { number: 1 as StepNumber, title: '1. Nhập văn bản', subtitle: 'Tải .docx hoặc chọn mẫu', icon: Upload },
+    { number: 2 as StepNumber, title: '2. Làm sạch AI', subtitle: 'Lọc markdown, emoji', icon: BrainCircuit },
+    { number: 3 as StepNumber, title: '3. Nhận diện thể loại', subtitle: 'Hành chính / Đảng / Học thuật', icon: FileType },
+    { number: 4 as StepNumber, title: '4. Đối chiếu đơn vị', subtitle: 'Rà soát điểm chưa rõ', icon: FileType },
+    { number: 5 as StepNumber, title: '5. Báo cáo thể thức', subtitle: 'Điểm 0-100 & Live Preview', icon: FileCheck },
+    { number: 6 as StepNumber, title: '6. Xuất .docx', subtitle: '3 chế độ & Tải về', icon: FileCheck }
   ];
 
   return (
     <div className="bg-white rounded-2xl p-3 md:p-4 shadow-xs border border-slate-200 mb-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 relative">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3 relative">
         {steps.map((s, idx) => {
           const isCompleted = currentStep > s.number;
           const isCurrent = currentStep === s.number;

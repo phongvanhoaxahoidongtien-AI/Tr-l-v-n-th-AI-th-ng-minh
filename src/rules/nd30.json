@@ -1,0 +1,153 @@
+{
+  "system": "hanh_chinh",
+  "legalBasis": "Nghị định số 30/2020/NĐ-CP ngày 05/3/2020 của Chính phủ về công tác văn thư",
+  "paper": {
+    "size": "A4",
+    "widthMm": 210,
+    "heightMm": 297,
+    "orientation": "portrait"
+  },
+  "marginsMm": {
+    "top": { "min": 20, "max": 25, "default": 20 },
+    "bottom": { "min": 20, "max": 25, "default": 20 },
+    "left": { "min": 30, "max": 35, "default": 30 },
+    "right": { "min": 15, "max": 20, "default": 15 }
+  },
+  "typography": {
+    "fontFamily": "Times New Roman",
+    "encoding": "Unicode TCVN 6909:2001 (NFC)",
+    "color": "#000000"
+  },
+  "elements": {
+    "quocHieu": {
+      "text": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "fontStyle": "uppercase-bold",
+      "sizePt": { "min": 12, "max": 13, "default": 12 },
+      "align": "center",
+      "position": "top-right"
+    },
+    "tieuNgu": {
+      "text": "Độc lập - Tự do - Hạnh phúc",
+      "fontStyle": "capitalize-bold",
+      "sizePt": { "min": 13, "max": 14, "default": 13 },
+      "align": "center",
+      "hasUnderline": true,
+      "underlineStyle": "solid-matching-text-length",
+      "position": "below-quochieu"
+    },
+    "coQuanChuQuan": {
+      "fontStyle": "uppercase-regular",
+      "sizePt": { "min": 12, "max": 13, "default": 12 },
+      "align": "center",
+      "position": "top-left"
+    },
+    "coQuanBanHanh": {
+      "fontStyle": "uppercase-bold",
+      "sizePt": { "min": 12, "max": 13, "default": 12 },
+      "align": "center",
+      "hasUnderline": true,
+      "underlineRatio": "1/3 đến 1/2 độ dài dòng chữ",
+      "position": "below-coquanchuquan"
+    },
+    "soKyHieu": {
+      "prefix": "Số:",
+      "fontStyle": "regular",
+      "sizePt": { "min": 13, "max": 13, "default": 13 },
+      "align": "center",
+      "position": "below-coquanbanhanh"
+    },
+    "diaDanhNgayThang": {
+      "fontStyle": "italic",
+      "sizePt": { "min": 13, "max": 14, "default": 13 },
+      "align": "center",
+      "position": "below-tieungu",
+      "ruleDayMonth": "Ngày nhỏ hơn 10 và tháng 1, 2 phải ghi thêm số 0 ở trước (ví dụ ngày 05 tháng 02 năm 2026)"
+    },
+    "tenLoaiVanBan": {
+      "fontStyle": "uppercase-bold",
+      "sizePt": { "min": 13, "max": 14, "default": 14 },
+      "align": "center",
+      "applicable": "Văn bản có tên loại (không áp dụng cho Công văn)"
+    },
+    "trichYeu": {
+      "applicableWithDocType": {
+        "fontStyle": "bold",
+        "sizePt": { "min": 13, "max": 14, "default": 13 },
+        "align": "center",
+        "hasUnderline": true,
+        "underlineRatio": "1/3 đến 1/2 độ dài dòng chữ"
+      },
+      "applicableCongVan": {
+        "prefix": "V/v",
+        "fontStyle": "italic",
+        "sizePt": { "min": 12, "max": 13, "default": 12 },
+        "align": "center",
+        "position": "below-sokyhiêu"
+      }
+    },
+    "noiDung": {
+      "fontStyle": "regular",
+      "sizePt": { "min": 13, "max": 14, "default": 13 },
+      "align": "justify",
+      "firstLineIndentCm": { "min": 1.0, "max": 1.27, "default": 1.27 },
+      "lineSpacing": { "min": 1.3, "max": 1.5, "default": 1.5 },
+      "paragraphSpacingPt": { "before": 0, "after": 6 },
+      "structure": {
+        "phan": { "fontStyle": "bold-center", "format": "PHẦN THỨ ... (Số La Mã)" },
+        "chuong": { "fontStyle": "bold-center", "format": "Chương I (Số La Mã)" },
+        "muc": { "fontStyle": "bold-center", "format": "Mục 1 (Số Ả Rập)" },
+        "tieuMuc": { "fontStyle": "bold-left", "format": "Tiểu mục 1" },
+        "dieu": { "fontStyle": "bold-left", "format": "Điều 1. (chữ Điều và số thứ tự in đậm, có dấu chấm)" },
+        "khoan": { "fontStyle": "regular", "firstLineIndent": true, "format": "1. (số Ả Rập, có dấu chấm)" },
+        "diem": { "fontStyle": "regular", "firstLineIndent": true, "format": "a) (chữ cái thường, có dấu đóng ngoặc)" },
+        "bulletLevel1": { "prefix": "- ", "indentCm": 1.27 },
+        "bulletLevel2": { "prefix": "+ ", "indentCm": 1.5 }
+      }
+    },
+    "chuKy": {
+      "quyenHan": {
+        "values": ["TM.", "KT.", "TL.", "TUQ."],
+        "fontStyle": "uppercase-bold",
+        "sizePt": { "min": 13, "max": 14, "default": 13 },
+        "align": "center"
+      },
+      "chucVu": {
+        "fontStyle": "uppercase-bold",
+        "sizePt": { "min": 13, "max": 14, "default": 13 },
+        "align": "center"
+      },
+      "chuKySo": {
+        "color": "#0000FF",
+        "transparentBackground": true
+      },
+      "hoTen": {
+        "fontStyle": "bold",
+        "sizePt": { "min": 13, "max": 14, "default": 14 },
+        "align": "center",
+        "verticalGapPt": 60
+      }
+    },
+    "noiNhan": {
+      "label": {
+        "text": "Nơi nhận:",
+        "fontStyle": "bold-italic",
+        "sizePt": 12,
+        "align": "left"
+      },
+      "items": {
+        "fontStyle": "regular",
+        "sizePt": 11,
+        "lineSpacing": 1.15,
+        "lineEnding": ";",
+        "lastLineEnding": ".",
+        "prefix": "- "
+      }
+    },
+    "soTrang": {
+      "startPage": 2,
+      "position": "top-center",
+      "fontStyle": "regular",
+      "sizePt": { "min": 13, "max": 14, "default": 13 }
+    }
+  }
+}

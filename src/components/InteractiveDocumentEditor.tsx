@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport } from '../types';
-import { parseDocumentStructure, reconstructNormalizedText, StructuredDoc } from '../services/decree30Formatter';
+import React, { useState, useEffect, useRef } from 'react';
+import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport, IllogicalSegment } from '../types';
+import { parseDocumentStructure, reconstructNormalizedText, formatBulletLines, StructuredDoc } from '../services/decree30Formatter';
+import { cleanAIText } from '../utils/cleanAIText';
+import { AGENCY_PRESETS } from '../utils/agencyPresets';
 import { 
   Building2, FileText, CheckCircle2, AlertTriangle, Sparkles, 
   HelpCircle, UserCheck, ChevronDown, ChevronUp, Edit3, Wand2,
-  Check, X, Eye, Undo2, ArrowRight
+  Check, X, Eye, Undo2, ArrowRight, Building
 } from 'lucide-react';
 
 interface InteractiveDocumentEditorProps {
@@ -12,6 +14,7 @@ interface InteractiveDocumentEditorProps {
   selectedType: DocumentTypeItem;
   agencySettings: AgencySettings;
   onUpdateText: (text: string) => void;
+  onUpdateDoc?: (doc: StructuredDoc) => void;
   analysisReport?: DocumentAnalysisReport;
 }
 
@@ -20,6 +23,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   selectedType,
   agencySettings,
   onUpdateText,
+  onUpdateDoc,
   analysisReport
 }) => {
   // Parse document into 3 structured sections
@@ -27,10 +31,23 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name)
   );
 
+  // Multiline string states cho Kính gửi và Nơi nhận để người dùng gõ phím Enter xuống dòng tự do không bị giật
+  const [kinhGuiText, setKinhGuiText] = useState(() => doc.recipientsHeader || '');
+  const [noiNhanText, setNoiNhanText] = useState(() => doc.recipients.join('\n'));
+
+  const isInternalUpdateRef = useRef(false);
+
   // Sync internal state if normalizedText changes externally
   useEffect(() => {
-    setDoc(parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name));
-  }, [normalizedText, selectedType.category, selectedType.name]);
+    if (isInternalUpdateRef.current) {
+      isInternalUpdateRef.current = false;
+      return;
+    }
+    const parsed = parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name);
+    setDoc(parsed);
+    setKinhGuiText(parsed.recipientsHeader || '');
+    setNoiNhanText(parsed.recipients.join('\n'));
+  }, [normalizedText, agencySettings, selectedType.category, selectedType.name]);
 
   // Section toggle state (accordions)
   const [openSection1, setOpenSection1] = useState(true); // Đầu văn bản
@@ -42,26 +59,36 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   
   // Interactive fix popover states
   const [activeFix, setActiveFix] = useState<{
-    type: 'spelling' | 'blank' | 'abbr' | 'long';
+    type: 'spelling' | 'blank' | 'abbr' | 'long' | 'illogical';
     target: string;
     suggestion?: string;
+    reason?: string;
+    category?: string;
     index?: number;
   } | null>(null);
 
   const [blankInputVal, setBlankInputVal] = useState('');
   const [fixNotice, setFixNotice] = useState<string | null>(null);
 
-  // Update a single field in doc and trigger parent onUpdateText
+  // Update a single field in doc and trigger parent onUpdateText & onUpdateDoc
   const updateDocField = (field: keyof StructuredDoc, value: any) => {
+    isInternalUpdateRef.current = true;
     const updated = { ...doc, [field]: value };
     setDoc(updated);
+    if (onUpdateDoc) {
+      onUpdateDoc(updated);
+    }
     const newText = reconstructNormalizedText(updated);
     onUpdateText(newText);
   };
 
   // Re-sync all fields
   const commitDocChanges = (updatedDoc: StructuredDoc) => {
+    isInternalUpdateRef.current = true;
     setDoc(updatedDoc);
+    if (onUpdateDoc) {
+      onUpdateDoc(updatedDoc);
+    }
     const newText = reconstructNormalizedText(updatedDoc);
     onUpdateText(newText);
   };
@@ -69,11 +96,54 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   // Sửa lỗi chính tả từ chỗ tô vàng
   const handleApplySpellingFix = (wrong: string, right: string) => {
     const currentFullText = normalizedText;
-    const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
+    const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
     const newText = currentFullText.replace(regex, right);
     onUpdateText(newText);
     setActiveFix(null);
     setFixNotice(`Đã sửa "${wrong}" ➔ "${right}" thành công!`);
+    setTimeout(() => setFixNotice(null), 2500);
+  };
+
+  // Xóa bỏ đoạn văn bản thiếu tính logic
+  const handleDeleteIllogicalSnippet = (target: string) => {
+    const currentFullText = normalizedText;
+    const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(?:\\r?\\n)?\\s*${escaped}\\s*(?:\\r?\\n)?`, 'gi');
+    const newText = currentFullText.replace(regex, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    onUpdateText(newText);
+    setActiveFix(null);
+    setFixNotice(`Đã xóa bỏ đoạn thiếu tính logic: "${target.substring(0, 30)}..."!`);
+    setTimeout(() => setFixNotice(null), 2500);
+  };
+
+  // Điều chỉnh / Sửa đoạn văn bản thiếu tính logic
+  const handleApplyIllogicalFix = (target: string, suggestion?: string) => {
+    if (!suggestion) return;
+    let replacement = suggestion;
+    const matchQuotes = suggestion.match(/["“](.*?)["”]/);
+    if (matchQuotes) {
+      replacement = matchQuotes[1];
+    } else if (suggestion.startsWith('Sửa thành: ')) {
+      replacement = suggestion.replace(/^Sửa thành:\s*/i, '');
+    } else if (suggestion.startsWith('Sửa thành ')) {
+      replacement = suggestion.replace(/^Sửa thành\s+/i, '');
+    } else if (suggestion.startsWith('Đổi thành ')) {
+      replacement = suggestion.replace(/^Đổi thành\s+/i, '');
+    }
+
+    if (replacement.toLowerCase().includes('xóa bỏ') || replacement.toLowerCase().includes('xóa căn cứ')) {
+      handleDeleteIllogicalSnippet(target);
+      return;
+    }
+
+    const currentFullText = normalizedText;
+    const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    const newText = currentFullText.replace(regex, replacement);
+    onUpdateText(newText);
+    setActiveFix(null);
+    setFixNotice(`Đã điều chỉnh đoạn thiếu logic thành: "${replacement.substring(0, 30)}..."!`);
     setTimeout(() => setFixNotice(null), 2500);
   };
 
@@ -167,64 +237,115 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
               </div>
             )}
 
-            {/* Lựa chọn Tiêu đề Quốc ngữ (Nhà nước NĐ 30 vs Đảng HD 05) */}
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <label className="font-bold text-slate-700 block mb-2 font-serif">
-                Tiêu đề Quốc ngữ & Thể thức quản lý (NĐ 30 / HD 05):
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <label className={`p-2.5 rounded-lg border flex items-start gap-2 cursor-pointer transition-colors ${
-                  !doc.isPartyDoc 
-                    ? 'bg-blue-50/70 border-blue-400 text-blue-950 font-bold' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}>
-                  <input
-                    type="radio"
-                    name="docMottoType"
-                    checked={!doc.isPartyDoc}
-                    onChange={() => {
-                      const updated = { 
-                        ...doc, 
-                        isPartyDoc: false, 
-                        countryHeader: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM',
-                        motto: 'Độc lập - Tự do - Hạnh phúc'
-                      };
-                      commitDocChanges(updated);
-                    }}
-                    className="mt-0.5 text-blue-600 focus:ring-blue-500"
-                  />
-                  <div>
-                    <div>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-                    <div className="text-[11px] font-normal text-slate-500">Độc lập - Tự do - Hạnh phúc (Nghị định 30/2020/NĐ-CP)</div>
-                  </div>
+            {/* BỘ CHỌN NHANH VAI TRÒ CƠ QUAN / PHÒNG BAN BAN HÀNH (ĐỒNG BỘ TIÊU ĐỀ QUỐC NGỮ) */}
+            <div className="p-3.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5 font-sans">
+                  <Building className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Chọn vai trò cơ quan / phòng ban ban hành (Tự động chọn Tiêu đề Quốc ngữ):</span>
                 </label>
-
-                <label className={`p-2.5 rounded-lg border flex items-start gap-2 cursor-pointer transition-colors ${
-                  doc.isPartyDoc 
-                    ? 'bg-red-50/70 border-red-400 text-red-950 font-bold' 
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}>
-                  <input
-                    type="radio"
-                    name="docMottoType"
-                    checked={doc.isPartyDoc}
-                    onChange={() => {
-                      const updated = { 
-                        ...doc, 
-                        isPartyDoc: true, 
-                        countryHeader: '',
-                        motto: 'ĐẢNG CỘNG SẢN VIỆT NAM'
-                      };
-                      commitDocChanges(updated);
-                    }}
-                    className="mt-0.5 text-red-600 focus:ring-red-500"
-                  />
-                  <div>
-                    <div>ĐẢNG CỘNG SẢN VIỆT NAM</div>
-                    <div className="text-[11px] font-normal text-slate-500">Tiêu đề Đảng (Hướng dẫn 05-HD/VPTW)</div>
-                  </div>
-                </label>
+                <span className="text-[10px] text-blue-800 bg-blue-100 px-2 py-0.5 rounded font-semibold font-sans">
+                  Đồng bộ chuẩn 100%
+                </span>
               </div>
+              <select
+                onChange={(e) => {
+                  const presetId = e.target.value;
+                  if (!presetId) return;
+                  const preset = AGENCY_PRESETS.find(p => p.id === presetId);
+                  if (preset) {
+                    const isParty = preset.roleBlock === 'dang';
+                    const updated = {
+                      ...doc,
+                      agencyName: preset.agencyName,
+                      parentAgency: '', // Tuyệt đối không tự ý thêm cấp trên
+                      isPartyDoc: isParty,
+                      countryHeader: preset.countryHeader,
+                      motto: preset.motto
+                    };
+                    commitDocChanges(updated);
+                    setFixNotice(`Đã chọn ban hành với vai trò: "${preset.name}"!`);
+                    setTimeout(() => setFixNotice(null), 2500);
+                  }
+                }}
+                defaultValue=""
+                className="w-full p-2.5 bg-white rounded-lg border border-blue-300 text-xs font-sans text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+              >
+                <option value="" disabled>-- Bấm để chọn cơ quan / phòng ban ban hành văn bản --</option>
+                <optgroup label="🏛️ Khối UBND & Bộ phận chuyên môn (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM)">
+                  {AGENCY_PRESETS.filter(p => p.group === 'ubnd').map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.icon} {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="☭ Khối Đảng ủy (Tiêu đề Đảng: ĐẢNG CỘNG SẢN VIỆT NAM)">
+                  {AGENCY_PRESETS.filter(p => p.group === 'dang').map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.icon} {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="🤝 Khối MTTQ & Đoàn thể (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM)">
+                  {AGENCY_PRESETS.filter(p => p.group === 'mttq_doanthe').map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.icon} {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <p className="text-[10px] text-slate-500 italic">
+                Khi chọn cơ quan ban hành, hệ thống sẽ tự động gán Tiêu đề Quốc ngữ tương ứng và để trống cơ quan cấp trên (người dùng tự nhập nếu có).
+              </p>
+            </div>
+
+            {/* Hiển thị Tiêu đề Quốc ngữ / Tiêu đề Đảng cố định theo Cài đặt khối cơ quan */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-slate-800 text-xs font-serif flex items-center gap-1.5">
+                  <span>Tiêu đề Quốc ngữ / Thể thức (Cố định theo Cài đặt mặc định):</span>
+                </label>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                  {agencySettings.roleBlock === 'dang' 
+                    ? 'Khối Đảng ủy (HD 05)' 
+                    : agencySettings.roleBlock === 'mttq_doanthe' 
+                    ? 'Khối MTTQ & Đoàn thể (NĐ 30)' 
+                    : 'Khối UBND / Chính quyền (NĐ 30)'}
+                </span>
+              </div>
+
+              {agencySettings.roleBlock === 'dang' ? (
+                <div className="p-3 rounded-lg border border-amber-300 bg-amber-50/70 text-amber-950 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-sm text-amber-900 tracking-wide font-serif">
+                      ĐẢNG CỘNG SẢN VIỆT NAM
+                    </div>
+                    <div className="text-[11px] text-amber-700 mt-0.5">
+                      ✓ Chuẩn Hướng dẫn 05-HD/VPTW • Tiêu đề Đảng
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md border border-amber-300">
+                    Mặc định theo Cài đặt
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg border border-blue-300 bg-blue-50/70 text-blue-950 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-xs uppercase text-blue-950 font-serif">
+                      CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+                    </div>
+                    <div className="font-bold text-xs text-blue-900 mt-0.5 font-serif">
+                      Độc lập - Tự do - Hạnh phúc
+                    </div>
+                    <div className="text-[11px] text-blue-700 mt-0.5">
+                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Áp dụng cho khối {agencySettings.roleBlock === 'mttq_doanthe' ? 'MTTQ & Đoàn thể' : 'UBND'}
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300">
+                    Mặc định theo Cài đặt
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Grid 2 cột cho Cơ quan và Địa danh / Số ký hiệu */}
@@ -234,20 +355,23 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
               <div className="space-y-3">
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    Cơ quan cấp trên (nếu có):
+                    Cơ quan cấp trên (tùy chọn - để trống nếu không có):
                   </label>
                   <input
                     type="text"
                     value={doc.parentAgency}
                     onChange={(e) => updateDocField('parentAgency', e.target.value)}
-                    placeholder="Ví dụ: ỦY BAN NHÂN DÂN THỊ XÃ BỈM SƠN hoặc ĐẢNG BỘ PHƯỜNG..."
+                    placeholder="Mặc định để trống (Không tự ý thêm cấp trên, tự nhập nếu có)..."
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 mt-0.5 italic">
+                    Hệ thống không tự ý thêm cấp trên; chỉ hiển thị nếu người dùng nhập.
+                  </p>
                 </div>
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    Cơ quan ban hành văn bản (*):
+                    Cơ quan ban hành văn bản (*) (Mặc định như Cài đặt):
                   </label>
                   <input
                     type="text"
@@ -323,35 +447,55 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
             </div>
 
-            {/* Ô nhập Kính gửi (YÊU CẦU 6: Mặc định Kính gửi, không cần viết chữ Kính gửi, các dòng tự động bắt đầu bằng -) */}
+            {/* Ô nhập Kính gửi (HỖ TRỢ NHIỀU DÒNG VỚI \n, THẺ TEXTAREA) */}
             <div className="pt-2 border-t border-slate-100">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
                 <label className="font-bold text-slate-700 text-xs">
-                  Kính gửi: <span className="font-normal text-slate-500">(Đã mặc định có sẵn "Kính gửi:", không cần gõ chữ "Kính gửi:")</span>
+                  Kính gửi (hỗ trợ nhiều dòng, xuống dòng bằng phím Enter):
                 </label>
-                <span className="text-[11px] text-blue-700 font-semibold">
-                  Mỗi dòng xuống dòng tự động bắt đầu bằng dấu gạch ngang (-)
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-blue-700 font-medium">
+                    (Mặc định đã có nhãn "Kính gửi:")
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const formatted = formatBulletLines(kinhGuiText).join('\n');
+                      setKinhGuiText(formatted);
+                      updateDocField('recipientsHeader', formatted);
+                    }}
+                    className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 cursor-pointer"
+                  >
+                    Thêm (-) đầu dòng
+                  </button>
+                </div>
               </div>
               <textarea
                 rows={3}
-                value={doc.recipientsHeader}
+                value={kinhGuiText}
                 onChange={(e) => {
-                  const raw = e.target.value;
-                  const stripped = raw.replace(/^Kính gửi:?\s*/i, '');
-                  const lines = stripped.split('\n');
-                  const formatted = lines.map(line => {
-                    const trimmed = line.trim();
-                    if (!trimmed) return '';
-                    return trimmed.startsWith('-') ? trimmed : `- ${trimmed}`;
-                  }).join('\n');
-                  updateDocField('recipientsHeader', formatted);
+                  const val = e.target.value.normalize('NFC');
+                  setKinhGuiText(val);
+                  updateDocField('recipientsHeader', val);
+                }}
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
+                  if (!text) return;
+                  e.preventDefault();
+                  const cleaned = cleanAIText(text, { preserveTables: true, stripNationalHeader: false });
+                  const target = e.currentTarget;
+                  const start = target.selectionStart ?? 0;
+                  const end = target.selectionEnd ?? 0;
+                  const val = target.value;
+                  const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
+                  setKinhGuiText(next);
+                  updateDocField('recipientsHeader', next);
                 }}
                 placeholder="- Các ban ngành, đoàn thể phường;&#10;- Ban cán sự các tổ dân phố trên địa bàn."
                 className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
               <span className="text-[11px] text-slate-500 italic mt-0.5 block">
-                Áp dụng cho Công văn, Tờ trình, Báo cáo, Giấy mời. Đứng trước phần nội dung văn bản.
+                Cho phép xuống dòng tùy ý bằng \n. Áp dụng cho Công văn, Tờ trình, Báo cáo, Giấy mời.
               </span>
             </div>
 
@@ -452,9 +596,70 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                           <Wand2 className="w-4 h-4 text-amber-700" />
                           {activeFix.type === 'spelling' && 'Khắc phục lỗi chính tả / văn phong'}
                           {activeFix.type === 'blank' && 'Điền thông tin vào chỗ trống'}
+                          {activeFix.type === 'illogical' && 'Rà soát văn bản thiếu tính logic'}
                           {activeFix.type === 'abbr' && 'Bổ sung tên đầy đủ cho từ viết tắt'}
                           {activeFix.type === 'long' && 'Gợi ý tách câu dài'}
                         </div>
+
+                        {/* Rà soát thiếu tính logic */}
+                        {activeFix.type === 'illogical' && (
+                          <div className="mt-2 text-xs text-slate-800 space-y-2">
+                            <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-300 text-amber-950">
+                              <div className="font-bold text-amber-900 flex items-center gap-1.5 mb-1">
+                                <span>⚠️ Phát hiện đoạn thiếu tính logic / không phù hợp thể thức:</span>
+                              </div>
+                              <p className="leading-relaxed font-sans">{activeFix.reason}</p>
+                            </div>
+
+                            <div className="text-xs">
+                              <span className="text-slate-600">Đoạn văn bị cảnh báo: </span>
+                              <span className="line-through text-rose-700 font-bold bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
+                                {activeFix.target}
+                              </span>
+                            </div>
+
+                            {activeFix.suggestion && (
+                              <div className="text-xs">
+                                <span className="text-slate-600">Gợi ý điều chỉnh: </span>
+                                <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 font-serif">
+                                  {activeFix.suggestion}
+                                </strong>
+                              </div>
+                            )}
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-amber-300">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteIllogicalSnippet(activeFix.target)}
+                                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
+                                title="Xóa bỏ hoàn toàn đoạn văn bản thiếu tính logic này khỏi văn bản"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Xóa bỏ đoạn này ngay</span>
+                              </button>
+
+                              {activeFix.suggestion && !activeFix.suggestion.toLowerCase().includes('xóa bỏ') && !activeFix.suggestion.toLowerCase().includes('xóa căn cứ') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleApplyIllogicalFix(activeFix.target, activeFix.suggestion)}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
+                                  title="Điều chỉnh đoạn này theo gợi ý chuẩn mực"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Điều chỉnh / Sửa logic</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => setActiveFix(null)}
+                                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
+                              >
+                                Bỏ qua
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Sửa chính tả */}
                         {activeFix.type === 'spelling' && activeFix.suggestion && (
@@ -583,11 +788,21 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         {renderParagraphWithHighlights(
                           trimmed,
                           highlightKeywords,
+                          doc.illogicalFindings || [],
                           (wrong, right) => {
                             setActiveFix({ type: 'spelling', target: wrong, suggestion: right });
                           },
                           (blankStr) => {
                             setActiveFix({ type: 'blank', target: blankStr });
+                          },
+                          (illogicalSeg) => {
+                            setActiveFix({
+                              type: 'illogical',
+                              target: illogicalSeg.target,
+                              suggestion: illogicalSeg.suggestion,
+                              reason: illogicalSeg.reason,
+                              category: illogicalSeg.category
+                            });
                           }
                         )}
                       </p>
@@ -602,13 +817,186 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 <textarea
                   rows={18}
                   value={normalizedText}
-                  onChange={(e) => onUpdateText(e.target.value)}
+                  onChange={(e) => onUpdateText(e.target.value.normalize('NFC'))}
+                  onPaste={(e) => {
+                    const plain = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text') || '';
+                    const html = e.clipboardData.getData('text/html') || '';
+                    if (plain || html) {
+                      e.preventDefault();
+                      const cleaned = cleanAIText(plain, { preserveTables: true, stripNationalHeader: false, htmlClipboard: html });
+                      const target = e.currentTarget;
+                      const start = target.selectionStart ?? 0;
+                      const end = target.selectionEnd ?? 0;
+                      const val = target.value;
+                      const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
+                      onUpdateText(next);
+                      requestAnimationFrame(() => {
+                        target.setSelectionRange(start + cleaned.length, start + cleaned.length);
+                      });
+                    }
+                  }}
                   className="w-full p-4 rounded-xl border border-slate-300 font-serif text-[15px] leading-relaxed text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 shadow-inner"
                   style={{ fontFamily: "'Times New Roman', Times, 'Tinos', serif" }}
                   placeholder="Soạn thảo hoặc chỉnh sửa nội dung văn bản..."
                 />
               </div>
             )}
+
+            {/* THÔNG TIN & CHỈNH SỬA PHỤ LỤC KÈM THEO (TỰ ĐỘNG NGẮT SANG TRANG A4 MỚI) */}
+            <div className="mt-4 p-4 bg-emerald-50/90 rounded-xl border border-emerald-300 space-y-3 font-sans animate-fade-in shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📄</span>
+                  <h5 className="font-bold text-emerald-950 text-xs uppercase">
+                    Phụ lục kèm theo ({doc.appendices?.length || 0} phụ lục - Tự động ngắt sang trang A4 thứ 2 riêng biệt)
+                  </h5>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300">
+                    ✓ Có ngắt trang chuẩn A4
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextNum = (doc.appendices?.length || 0) + 1;
+                      const newApp = {
+                        id: `appendix_${Date.now()}`,
+                        header: `PHỤ LỤC ${nextNum}`,
+                        title: 'SỐ LƯỢNG CÁC ĐƠN VỊ THAM GIA LỄ PHÁT ĐỘNG',
+                        referenceNote: `(Ban hành kèm theo Công văn số ${doc.docCode ? doc.docCode.replace(/^Số:\s*/i, '') : '/UBND-VHXH'} ngày tháng 10 năm 2026 của ${doc.agencyName || 'UBND phường Đông Tiến'})`,
+                        paragraphs: [
+                          '| STT | Đơn vị tham gia | Số lượng người | Ghi chú |',
+                          '|:---:|:---|:---:|:---|',
+                          '| 1 | Các ban ngành đoàn thể phường | 35 | Đại biểu |',
+                          '| 2 | Nhân dân các tổ dân phố | 120 | Lực lượng tham gia |'
+                        ]
+                      };
+                      const updatedApps = [...(doc.appendices || []), newApp];
+                      updateDocField('appendices', updatedApps);
+                      setFixNotice(`Đã thêm PHỤ LỤC ${nextNum} ngắt trang A4 mới!`);
+                      setTimeout(() => setFixNotice(null), 2500);
+                    }}
+                    className="text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-2xs flex items-center gap-1"
+                  >
+                    <span>+</span>
+                    <span>Thêm phụ lục</span>
+                  </button>
+                </div>
+              </div>
+
+              {doc.appendices && doc.appendices.length > 0 ? (
+                <div className="space-y-3">
+                  {doc.appendices.map((app, idx) => (
+                    <div key={app.id || idx} className="p-3 bg-white rounded-xl border border-emerald-300 text-xs space-y-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <span className="font-bold text-emerald-800 text-xs flex items-center gap-1.5 font-sans">
+                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-mono">
+                            {idx + 1}
+                          </span>
+                          <span>Phụ lục {idx + 1}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updatedApps = doc.appendices.filter((_, i) => i !== idx);
+                            updateDocField('appendices', updatedApps);
+                            setFixNotice(`Đã xóa phụ lục ${idx + 1}!`);
+                            setTimeout(() => setFixNotice(null), 2500);
+                          }}
+                          className="text-[10px] text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                        >
+                          Xóa phụ lục này
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-sans">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
+                            Tiêu đề phụ lục (Dòng 1):
+                          </label>
+                          <input
+                            type="text"
+                            value={app.header}
+                            onChange={(e) => {
+                              const updated = [...doc.appendices];
+                              updated[idx] = { ...updated[idx], header: e.target.value.toUpperCase() };
+                              updateDocField('appendices', updated);
+                            }}
+                            placeholder="PHỤ LỤC 1..."
+                            className="w-full p-2 rounded-lg border border-slate-300 text-xs font-bold uppercase text-slate-900 font-serif"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
+                            Tên phụ lục (Dòng 2):
+                          </label>
+                          <input
+                            type="text"
+                            value={app.title}
+                            onChange={(e) => {
+                              const updated = [...doc.appendices];
+                              updated[idx] = { ...updated[idx], title: e.target.value };
+                              updateDocField('appendices', updated);
+                            }}
+                            placeholder="- SỐ LƯỢNG CÁC ĐƠN VỊ THAM GIA LỄ PHÁT ĐỘNG..."
+                            className="w-full p-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-900 font-serif"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="font-sans">
+                        <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
+                          Ghi chú ban hành kèm theo (Dòng 3):
+                        </label>
+                        <input
+                          type="text"
+                          value={app.referenceNote}
+                          onChange={(e) => {
+                            const updated = [...doc.appendices];
+                            updated[idx] = { ...updated[idx], referenceNote: e.target.value };
+                            updateDocField('appendices', updated);
+                          }}
+                          placeholder="(Ban hành kèm theo Công văn số .../UBND-VHXH ngày tháng 10 năm 2026 của UBND phường Đông Tiến)..."
+                          className="w-full p-2 rounded-lg border border-slate-300 text-xs italic text-slate-700 font-serif"
+                        />
+                      </div>
+
+                      <div className="font-sans">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <label className="text-[11px] font-bold text-slate-700">
+                            Nội dung chi tiết & Bảng biểu (Markdown hoặc văn bản):
+                          </label>
+                          <span className="text-[10px] text-slate-500 italic">
+                            Hỗ trợ bảng dạng | Cột 1 | Cột 2 |
+                          </span>
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={app.paragraphs.join('\n')}
+                          onChange={(e) => {
+                            const updated = [...doc.appendices];
+                            updated[idx] = { ...updated[idx], paragraphs: e.target.value.split('\n') };
+                            updateDocField('appendices', updated);
+                          }}
+                          placeholder="| STT | Tên đơn vị | Số lượng |..."
+                          className="w-full p-2 rounded-lg border border-slate-300 text-xs font-mono text-slate-900"
+                        />
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-100 text-[11px] text-emerald-800 font-medium flex items-center justify-between">
+                        <span>✓ Tự động ngắt sang trang thứ 2 trong Live Preview và file Word</span>
+                        <span className="text-slate-500 text-[10px]">{app.paragraphs.length} dòng</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-white/80 rounded-lg border border-dashed border-emerald-300 text-center text-xs text-slate-600">
+                  <p>Chưa có phụ lục kèm theo. Đồng chí có thể bấm nút <strong>"+ Thêm phụ lục"</strong> ở trên nếu văn bản có bảng biểu số liệu riêng cần ngắt trang A4.</p>
+                </div>
+              )}
+            </div>
 
           </div>
         )}
@@ -649,78 +1037,249 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
           <div className="p-4 md:p-6 space-y-4 bg-white animate-fade-in text-xs">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
-              {/* Cột 1: Nơi nhận (YÊU CẦU 6: Mặc định Nơi nhận rồi, không cần gõ chữ Nơi nhận, các dòng tự động bắt đầu bằng -) */}
+              {/* Cột 1: Nơi nhận (HỖ TRỢ NHIỀU DÒNG VỚI \n, THẺ TEXTAREA) */}
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
                   <label className="font-bold text-slate-700 text-xs">
-                    Nơi nhận: <span className="font-normal text-slate-500">(Đã mặc định "Nơi nhận:", không cần gõ chữ "Nơi nhận:")</span>
+                    Nơi nhận (hỗ trợ nhiều dòng, xuống dòng bằng phím Enter):
                   </label>
-                  <span className="text-[11px] text-emerald-700 font-semibold">
-                    Tự động thêm dấu gạch ngang (-) đầu mỗi dòng
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-emerald-700 font-medium">
+                      (Mặc định đã có nhãn "Nơi nhận:")
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const formatted = formatBulletLines(noiNhanText).join('\n');
+                        setNoiNhanText(formatted);
+                        updateDocField('recipients', formatted.split('\n'));
+                      }}
+                      className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded hover:bg-emerald-100 cursor-pointer"
+                    >
+                      Thêm (-) đầu dòng
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   rows={6}
-                  value={doc.recipients.map(r => r.startsWith('-') ? r : `- ${r}`).join('\n')}
+                  value={noiNhanText}
                   onChange={(e) => {
-                    const raw = e.target.value;
-                    const stripped = raw.replace(/^Nơi nhận:?\s*/i, '');
-                    const list = stripped.split('\n')
-                      .map(l => l.trim())
-                      .filter(Boolean)
-                      .map(l => l.startsWith('-') ? l : `- ${l}`);
-                    updateDocField('recipients', list);
+                    const val = e.target.value.normalize('NFC');
+                    setNoiNhanText(val);
+                    const lines = val.split('\n');
+                    updateDocField('recipients', lines);
+                  }}
+                  onPaste={(e) => {
+                    const text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
+                    if (!text) return;
+                    e.preventDefault();
+                    const cleaned = cleanAIText(text, { preserveTables: true, stripNationalHeader: false });
+                    const target = e.currentTarget;
+                    const start = target.selectionStart ?? 0;
+                    const end = target.selectionEnd ?? 0;
+                    const val = target.value;
+                    const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
+                    setNoiNhanText(next);
+                    updateDocField('recipients', next.split('\n'));
                   }}
                   placeholder="- Như trên;&#10;- Chủ tịch, các PCT UBND;&#10;- Lưu: VT, VP."
                   className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
                 <span className="text-[11px] text-slate-500 italic mt-0.5 block">
-                  Trình bày chữ in thường cỡ 11, kết thúc các dòng bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.).
+                  Trình bày chữ in thường cỡ 11, các dòng kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.).
                 </span>
               </div>
 
-              {/* Cột 2: Quyền hạn, chức vụ & chữ ký */}
+              {/* Cột 2: Quyền hạn ký, chức vụ & chữ ký (YÊU CẦU 4: Quyền hạn ký TM., T/M, KT., Q. với tùy chọn KT. CHỦ TỊCH) */}
               <div className="space-y-3">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Quyền hạn ký (TM., T/M, KT., Q.):
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block text-xs">
+                      Quyền hạn ký (TM., T/M, KT., Q., KT. CHỦ TỊCH):
+                    </label>
+                    <span className="text-[11px] text-emerald-700 font-semibold">
+                      Chuẩn NĐ 30 & HD 05
+                    </span>
+                  </div>
+
+                  {/* Nút chọn nhanh Quyền hạn ký */}
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
+                        updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
+                        if (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH') {
+                          updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
+                        (doc.quyenHanKy === 'KT. CHỦ TỊCH' || doc.signerAuthority === 'KT. CHỦ TỊCH')
+                          ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400 ring-offset-1'
+                          : 'bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100'
+                      }`}
+                    >
+                      ★ KT. CHỦ TỊCH (Phó Chủ tịch)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocField('quyenHanKy', 'TM.');
+                        updateDocField('signerAuthority', doc.agencyName ? `TM. ${doc.agencyName}` : 'TM. ỦY BAN NHÂN DÂN');
+                        if (doc.signerTitle === 'PHÓ CHỦ TỊCH') {
+                          updateDocField('signerTitle', 'CHỦ TỊCH');
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
+                        doc.quyenHanKy === 'TM.'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      TM. (Thay mặt)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocField('quyenHanKy', 'T/M');
+                        updateDocField('signerAuthority', 'T/M CHI BỘ');
+                        updateDocField('signerTitle', 'BÍ THƯ');
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
+                        doc.quyenHanKy === 'T/M'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      T/M (Văn bản Đảng)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocField('quyenHanKy', 'KT.');
+                        updateDocField('signerAuthority', 'KT.');
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
+                        doc.quyenHanKy === 'KT.'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      KT. (Ký thay)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocField('quyenHanKy', 'Q.');
+                        updateDocField('signerAuthority', 'Q. CHỦ TỊCH');
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
+                        doc.quyenHanKy === 'Q.'
+                          ? 'bg-teal-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      Q. (Quyền)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateDocField('quyenHanKy', '');
+                        updateDocField('signerAuthority', '');
+                      }}
+                      className={`px-2 py-1 rounded-md text-xs cursor-pointer transition-all ${
+                        !doc.quyenHanKy && !doc.signerAuthority
+                          ? 'bg-slate-700 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      Để trống
+                    </button>
+                  </div>
+
                   <input
                     type="text"
-                    value={doc.signerAuthority}
-                    onChange={(e) => updateDocField('signerAuthority', e.target.value.toUpperCase())}
-                    placeholder="Ví dụ: TM. ỦY BAN NHÂN DÂN hoặc T/M CHI BỘ"
+                    value={doc.quyenHanKy || doc.signerAuthority}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      updateDocField('quyenHanKy', val);
+                      updateDocField('signerAuthority', val);
+                    }}
+                    placeholder="Ví dụ: KT. CHỦ TỊCH hoặc TM. ỦY BAN NHÂN DÂN"
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Chức vụ người ký (*):
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block text-xs">
+                      Chức vụ người ký (*):
+                    </label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateDocField('signerTitle', 'CHỦ TỊCH');
+                          if (doc.quyenHanKy === 'KT. CHỦ TỊCH') {
+                            updateDocField('quyenHanKy', 'TM.');
+                            updateDocField('signerAuthority', doc.agencyName ? `TM. ${doc.agencyName}` : 'TM. ỦY BAN NHÂN DÂN');
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          doc.signerTitle === 'CHỦ TỊCH' ? 'bg-blue-100 text-blue-800 border border-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        CHỦ TỊCH
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                          updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
+                          updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
+                        }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
+                          doc.signerTitle === 'PHÓ CHỦ TỊCH' ? 'bg-rose-100 text-rose-800 border border-rose-300 font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        PHÓ CHỦ TỊCH
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="text"
                     value={doc.signerTitle}
-                    onChange={(e) => updateDocField('signerTitle', e.target.value.toUpperCase())}
-                    placeholder="Ví dụ: CHỦ TỊCH hoặc BÍ THƯ"
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      updateDocField('signerTitle', val);
+                      if (/PHÓ/i.test(val) && doc.quyenHanKy !== 'KT. CHỦ TỊCH') {
+                        updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
+                        updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
+                      }
+                    }}
+                    placeholder="Ví dụ: CHỦ TỊCH hoặc PHÓ CHỦ TỊCH"
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
+                  <label className="font-bold text-slate-700 block mb-1 text-xs">
                     Họ và tên người ký (*):
                   </label>
                   <input
                     type="text"
                     value={doc.signerName}
                     onChange={(e) => updateDocField('signerName', e.target.value)}
-                    placeholder="Mặc định: Lê Thế Điệp"
+                    placeholder="Ví dụ: Họ và tên người ký trong văn bản"
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
-
             </div>
           </div>
         )}
@@ -731,26 +1290,65 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 };
 
 /**
- * Hàm phân tích và render đoạn văn có gắn các vị trí tô vàng (chính tả, chỗ trống)
+ * Hàm phân tích và render đoạn văn có gắn các vị trí tô vàng (chính tả, chỗ trống, thiếu tính logic)
  */
 function renderParagraphWithHighlights(
   text: string,
   keywords: Array<{ pattern: RegExp; wrong: string; right: string }>,
+  illogicalFindings: IllogicalSegment[],
   onSpellingClick: (wrong: string, right: string) => void,
-  onBlankClick: (blank: string) => void
+  onBlankClick: (blank: string) => void,
+  onIllogicalClick: (segment: IllogicalSegment) => void
 ) {
-  // Regex tìm chỗ trống (……, ...., ____, [...])
-  const combinedRegex = /(\b(?:sử lý|bổ xung|xắp xếp|qui định|qui chế|bố chí|chủ chí|xơ xuất|sơ xuất|xem sét|ba phần tư)\b|…{2,}|\.{3,}|_{3,}|\[\s*\.{3,}\s*\])/gi;
+  // Lọc các illogical findings xuất hiện trong đoạn văn này
+  const matchedIllogicals = illogicalFindings.filter(f => f.target && text.includes(f.target));
 
+  // Tạo mảng regex tổng hợp
+  const regexTokens: string[] = [];
+
+  // 1. Illogical snippets
+  matchedIllogicals.forEach(f => {
+    regexTokens.push(f.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  });
+
+  // 2. Spelling mistakes
+  keywords.forEach(k => {
+    regexTokens.push(`\\b${k.wrong}\\b`);
+  });
+
+  // 3. Blanks
+  regexTokens.push('…{2,}');
+  regexTokens.push('\\.{3,}');
+  regexTokens.push('_{3,}');
+  regexTokens.push('\\[\\s*\\.{3,}\\s*\\]');
+
+  const combinedRegex = new RegExp(`(${regexTokens.join('|')})`, 'gi');
   const parts = text.split(combinedRegex);
+
   return parts.map((part, i) => {
     if (!part) return null;
 
-    // Kiểm tra xem có phải chỗ trống
+    // A. Kiểm tra illogical segment
+    const illMatch = matchedIllogicals.find(f => f.target.toLowerCase() === part.toLowerCase());
+    if (illMatch) {
+      return (
+        <span
+          key={`ill_${i}`}
+          onClick={() => onIllogicalClick(illMatch)}
+          title={`⚠️ Thiếu tính logic: ${illMatch.reason}. Bấm để xóa hoặc điều chỉnh!`}
+          className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1.5 py-0.5 rounded border border-yellow-500 font-bold cursor-pointer transition-all inline-flex items-center gap-1 mx-0.5 shadow-2xs hover:scale-105"
+        >
+          <span className="text-amber-800 font-black">⚠️</span>
+          <span>{part}</span>
+        </span>
+      );
+    }
+
+    // B. Kiểm tra chỗ trống
     if (/^(\.{3,}|…{2,}|_{3,}|\[\s*\.{3,}\s*\])/.test(part)) {
       return (
         <span
-          key={i}
+          key={`blank_${i}`}
           onClick={() => onBlankClick(part)}
           title="Bấm vào để điền thông tin vào chỗ trống này"
           className="bg-amber-200 hover:bg-amber-300 text-amber-950 px-1.5 py-0.5 rounded border border-amber-400 font-bold cursor-pointer transition-colors animate-pulse inline-flex items-center gap-0.5 mx-0.5"
@@ -761,12 +1359,12 @@ function renderParagraphWithHighlights(
       );
     }
 
-    // Kiểm tra xem có phải lỗi chính tả
+    // C. Kiểm tra lỗi chính tả
     const matchedRule = keywords.find(k => k.pattern.test(part));
     if (matchedRule) {
       return (
         <span
-          key={i}
+          key={`spell_${i}`}
           onClick={() => onSpellingClick(part, matchedRule.right)}
           title={`Gợi ý sửa chính tả: Bấm để sửa thành "${matchedRule.right}"`}
           className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1 py-0.5 rounded border border-yellow-400 font-bold cursor-pointer transition-colors inline-flex items-center gap-0.5 mx-0.5"

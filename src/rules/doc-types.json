@@ -1,0 +1,86 @@
+{
+  "administrative": {
+    "systemName": "Văn bản hành chính (Nghị định 30/2020/NĐ-CP)",
+    "common": [
+      { "id": "cong-van", "name": "Công văn", "abbr": "CV", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "trichYeu", "kinhGui", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "bao-cao", "name": "Báo cáo", "abbr": "BC", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "ke-hoach", "name": "Kế hoạch", "abbr": "KH", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "quyet-dinh", "name": "Quyết định (cá biệt)", "abbr": "QĐ", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "canCu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "thong-bao", "name": "Thông báo", "abbr": "TB", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "to-trinh", "name": "Tờ trình", "abbr": "TTr", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "kinhGui", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "bien-ban", "name": "Biên bản", "abbr": "BB", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy"] },
+      { "id": "giay-moi", "name": "Giấy mời", "abbr": "GM", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "kinhGui", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "chuong-trinh", "name": "Chương trình", "abbr": "CTr", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "huong-dan", "name": "Hướng dẫn", "abbr": "HD", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "chi-thi", "name": "Chỉ thị", "abbr": "CT", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "quy-che", "name": "Quy chế", "abbr": "QC", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "quy-dinh", "name": "Quy định", "abbr": "QyĐ", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "giay-uy-quyen", "name": "Giấy ủy quyền", "abbr": "GUQ", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "noiDung", "chuKy"] },
+      { "id": "giay-gioi-thieu", "name": "Giấy giới thiệu", "abbr": "GGT", "required": ["quocHieu", "tieuNgu", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "noiDung", "chuKy"] }
+    ],
+    "lessCommon": [
+      { "id": "giay-nghi-phep", "name": "Giấy nghỉ phép", "abbr": "GNP" },
+      { "id": "nghi-quyet", "name": "Nghị quyết (cá biệt)", "abbr": "NQ" },
+      { "id": "de-an", "name": "Đề án", "abbr": "ĐA" },
+      { "id": "phuong-an", "name": "Phương án", "abbr": "PA" },
+      { "id": "du-an", "name": "Dự án", "abbr": "DA" },
+      { "id": "hop-dong", "name": "Hợp đồng", "abbr": "HĐ" },
+      { "id": "thong-cao", "name": "Thông cáo", "abbr": "TC" },
+      { "id": "cong-dien", "name": "Công điện", "abbr": "CĐ" },
+      { "id": "phieu-gui", "name": "Phiếu gửi", "abbr": "PG" },
+      { "id": "phieu-chuyen", "name": "Phiếu chuyển", "abbr": "PC" },
+      { "id": "phieu-bao", "name": "Phiếu báo", "abbr": "PB" },
+      { "id": "ban-ghi-nho", "name": "Bản ghi nhớ", "abbr": "BGN" },
+      { "id": "ban-thoa-thuan", "name": "Bản thỏa thuận", "abbr": "BTT" },
+      { "id": "thu-cong", "name": "Thư công", "abbr": "TCg" }
+    ]
+  },
+  "party": {
+    "systemName": "Văn bản của Đảng (Hướng dẫn 05-HD/VPTW 2026 - Quy định 399-QĐ/TW)",
+    "common": [
+      { "id": "dang-cong-van", "name": "Công văn", "abbr": "CV", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "trichYeu", "kinhGui", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-bao-cao", "name": "Báo cáo", "abbr": "BC", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-ke-hoach", "name": "Kế hoạch", "abbr": "KH", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-thong-bao", "name": "Thông báo", "abbr": "TB", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-bien-ban", "name": "Biên bản", "abbr": "BB", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy"] },
+      { "id": "dang-chuong-trinh", "name": "Chương trình", "abbr": "CTr", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-nghi-quyet", "name": "Nghị quyết", "abbr": "NQ", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-quyet-dinh", "name": "Quyết định", "abbr": "QĐ", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "canCu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-ket-luan", "name": "Kết luận", "abbr": "KL", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-to-trinh", "name": "Tờ trình", "abbr": "TTr", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "kinhTrinh", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-huong-dan", "name": "Hướng dẫn", "abbr": "HD", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-quy-che", "name": "Quy chế", "abbr": "QC", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-quy-dinh", "name": "Quy định", "abbr": "QyĐ", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-chi-thi", "name": "Chỉ thị", "abbr": "CT", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] },
+      { "id": "dang-de-an", "name": "Đề án", "abbr": "ĐA", "required": ["tieuDeDang", "coQuanBanHanh", "soKyHieu", "diaDanhNgayThang", "tenLoai", "trichYeu", "noiDung", "chuKy", "noiNhan"] }
+    ],
+    "lessCommon": [
+      { "id": "dang-thong-tri", "name": "Thông tri", "abbr": "TT" },
+      { "id": "dang-phuong-an", "name": "Phương án", "abbr": "PA" },
+      { "id": "dang-du-an", "name": "Dự án", "abbr": "DA" },
+      { "id": "dang-quy-hoach", "name": "Quy hoạch", "abbr": "QH" },
+      { "id": "dang-chien-luoc", "name": "Chiến lược", "abbr": "CL" },
+      { "id": "dang-thong-cao", "name": "Thông cáo", "abbr": "TC" },
+      { "id": "dang-tuyen-bo", "name": "Tuyên bố", "abbr": "TBô" },
+      { "id": "dang-loi-keu-goi", "name": "Lời kêu gọi", "abbr": "LKG" },
+      { "id": "dang-dieu-le", "name": "Điều lệ Đảng", "abbr": "ĐLĐ" },
+      { "id": "dang-cuong-linh", "name": "Cương lĩnh chính trị", "abbr": "CLCT" },
+      { "id": "dang-giay-moi", "name": "Giấy mời", "abbr": "GM" },
+      { "id": "dang-giay-gioi-thieu", "name": "Giấy giới thiệu", "abbr": "GGT" },
+      { "id": "dang-giay-nghi-phep", "name": "Giấy nghỉ phép", "abbr": "GNP" },
+      { "id": "dang-giay-di-duong", "name": "Giấy đi đường", "abbr": "GĐĐ" },
+      { "id": "dang-giay-chung-nhan", "name": "Giấy chứng nhận", "abbr": "GCN" },
+      { "id": "dang-phieu-gui", "name": "Phiếu gửi", "abbr": "PG" },
+      { "id": "dang-phieu-chuyen", "name": "Phiếu chuyển", "abbr": "PC" },
+      { "id": "dang-thu-cong", "name": "Thư công", "abbr": "TCg" }
+    ]
+  },
+  "academic": {
+    "systemName": "Tài liệu học thuật & Nghiên cứu khoa học",
+    "common": [
+      { "id": "hoc-thuat-luan-van", "name": "Luận văn thạc sĩ / Luận án tiến sĩ", "ruleFile": "academic/thesis.json" },
+      { "id": "hoc-thuat-de-tai", "name": "Báo cáo tổng kết đề tài (cơ sở / tỉnh / Bộ / Quốc gia)", "ruleFile": "academic/report.json" },
+      { "id": "hoc-thuat-bai-bao", "name": "Bài báo khoa học (Tạp chí chuyên ngành)", "ruleFile": "academic/journal.json" }
+    ]
+  }
+}

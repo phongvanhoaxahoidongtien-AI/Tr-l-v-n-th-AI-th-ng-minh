@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { DocumentTypeItem, AgencySettings } from '../types';
 import { SAMPLE_DOCUMENTS } from '../data/sampleDocs';
 import { cleanAIText, stripImportedNationalHeaders } from '../utils/cleanAIText';
+import { parseDocumentFile } from '../utils/docFileReader';
 import { analyzeDocumentText } from '../services/documentAnalyzer';
 import { detectAgencyDifference } from '../services/normalizerEngine';
 import { DocumentAnalysisReportView } from './DocumentAnalysisReportView';
@@ -20,6 +21,7 @@ interface Step2UploadDocumentProps {
   onRunNormalize: () => void;
   isProcessing: boolean;
   agencySettings: AgencySettings;
+  setOriginalFileName?: (name: string) => void;
 }
 
 export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
@@ -29,7 +31,8 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
   onBack,
   onRunNormalize,
   isProcessing,
-  agencySettings
+  agencySettings,
+  setOriginalFileName
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -70,58 +73,38 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
     setUploadStatus(`Đã đồng bộ cơ quan ban hành thành: "${agencySettings.agencyName}" và địa danh "${agencySettings.shortLocation}"`);
   };
 
-  // Xử lý đọc file .docx bằng mammoth (bảo toàn bảng biểu và tự động chuyển font về Times New Roman, Unicode)
+  // Xử lý đọc file (.doc, .docx, .rtf, .txt) tự động sửa lỗi font và bảo toàn toàn bộ nội dung
   const handleFileUpload = async (file: File) => {
     if (!file) return;
 
     setUploadStatus(`Đang đọc và phân tích tệp: ${file.name}...`);
     try {
-      if (file.name.endsWith('.docx') || file.type.includes('wordprocessingml')) {
-        const arrayBuffer = await file.arrayBuffer();
+      const parsed = await parseDocumentFile(file);
+      const extractedContent = parsed.text;
+
+      if (extractedContent && extractedContent.trim()) {
+        if (setOriginalFileName && file.name) {
+          setOriginalFileName(file.name.replace(/\.[^/.]+$/, ''));
+        }
+        // Chỉ chuẩn hóa về chính tả, khoảng trắng, bullet và bảng biểu; KHÔNG tự ý xóa tiêu đề quốc ngữ
+        const cleaned = autoCleanOnPaste 
+          ? cleanAIText(extractedContent, { preserveTables: true, stripNationalHeader: false }) 
+          : extractedContent;
+        setLastRawText(extractedContent);
+        setInputText(cleaned);
         
-        let extractedContent = '';
-        // Ưu tiên đọc HTML để bảo toàn các thẻ bảng biểu (table) nếu có
-        try {
-          const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
-          if (htmlResult && htmlResult.value && htmlResult.value.includes('<table')) {
-            extractedContent = htmlResult.value;
-          }
-        } catch {
-          // Bỏ qua nếu convertToHtml có cảnh báo
-        }
-
-        if (!extractedContent) {
-          const result = await mammoth.extractRawText({ arrayBuffer });
-          extractedContent = result?.value || '';
-        }
-
-        if (extractedContent) {
-          const cleaned = autoCleanOnPaste 
-            ? cleanAIText(extractedContent, { preserveTables: true, stripNationalHeader: true }) 
-            : extractedContent;
-          setLastRawText(extractedContent);
-          setInputText(cleaned);
-          setUploadStatus(`✓ Đã trích xuất ${file.name}, chuyển font Times New Roman & Unicode (TCVN 6909:2001), tách tiêu đề quốc ngữ thành công!`);
+        const fileAgencyDiff = detectAgencyDifference(cleaned, agencySettings);
+        if (fileAgencyDiff && fileAgencyDiff.hasDifference && fileAgencyDiff.detectedAgency) {
+          setUploadStatus(`✓ Đã nạp ${file.name} (${parsed.detectedFormat}). ⚠️ Cảnh báo: Cơ quan ban hành trong tệp ("${fileAgencyDiff.detectedAgency}") khác với cơ quan mặc định ("${agencySettings.agencyName}"). Hệ thống giữ nguyên cơ quan gốc của tệp, bảo toàn tiêu đề quốc ngữ và phần cuối văn bản; chỉ chuẩn hóa chính tả, định dạng và Bullet chuẩn thể thức NĐ 30/HD 05.`);
         } else {
-          setUploadStatus('Không đọc được nội dung từ file .docx');
+          setUploadStatus(`✓ Đã trích xuất ${file.name} (${parsed.detectedFormat}), tự động sửa lỗi font TCVN3/VNI về Times New Roman & Unicode chuẩn (TCVN 6909:2001), giữ nguyên tiêu đề quốc ngữ và phần cuối văn bản!`);
         }
       } else {
-        // Fallback đọc file text thường hoặc .txt, .doc
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const content = (e.target?.result as string) || '';
-          const cleaned = autoCleanOnPaste 
-            ? cleanAIText(content, { preserveTables: true, stripNationalHeader: true }) 
-            : content;
-          setLastRawText(content);
-          setInputText(cleaned);
-          setUploadStatus(`✓ Đã tải và chuẩn hóa tệp ${file.name} thành công!`);
-        };
-        reader.readAsText(file);
+        setUploadStatus(`Không tìm thấy nội dung văn bản trong tệp ${file.name}. Vui lòng kiểm tra lại file.`);
       }
     } catch (err: any) {
-      console.error(err);
-      setUploadStatus(`Lỗi khi mở file: ${err?.message || 'Không thể đọc'}`);
+      console.error('Lỗi khi đọc file:', err);
+      setUploadStatus(`Lỗi khi mở file: ${err?.message || 'Không thể đọc nội dung file'}`);
     }
   };
 
@@ -142,34 +125,47 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
     }
   };
 
-  // Tự động làm sạch khi người dùng dán (paste) nội dung từ AI (ChatGPT, DeepSeek, Claude, Gemini...)
+  // Tự động làm sạch & chuyển mã font khi người dùng dán (paste) nội dung từ Word, AI (ChatGPT, Claude...) hay trang web
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (!autoCleanOnPaste) return;
-    const pastedText = e.clipboardData.getData('text');
-    if (!pastedText) return;
+    const plainText = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text') || '';
+    const htmlText = e.clipboardData.getData('text/html') || '';
+    if (!plainText && !htmlText) return;
 
     e.preventDefault();
-    const cleaned = cleanAIText(pastedText, { preserveTables: true, stripNationalHeader: true });
+    const cleaned = cleanAIText(plainText, { 
+      preserveTables: true, 
+      stripNationalHeader: false,
+      htmlClipboard: htmlText 
+    });
 
     // Chèn văn bản đã làm sạch vào vị trí con trỏ
     const target = e.currentTarget;
-    const start = target.selectionStart;
-    const end = target.selectionEnd;
-    const newText = inputText.substring(0, start) + cleaned + inputText.substring(end);
+    const start = target.selectionStart ?? 0;
+    const end = target.selectionEnd ?? 0;
+    const currentVal = target.value;
+    const newText = currentVal.substring(0, start) + cleaned + currentVal.substring(end);
     
-    setLastRawText(inputText.substring(0, start) + pastedText + inputText.substring(end));
+    setLastRawText(currentVal.substring(0, start) + plainText + currentVal.substring(end));
     setInputText(newText);
     
-    setUploadStatus('✨ Đã tự động chuyển font Times New Roman, gỡ bỏ tiêu đề quốc ngữ thừa và bảo toàn bảng biểu vừa trang!');
+    requestAnimationFrame(() => {
+      if (target) {
+        const newPos = start + cleaned.length;
+        target.setSelectionRange(newPos, newPos);
+      }
+    });
+
+    setUploadStatus('✨ Đã tự động chuyển đổi 100% sang font Times New Roman, Bảng mã Unicode chuẩn (TCVN 6909:2001), không lỗi tiếng Việt!');
   };
 
-  // Nút chủ động làm sạch văn bản hiện tại
+  // Nút chủ động làm sạch và chuyển mã văn bản hiện tại
   const handleManualClean = () => {
     if (!inputText.trim()) return;
-    const cleaned = cleanAIText(inputText, { preserveTables: true, stripNationalHeader: true });
+    const cleaned = cleanAIText(inputText, { preserveTables: true, stripNationalHeader: false });
     setLastRawText(inputText);
     setInputText(cleaned);
-    setUploadStatus('✨ Đã chuyển bảng mã Unicode, font Times New Roman, gỡ tiêu đề quốc ngữ thừa và căn chỉnh bảng biểu vừa vặn!');
+    setUploadStatus('✨ Đã chuyển đổi 100% sang font Times New Roman & Bảng mã Unicode chuẩn (TCVN 6909:2001)!');
   };
 
   // Hoàn tác về bản chưa làm sạch

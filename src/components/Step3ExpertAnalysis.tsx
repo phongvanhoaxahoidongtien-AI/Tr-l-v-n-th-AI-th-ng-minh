@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { NormalizeResult, DocumentTypeItem, AgencySettings } from '../types';
+import { getOfficerSalutation } from '../utils/officerSalutation';
 import { generateDecree30A4Html } from '../services/decree30Formatter';
 import { downloadWordDocument, copyFormattedDocument } from '../services/fileDownloader';
 import { analyzeDocumentText } from '../services/documentAnalyzer';
@@ -196,7 +197,7 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
               </p>
 
               <div className="mt-2 text-xs text-amber-800 bg-white/80 p-2.5 rounded-lg border border-amber-300 font-sans">
-                <span>Cài đặt của đồng chí: </span>
+                <span>Cài đặt của {getOfficerSalutation(agencySettings).shortName}: </span>
                 <strong className="text-amber-950 font-serif">{agencySettings.agencyName || 'Chưa cài'}</strong>
                 {agencySettings.shortLocation && (
                   <span> — Địa danh: <strong className="text-amber-950 font-serif">{agencySettings.shortLocation}</strong></span>
@@ -206,7 +207,7 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
               {/* Confirmation Question & Actions */}
               <div className="mt-4 pt-3 border-t border-amber-300/80 flex flex-wrap items-center gap-3">
                 <span className="text-xs font-bold text-amber-950">
-                  Đồng chí có muốn Tiểu Bảo Bối sửa thành tên cơ quan đã cài đặt không?
+                  {getOfficerSalutation(agencySettings).shortName} có muốn Tiểu Bảo Bối sửa thành tên cơ quan đã cài đặt không?
                 </span>
 
                 <button

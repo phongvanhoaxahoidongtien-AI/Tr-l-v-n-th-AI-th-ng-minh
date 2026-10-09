@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AgencySettings } from '../types';
+import { getOfficerSalutation } from '../utils/officerSalutation';
 import { ShieldCheck, Sparkles, Building2, HelpCircle, Heart, MessageSquare } from 'lucide-react';
 
 interface HeroMascotProps {
@@ -140,14 +141,19 @@ export const HeroMascot: React.FC<HeroMascotProps> = ({
             {/* Pointer triangle */}
             <div className="hidden sm:block absolute -left-2.5 top-6 w-0 h-0 border-t-8 border-t-transparent border-r-10 border-r-white border-b-8 border-b-transparent drop-shadow-[-1px_0_1px_rgba(0,0,0,0.05)]" />
 
-            <p className="text-sm md:text-[15px] leading-relaxed">
-              {customMessage || (
-                <>
-                  <span className="font-bold text-rose-700">Dạ, chào đồng chí!</span> Em là <strong>Tiểu Bảo Bối</strong> – Trợ lý văn thư thông minh 1.0 của đồng chí đây ạ! 
-                  Đồng chí hãy gửi văn bản lên hoặc chọn mẫu có sẵn, em sẽ rà soát từng dấu chấm, nét gạch tiêu ngữ, thể thức 2 cột chuẩn Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW nhé!
-                </>
-              )}
-            </p>
+            {(() => {
+              const salutation = getOfficerSalutation(agencySettings);
+              return (
+                <p className="text-sm md:text-[15px] leading-relaxed">
+                  {customMessage || (
+                    <>
+                      <span className="font-bold text-rose-700">{salutation.greetingIntro}</span> Em là <strong>Tiểu Bảo Bối</strong> – Trợ lý văn thư thông minh 1.0 của {salutation.pronoun} đây ạ! 
+                      {salutation.shortName ? ` ${salutation.shortName}` : ' Đồng chí'} hãy gửi văn bản lên hoặc chọn mẫu có sẵn, em sẽ rà soát từng dấu chấm, nét gạch tiêu ngữ, thể thức 2 cột chuẩn Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW nhé!
+                    </>
+                  )}
+                </p>
+              );
+            })()}
 
             {/* Configured Agency info chip & Tip toggle */}
             <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs font-sans">
