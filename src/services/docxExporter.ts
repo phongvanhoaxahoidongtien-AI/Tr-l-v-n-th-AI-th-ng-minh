@@ -2,7 +2,7 @@ import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
   WidthType, AlignmentType, BorderStyle, HeadingLevel, UnderlineType 
 } from 'docx';
-import { StructuredDoc } from './decree30Formatter';
+import { StructuredDoc, formatDocCodeForDisplay } from './decree30Formatter';
 import { AgencySettings } from '../types';
 
 /**
@@ -27,45 +27,129 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
 
   // 1. CỘT TRÁI HEADER: Tên cơ quan, số ký hiệu, trích yếu V/v (nếu là công văn)
   const leftHeaderParagraphs: Paragraph[] = [];
-  if (doc.parentAgency) {
+  const cleanParent = doc.parentAgency?.trim();
+  const cleanAgency = doc.agencyName?.trim();
+
+  if (cleanParent) {
+    // Có cơ quan cấp trên (chỉ áp dụng đối với phòng, ban, trung tâm chuyên môn trực thuộc)
     leftHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 40, line: 240 },
         children: [
           new TextRun({
-            text: doc.parentAgency.toUpperCase(),
+            text: cleanParent.toUpperCase(),
             font: 'Times New Roman',
             size: 24, // 12pt
           }),
         ],
       })
     );
+    leftHeaderParagraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 60, line: 240 },
+        children: [
+          new TextRun({
+            text: cleanAgency.toUpperCase(),
+            font: 'Times New Roman',
+            size: 24, // 12pt
+            bold: true,
+          }),
+        ],
+      })
+    );
+  } else if (cleanAgency) {
+    // Không có cơ quan cấp trên
+    if (cleanAgency.includes('\n')) {
+      const parts = cleanAgency.split('\n').map(p => p.trim()).filter(Boolean);
+      leftHeaderParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 40, line: 240 },
+          children: [
+            new TextRun({
+              text: parts[0].toUpperCase(),
+              font: 'Times New Roman',
+              size: 24, // 12pt
+            }),
+          ],
+        })
+      );
+      if (parts[1]) {
+        leftHeaderParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60, line: 240 },
+            children: [
+              new TextRun({
+                text: parts[1].toUpperCase(),
+                font: 'Times New Roman',
+                size: 24, // 12pt
+                bold: true,
+              }),
+            ],
+          })
+        );
+      }
+    } else {
+      const ubndMatch = cleanAgency.match(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s+(.+)$/i);
+      if (ubndMatch) {
+        // UBND các cấp: Dòng 1 "ỦY BAN NHÂN DÂN" thường, Dòng 2 "<CẤP>" đậm
+        leftHeaderParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 40, line: 240 },
+            children: [
+              new TextRun({
+                text: 'ỦY BAN NHÂN DÂN',
+                font: 'Times New Roman',
+                size: 24, // 12pt
+              }),
+            ],
+          })
+        );
+        leftHeaderParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60, line: 240 },
+            children: [
+              new TextRun({
+                text: ubndMatch[1].toUpperCase(),
+                font: 'Times New Roman',
+                size: 24, // 12pt
+                bold: true,
+              }),
+            ],
+          })
+        );
+      } else {
+        leftHeaderParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60, line: 240 },
+            children: [
+              new TextRun({
+                text: cleanAgency.toUpperCase(),
+                font: 'Times New Roman',
+                size: 24, // 12pt
+                bold: true,
+              }),
+            ],
+          })
+        );
+      }
+    }
   }
 
+  // Đường kẻ ngang dưới tên cơ quan (1/3 đến 1/2 độ dài)
   leftHeaderParagraphs.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 60, line: 240 },
+      spacing: { before: 0, after: 60, line: 180 },
       children: [
         new TextRun({
-          text: doc.agencyName.toUpperCase(),
-          font: 'Times New Roman',
-          size: 24, // 12pt
-          bold: true,
-        }),
-      ],
-    })
-  );
-
-  // Đường kẻ ngang dưới tên cơ quan
-  leftHeaderParagraphs.push(
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 80, line: 240 },
-      children: [
-        new TextRun({
-          text: '————————',
+          text: '———————',
           font: 'Times New Roman',
           size: 20,
         }),
@@ -73,13 +157,14 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     })
   );
 
+  const formattedDocCode = formatDocCodeForDisplay(doc.docCode, false);
   leftHeaderParagraphs.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: doc.docSubjectShort ? 40 : 100, line: 240 },
       children: [
         new TextRun({
-          text: doc.docCode || 'Số: …/…',
+          text: formattedDocCode,
           font: 'Times New Roman',
           size: 26, // 13pt
         }),
@@ -125,7 +210,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 60, line: 240 },
+        spacing: { after: 20, line: 240 },
         children: [
           new TextRun({
             text: 'Độc lập - Tự do - Hạnh phúc',
@@ -137,11 +222,11 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       })
     );
 
-    // Đường kẻ ngang dưới Tiêu ngữ
+    // Đường kẻ ngang dưới Tiêu ngữ (chuẩn NĐ 30: sát chân chữ, độ dài bằng độ dài dòng chữ)
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 80, line: 240 },
+        spacing: { before: 0, after: 60, line: 180 },
         children: [
           new TextRun({
             text: '————————————',
@@ -157,7 +242,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 60, line: 240 },
+        spacing: { after: 20, line: 240 },
         children: [
           new TextRun({
             text: 'ĐẢNG CỘNG SẢN VIỆT NAM',
@@ -172,12 +257,13 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 80, line: 240 },
+        spacing: { before: 0, after: 60, line: 180 },
         children: [
           new TextRun({
             text: '—————',
             font: 'Times New Roman',
             size: 20,
+            bold: true,
           }),
         ],
       })
@@ -314,7 +400,9 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       );
 
       for (const line of kLines) {
-        const item = line.startsWith('-') ? line : `- ${line}`;
+        const cleanL = line.trim();
+        if (!cleanL) continue;
+        const lineWithDash = cleanL.startsWith('-') ? cleanL : `- ${cleanL.replace(/^[-\u2013\u2014]\s*/, '')}`;
         recipientParagraphs.push(
           new Paragraph({
             alignment: AlignmentType.LEFT,
@@ -322,7 +410,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
             spacing: { before: 40, after: 60, line: 300 },
             children: [
               new TextRun({
-                text: item,
+                text: lineWithDash,
                 font: 'Times New Roman',
                 size: 28,
               }),
@@ -441,20 +529,148 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       continue;
     }
 
-    // D. Khoản (1., 2., 3...)
-    if (/^\d+\.\s+/.test(cleanP)) {
+    // D. Khoản (1., 2., 3... hoặc 1.1., 1.2...) -> TÔ ĐẬM ĐẦU DÒNG BULLET
+    const numBulletMatch = cleanP.match(/^(\d+(?:\.\d+)*\.)(?:\s+(.*))?$/);
+    if (numBulletMatch) {
+      const numPrefix = numBulletMatch[1];
+      const rest = numBulletMatch[2] || '';
+      const colonMatch = rest.match(/^([^:]{2,45}:)\s*(.*)$/);
+
+      const runs: TextRun[] = [];
+      if (colonMatch) {
+        runs.push(
+          new TextRun({
+            text: `${numPrefix} ${colonMatch[1]} `,
+            font: 'Times New Roman',
+            size: 28,
+            bold: true,
+          }),
+          new TextRun({
+            text: colonMatch[2],
+            font: 'Times New Roman',
+            size: 28,
+          })
+        );
+      } else {
+        runs.push(
+          new TextRun({
+            text: `${numPrefix} `,
+            font: 'Times New Roman',
+            size: 28,
+            bold: true,
+          }),
+          new TextRun({
+            text: rest,
+            font: 'Times New Roman',
+            size: 28,
+          })
+        );
+      }
+
       bodyParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
           indent: { firstLine: 567 },
           spacing: { before: 80, after: 80, line: 320 },
-          children: [
-            new TextRun({
-              text: cleanP,
-              font: 'Times New Roman',
-              size: 28,
-            }),
-          ],
+          children: runs,
+        })
+      );
+      continue;
+    }
+
+    // D.1. Số La Mã (I., II., III...) -> TÔ ĐẬM ĐẦU DÒNG BULLET
+    const romanMatch = cleanP.match(/^([IVXLCDM]+\.)(?:\s+(.*))?$/);
+    if (romanMatch) {
+      const romanPrefix = romanMatch[1];
+      const rest = romanMatch[2] || '';
+      const colonMatch = rest.match(/^([^:]{2,50}:)\s*(.*)$/);
+
+      const runs: TextRun[] = [];
+      if (colonMatch) {
+        runs.push(
+          new TextRun({
+            text: `${romanPrefix} ${colonMatch[1]} `,
+            font: 'Times New Roman',
+            size: 28,
+            bold: true,
+          }),
+          new TextRun({
+            text: colonMatch[2],
+            font: 'Times New Roman',
+            size: 28,
+          })
+        );
+      } else {
+        runs.push(
+          new TextRun({
+            text: `${romanPrefix} `,
+            font: 'Times New Roman',
+            size: 28,
+            bold: true,
+          }),
+          new TextRun({
+            text: rest,
+            font: 'Times New Roman',
+            size: 28,
+          })
+        );
+      }
+
+      bodyParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          indent: { firstLine: 567 },
+          spacing: { before: 100, after: 80, line: 320 },
+          children: runs,
+        })
+      );
+      continue;
+    }
+
+    // D.2. Điểm (a), b), c)...) -> TÔ ĐẬM ĐẦU DÒNG BULLET
+    const letterMatch = cleanP.match(/^([a-zđ]\))(?:\s+(.*))?$/i);
+    if (letterMatch) {
+      const letterPrefix = letterMatch[1];
+      const rest = letterMatch[2] || '';
+      const colonMatch = rest.match(/^([^:]{2,40}:)\s*(.*)$/);
+
+      const runs: TextRun[] = [];
+      if (colonMatch) {
+        runs.push(
+          new TextRun({
+            text: `${letterPrefix} ${colonMatch[1]} `,
+            font: 'Times New Roman',
+            size: 28,
+            bold: true,
+          }),
+          new TextRun({
+            text: colonMatch[2],
+            font: 'Times New Roman',
+            size: 28,
+          })
+        );
+      } else {
+        runs.push(
+          new TextRun({
+            text: `${letterPrefix} `,
+            font: 'Times New Roman',
+            size: 28,
+            bold: true,
+          }),
+          new TextRun({
+            text: rest,
+            font: 'Times New Roman',
+            size: 28,
+          })
+        );
+      }
+
+      bodyParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          indent: { left: 708 }, // Thụt lề 1.25cm
+          spacing: { before: 60, after: 60, line: 320 },
+          children: runs,
         })
       );
       continue;
@@ -516,14 +732,16 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     );
 
     for (const r of doc.recipients) {
-      const formatted = r.startsWith('-') ? r : `- ${r}`;
+      const cleanR = r.trim();
+      if (!cleanR) continue;
+      const rWithDash = cleanR.startsWith('-') ? cleanR : `- ${cleanR.replace(/^[-\u2013\u2014]\s*/, '')}`;
       leftFooterParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.LEFT,
           spacing: { before: 20, after: 40, line: 220 },
           children: [
             new TextRun({
-              text: formatted,
+              text: rWithDash,
               font: 'Times New Roman',
               size: 22, // 11pt
             }),

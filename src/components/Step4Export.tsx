@@ -67,8 +67,15 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
     );
   });
 
+  const lastEmittedTextRef = React.useRef(normalizedText);
+
   // Khi normalizedText hoặc agencySettings thay đổi từ bên ngoài (hoặc chuyển sang bước 4)
   React.useEffect(() => {
+    if (normalizedText === lastEmittedTextRef.current) {
+      // Bỏ qua vì đây là sự kiện do chính Step4Export emit ra khi người dùng gõ phím
+      return;
+    }
+    lastEmittedTextRef.current = normalizedText;
     setActiveDoc(parseDocumentStructure(
       normalizedText, 
       agencySettings, 
@@ -81,8 +88,35 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
     setActiveDoc(updated);
     if (onUpdateNormalizedText) {
       const newText = reconstructNormalizedText(updated);
+      lastEmittedTextRef.current = newText;
       onUpdateNormalizedText(newText);
     }
+  };
+
+  // Kiểm tra sự khác biệt giữa văn bản và Cài đặt mặc định
+  const docLoc = activeDoc.locationDate?.split(',')[0]?.trim() || '';
+  const settingsLoc = agencySettings.shortLocation?.trim() || '';
+  const locationDiff = Boolean(settingsLoc && docLoc && docLoc.toLowerCase() !== settingsLoc.toLowerCase());
+  
+  const docAgency = activeDoc.agencyName?.trim() || '';
+  const settingsAgency = agencySettings.agencyName?.trim() || '';
+  const agencyDiff = Boolean(settingsAgency && docAgency && docAgency.toLowerCase() !== settingsAgency.toLowerCase());
+
+  const isAgencyOrLocationDifferent = agencyDiff || locationDiff;
+
+  const handleSyncWithDefaultSettings = () => {
+    const targetYear = agencySettings.issuingYear || String(new Date().getFullYear());
+    const defaultLoc = agencySettings.shortLocation || 'Đông Tiến';
+    const updated = {
+      ...activeDoc,
+      agencyName: agencySettings.agencyName || activeDoc.agencyName,
+      parentAgency: agencySettings.parentAgency || '', // Không tự ý thêm cấp trên nếu để trống
+      isPartyDoc: agencySettings.roleBlock === 'dang',
+      countryHeader: agencySettings.roleBlock === 'dang' ? '' : 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM',
+      motto: agencySettings.roleBlock === 'dang' ? 'ĐẢNG CỘNG SẢN VIỆT NAM' : 'Độc lập - Tự do - Hạnh phúc',
+      locationDate: `${defaultLoc}, ngày      tháng      năm ${targetYear}`,
+    };
+    handleDocUpdate(updated);
   };
 
   // Tạo HTML A4 real-time theo nội dung đã chỉnh sửa (sử dụng activeDoc trực tiếp)
@@ -267,6 +301,42 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
         )}
       </div>
 
+      {/* CẢNH BÁO & ĐỒNG BỘ NẾU PHÁT HIỆN CƠ QUAN / ĐỊA DANH KHÁC CÀI ĐẶT MẶC ĐỊNH */}
+      {isAgencyOrLocationDifferent && (
+        <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-300 text-amber-950 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fade-in">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-sm text-amber-900 flex items-center gap-2 font-sans">
+                <span>Phát hiện Cơ quan ban hành hoặc Địa danh khác với Cài đặt mặc định của đồng chí</span>
+                <span className="text-[10px] bg-amber-200/90 text-amber-900 px-2 py-0.5 rounded font-semibold font-mono">Ưu tiên Cài đặt</span>
+              </div>
+              <div className="text-xs text-amber-800 mt-1 space-y-0.5 font-sans">
+                {agencyDiff && (
+                  <div>
+                    • Cơ quan trong văn bản: <strong className="font-serif">"{activeDoc.agencyName}"</strong> ➔ Cài đặt mặc định: <strong className="font-serif text-amber-950">"{agencySettings.agencyName}"</strong>
+                  </div>
+                )}
+                {locationDiff && (
+                  <div>
+                    • Địa danh trong văn bản: <strong className="font-serif">"{docLoc}"</strong> ➔ Cài đặt mặc định: <strong className="font-serif text-amber-950">"{agencySettings.shortLocation}"</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <button
+            type="button"
+            onClick={handleSyncWithDefaultSettings}
+            className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-700 hover:to-red-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Đồng bộ lại theo Cài đặt mặc định</span>
+          </button>
+        </div>
+      )}
+
       {/* 2. CỤM NÚT THAO TÁC XUẤT FILE NỔI BẬT */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         
@@ -436,6 +506,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
               onUpdateText={handleTextChange}
               onUpdateDoc={handleDocUpdate}
               analysisReport={analysisReport}
+              externalDoc={activeDoc}
             />
           </div>
 
@@ -488,6 +559,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
             onUpdateText={handleTextChange}
             onUpdateDoc={handleDocUpdate}
             analysisReport={analysisReport}
+            externalDoc={activeDoc}
           />
         </div>
       )}

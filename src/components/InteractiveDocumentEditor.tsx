@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport, IllogicalSegment } from '../types';
-import { parseDocumentStructure, reconstructNormalizedText, formatBulletLines, StructuredDoc } from '../services/decree30Formatter';
+import { 
+  parseDocumentStructure, 
+  reconstructNormalizedText, 
+  formatBulletLines, 
+  boldBulletHeadings,
+  unboldBulletHeadings,
+  StructuredDoc 
+} from '../services/decree30Formatter';
 import { cleanAIText } from '../utils/cleanAIText';
 import { AGENCY_PRESETS } from '../utils/agencyPresets';
 import { 
   Building2, FileText, CheckCircle2, AlertTriangle, Sparkles, 
   HelpCircle, UserCheck, ChevronDown, ChevronUp, Edit3, Wand2,
-  Check, X, Eye, Undo2, ArrowRight, Building
+  Check, X, Eye, Undo2, ArrowRight, Building, Bold, ListOrdered
 } from 'lucide-react';
 
 interface InteractiveDocumentEditorProps {
@@ -16,6 +23,7 @@ interface InteractiveDocumentEditorProps {
   onUpdateText: (text: string) => void;
   onUpdateDoc?: (doc: StructuredDoc) => void;
   analysisReport?: DocumentAnalysisReport;
+  externalDoc?: StructuredDoc;
 }
 
 export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps> = ({
@@ -24,30 +32,47 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   agencySettings,
   onUpdateText,
   onUpdateDoc,
-  analysisReport
+  analysisReport,
+  externalDoc
 }) => {
   // Parse document into 3 structured sections
   const [doc, setDoc] = useState<StructuredDoc>(() => 
-    parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name)
+    externalDoc || parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name)
   );
 
-  // Multiline string states cho Kính gửi và Nơi nhận để người dùng gõ phím Enter xuống dòng tự do không bị giật
-  const [kinhGuiText, setKinhGuiText] = useState(() => doc.recipientsHeader || '');
-  const [noiNhanText, setNoiNhanText] = useState(() => doc.recipients.join('\n'));
+  // Multiline string states cho Kính gửi và Nơi nhận (mặc định có dấu - ở đầu dòng)
+  const [kinhGuiText, setKinhGuiText] = useState(() => {
+    const raw = externalDoc?.recipientsHeader ?? doc.recipientsHeader ?? '';
+    return raw ? formatBulletLines(raw).join('\n') : '';
+  });
+  const [noiNhanText, setNoiNhanText] = useState(() => {
+    const raw = externalDoc?.recipients ?? doc.recipients ?? [];
+    return formatBulletLines(raw).join('\n');
+  });
 
   const isInternalUpdateRef = useRef(false);
 
+  // Sync with externalDoc if provided from parent Step4Export
+  useEffect(() => {
+    if (externalDoc) {
+      setDoc(externalDoc);
+      setKinhGuiText(externalDoc.recipientsHeader ? formatBulletLines(externalDoc.recipientsHeader).join('\n') : '');
+      setNoiNhanText(formatBulletLines(externalDoc.recipients || []).join('\n'));
+    }
+  }, [externalDoc]);
+
   // Sync internal state if normalizedText changes externally
   useEffect(() => {
+    if (externalDoc) return; // Nếu có externalDoc thì ưu tiên đồng bộ theo externalDoc
     if (isInternalUpdateRef.current) {
       isInternalUpdateRef.current = false;
       return;
     }
     const parsed = parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name);
     setDoc(parsed);
-    setKinhGuiText(parsed.recipientsHeader || '');
-    setNoiNhanText(parsed.recipients.join('\n'));
-  }, [normalizedText, agencySettings, selectedType.category, selectedType.name]);
+    setKinhGuiText(parsed.recipientsHeader ? formatBulletLines(parsed.recipientsHeader).join('\n') : '');
+    setNoiNhanText(formatBulletLines(parsed.recipients || []).join('\n'));
+  }, [normalizedText, agencySettings, selectedType.category, selectedType.name, externalDoc]);
 
   // Section toggle state (accordions)
   const [openSection1, setOpenSection1] = useState(true); // Đầu văn bản
@@ -156,6 +181,46 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     setActiveFix(null);
     setBlankInputVal('');
     setFixNotice(`Đã điền "${value.trim()}" vào chỗ trống!`);
+    setTimeout(() => setFixNotice(null), 2500);
+  };
+
+  // NÂNG CẤP TÍNH NĂNG TÔ ĐẬM CÁC ĐẦU DÒNG BULLET 1 2 3.... (Khoản, Điều, Điểm, Số La Mã)
+  const [autoBoldBullets, setAutoBoldBullets] = useState(true);
+
+  const handleBoldBullets = () => {
+    // 1. Tô đậm trong bodyParagraphs của doc
+    const updatedParas = doc.bodyParagraphs.map(p => {
+      const res = boldBulletHeadings(p);
+      return res.text;
+    });
+
+    // 2. Tô đậm trong toàn văn normalizedText
+    const resFull = boldBulletHeadings(normalizedText);
+
+    const updatedDoc = { ...doc, bodyParagraphs: updatedParas };
+    isInternalUpdateRef.current = true;
+    setDoc(updatedDoc);
+    if (onUpdateDoc) onUpdateDoc(updatedDoc);
+    onUpdateText(resFull.text);
+
+    setFixNotice(`✓ Đã tô đậm ${resFull.count} đầu dòng Bullet (1, 2, 3...) thành công!`);
+    setTimeout(() => setFixNotice(null), 3000);
+  };
+
+  const handleUnboldBullets = () => {
+    const updatedParas = doc.bodyParagraphs.map(p => {
+      const res = unboldBulletHeadings(p);
+      return res.text;
+    });
+    const resFull = unboldBulletHeadings(normalizedText);
+
+    const updatedDoc = { ...doc, bodyParagraphs: updatedParas };
+    isInternalUpdateRef.current = true;
+    setDoc(updatedDoc);
+    if (onUpdateDoc) onUpdateDoc(updatedDoc);
+    onUpdateText(resFull.text);
+
+    setFixNotice(`✓ Đã hoàn tác / bỏ tô đậm đầu dòng Bullet!`);
     setTimeout(() => setFixNotice(null), 2500);
   };
 
@@ -318,10 +383,12 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 <div className="p-3 rounded-lg border border-amber-300 bg-amber-50/70 text-amber-950 flex items-center justify-between">
                   <div>
                     <div className="font-bold text-sm text-amber-900 tracking-wide font-serif">
-                      ĐẢNG CỘNG SẢN VIỆT NAM
+                      <span className="inline-block border-b-[1.2px] border-amber-900 pb-0.5">
+                        ĐẢNG CỘNG SẢN VIỆT NAM
+                      </span>
                     </div>
                     <div className="text-[11px] text-amber-700 mt-0.5">
-                      ✓ Chuẩn Hướng dẫn 05-HD/VPTW • Tiêu đề Đảng
+                      ✓ Chuẩn Hướng dẫn 05-HD/VPTW • Tiêu đề Đảng (gạch chân nét liền 1/3 - 1/2 độ dài)
                     </div>
                   </div>
                   <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md border border-amber-300">
@@ -334,11 +401,13 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     <div className="font-bold text-xs uppercase text-blue-950 font-serif">
                       CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
                     </div>
-                    <div className="font-bold text-xs text-blue-900 mt-0.5 font-serif">
-                      Độc lập - Tự do - Hạnh phúc
+                    <div className="font-bold text-xs text-blue-900 mt-1 font-serif">
+                      <span className="inline-block border-b-[1.2px] border-blue-900 pb-0.5">
+                        Độc lập - Tự do - Hạnh phúc
+                      </span>
                     </div>
-                    <div className="text-[11px] text-blue-700 mt-0.5">
-                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Áp dụng cho khối {agencySettings.roleBlock === 'mttq_doanthe' ? 'MTTQ & Đoàn thể' : 'UBND'}
+                    <div className="text-[11px] text-blue-700 mt-1">
+                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Gạch chân bằng đúng 100% độ dài dòng chữ Tiêu ngữ
                     </div>
                   </div>
                   <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300">
@@ -365,7 +434,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                   <p className="text-[10px] text-slate-500 mt-0.5 italic">
-                    Hệ thống không tự ý thêm cấp trên; chỉ hiển thị nếu người dùng nhập.
+                    Chỉ áp dụng đối với các phòng, ban, trung tâm chuyên môn trực thuộc. Nếu ban hành với tư cách UBND, để trống dòng này.
                   </p>
                 </div>
 
@@ -380,19 +449,40 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     placeholder="Ví dụ: ỦY BAN NHÂN DÂN PHƯỜNG ĐÔNG TIẾN hoặc CHI BỘ..."
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 mt-0.5 italic">
+                    Nếu là UBND các cấp, tiêu đề sẽ hiển thị 2 dòng: Dòng 1: ỦY BAN NHÂN DÂN, Dòng 2: PHƯỜNG ĐÔNG TIẾN (in đậm).
+                  </p>
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Số ký hiệu văn bản (*):
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block text-xs">
+                      Số ký hiệu văn bản (*):
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = doc.docCode || 'Số: /UBND-VP';
+                        // Thay thế dấu ... hoặc khoảng hẹp trước / bằng khoảng trống rộng ~1cm (10 dấu cách)
+                        const formatted = current.replace(/Số:?\s*[\.…_\s]*\//i, 'Số:          /');
+                        updateDocField('docCode', formatted);
+                      }}
+                      className="text-[10px] text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 cursor-pointer"
+                      title="Mở rộng khoảng trắng ~1cm trước dấu gạch chéo /, không dùng dấu ..."
+                    >
+                      Để trắng 1cm (không dùng ...)
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={doc.docCode}
                     onChange={(e) => updateDocField('docCode', e.target.value)}
-                    placeholder="Ví dụ: Số: 45/UBND-VP hoặc Số: ……-QĐ/CB"
+                    placeholder="Ví dụ: Số:          /UBND-VHXH hoặc Số: 45/UBND-VP"
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 mt-0.5 italic">
+                    Khoảng trống giữa "Số:" và "/" rộng khoảng 1cm, để trắng không dùng dấu ...
+                  </p>
                 </div>
               </div>
 
@@ -523,6 +613,30 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Nút thao tác Tô đậm Bullet (1, 2, 3...) chuẩn NĐ 30 */}
+            <div className="hidden sm:flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleBoldBullets}
+                className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                title="Tô đậm các đầu dòng Bullet 1, 2, 3... (Khoản, Điều, Điểm, Số La Mã)"
+              >
+                <Bold className="w-3.5 h-3.5" />
+                <ListOrdered className="w-3.5 h-3.5" />
+                <span>Tô đậm Bullet (1, 2, 3...)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleUnboldBullets}
+                className="text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
+                title="Hoàn tác / Bỏ tô đậm đầu dòng Bullet"
+              >
+                <Undo2 className="w-3 h-3 inline mr-0.5" />
+                Bỏ đậm
+              </button>
+            </div>
+
             {/* Chuyển đổi chế độ Tô vàng sửa ngay vs Soạn thảo tự do */}
             <div className="bg-white p-1 rounded-lg border border-slate-300 flex items-center gap-1 shadow-xs">
               <button
@@ -564,6 +678,34 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
         {openSection2 && (
           <div className="p-4 md:p-6 bg-white animate-fade-in text-xs font-sans">
+            
+            {/* Băng thông báo tính năng chuẩn NĐ 30: Tô đậm đầu dòng Bullet 1, 2, 3... */}
+            <div className="mb-4 p-3 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 rounded-xl border border-amber-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-center gap-2 text-amber-950 font-medium">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                <span>
+                  <strong>Chuẩn thể thức NĐ 30:</strong> Các đầu dòng <strong>1., 2., 3...</strong>, <strong>I., II...</strong>, <strong>a), b)...</strong> được <strong>tự động in đậm</strong> trên bản in A4 & file Word!
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleBoldBullets}
+                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                >
+                  <Bold className="w-3.5 h-3.5" />
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  <span>Tô đậm số thứ tự vào văn bản</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUnboldBullets}
+                  className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-medium text-xs cursor-pointer"
+                >
+                  Bỏ đậm
+                </button>
+              </div>
+            </div>
             
             {/* CHẾ ĐỘ 1: TÔ VÀNG SỬA NGAY (Interactive Click-to-Fix) */}
             {bodyMode === 'highlight' ? (
@@ -813,7 +955,32 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
               </div>
             ) : (
               /* CHẾ ĐỘ 2: SOẠN THẢO TỰ DO (Textarea) */
-              <div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-100 rounded-lg border border-slate-200">
+                  <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Edit3 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Soạn thảo tự do (Paste bảng Word/Excel giữ nguyên viền, ngắt trang A4 tự động)</span>
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleBoldBullets}
+                      className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                      title="Tô đậm các đầu dòng 1., 2., 3..., Điều, Khoản, Điểm"
+                    >
+                      <Bold className="w-3 h-3" />
+                      <span>Tô đậm Bullet (1, 2, 3...)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUnboldBullets}
+                      className="bg-white hover:bg-slate-200 text-slate-700 border border-slate-300 px-2 py-1 rounded text-xs font-medium cursor-pointer"
+                    >
+                      Bỏ đậm
+                    </button>
+                  </div>
+                </div>
+
                 <textarea
                   rows={18}
                   value={normalizedText}
@@ -898,7 +1065,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         <button
                           type="button"
                           onClick={() => {
-                            const updatedApps = doc.appendices.filter((_, i) => i !== idx);
+                            const updatedApps = (doc.appendices || []).filter((_, i) => i !== idx);
                             updateDocField('appendices', updatedApps);
                             setFixNotice(`Đã xóa phụ lục ${idx + 1}!`);
                             setTimeout(() => setFixNotice(null), 2500);
@@ -918,7 +1085,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                             type="text"
                             value={app.header}
                             onChange={(e) => {
-                              const updated = [...doc.appendices];
+                              const updated = [...(doc.appendices || [])];
                               updated[idx] = { ...updated[idx], header: e.target.value.toUpperCase() };
                               updateDocField('appendices', updated);
                             }}
@@ -935,7 +1102,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                             type="text"
                             value={app.title}
                             onChange={(e) => {
-                              const updated = [...doc.appendices];
+                              const updated = [...(doc.appendices || [])];
                               updated[idx] = { ...updated[idx], title: e.target.value };
                               updateDocField('appendices', updated);
                             }}
@@ -953,7 +1120,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                           type="text"
                           value={app.referenceNote}
                           onChange={(e) => {
-                            const updated = [...doc.appendices];
+                            const updated = [...(doc.appendices || [])];
                             updated[idx] = { ...updated[idx], referenceNote: e.target.value };
                             updateDocField('appendices', updated);
                           }}
@@ -975,7 +1142,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                           rows={4}
                           value={app.paragraphs.join('\n')}
                           onChange={(e) => {
-                            const updated = [...doc.appendices];
+                            const updated = [...(doc.appendices || [])];
                             updated[idx] = { ...updated[idx], paragraphs: e.target.value.split('\n') };
                             updateDocField('appendices', updated);
                           }}

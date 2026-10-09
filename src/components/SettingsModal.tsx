@@ -289,7 +289,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-slate-900 font-serif uppercase"
               />
               <p className="text-[11px] text-slate-500 mt-0.5 italic">
-                Hệ thống không tự ý thêm cấp trên; chỉ hiển thị ở góc trên bên trái nếu người dùng nhập.
+                Hệ thống không tự ý thêm cấp trên; chỉ áp dụng đối với các phòng, ban, trung tâm chuyên môn trực thuộc tỉnh hoặc xã/phường (để trống nếu ban hành với tư cách UBND).
               </p>
             </div>
 
@@ -307,7 +307,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-slate-900 font-serif font-bold uppercase"
               />
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Trình bày chữ in hoa đậm, cỡ chữ 12-13pt, phía dưới có đường kẻ ngang bằng 1/3 đến 1/2 độ dài dòng chữ.
+                Nếu là UBND các cấp, hệ thống tự động ngắt thành 2 dòng: Dòng 1: ỦY BAN NHÂN DÂN, Dòng 2: PHƯỜNG ĐÔNG TIẾN (in đậm kèm gạch ngang).
               </p>
             </div>
 
@@ -352,17 +352,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <tr>
                     {/* Cột trái (Dòng 1 & Dòng 2) */}
                     <td style={{ width: '45%', verticalAlign: 'top', textAlign: 'center', border: 'none', paddingRight: '8pt' }}>
-                      {form.parentAgency && (
-                        <div style={{ fontSize: '10pt', textTransform: 'uppercase', lineHeight: 1.25, marginBottom: '2pt' }}>
-                          {form.parentAgency}
-                        </div>
+                      {form.parentAgency ? (
+                        <>
+                          <div style={{ fontSize: '10pt', textTransform: 'uppercase', lineHeight: 1.25, marginBottom: '2pt' }}>
+                            {form.parentAgency}
+                          </div>
+                          <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1.25 }}>
+                            {form.agencyName || 'TÊN CƠ QUAN BAN HÀNH'}
+                          </div>
+                        </>
+                      ) : (
+                        (() => {
+                          const ubndMatch = (form.agencyName || '').match(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s+(.+)$/i);
+                          if (ubndMatch) {
+                            return (
+                              <>
+                                <div style={{ fontSize: '10pt', textTransform: 'uppercase', lineHeight: 1.25, marginBottom: '2pt' }}>
+                                  ỦY BAN NHÂN DÂN
+                                </div>
+                                <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1.25 }}>
+                                  {ubndMatch[1].toUpperCase()}
+                                </div>
+                              </>
+                            );
+                          }
+                          return (
+                            <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1.25 }}>
+                              {form.agencyName || 'ỦY BAN NHÂN DÂN PHƯỜNG ĐÔNG TIẾN'}
+                            </div>
+                          );
+                        })()
                       )}
-                      <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1.25 }}>
-                        {form.agencyName || 'TÊN CƠ QUAN BAN HÀNH'}
-                      </div>
                       <div style={{ width: '40%', margin: '2pt auto 3pt auto', borderBottom: '1.2pt solid #000' }}></div>
-                      <div style={{ fontSize: '10pt', fontStyle: 'italic', marginTop: '2pt' }}>
-                        Số: …… /UBND-VP
+                      <div style={{ fontSize: '10pt', marginTop: '2pt' }}>
+                        Số:<span style={{ display: 'inline-block', width: '1cm' }}>&nbsp;</span>/UBND-VP
                       </div>
                     </td>
 
@@ -380,10 +403,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <div style={{ fontSize: '10pt', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
                           </div>
-                          <div style={{ fontSize: '11pt', fontWeight: 'bold', margin: '1pt 0' }}>
-                            Độc lập - Tự do - Hạnh phúc
+                          <div style={{ fontSize: '11pt', fontWeight: 'bold', margin: '2pt 0 1pt 0', textAlign: 'center' }}>
+                            <span style={{ display: 'inline-block', borderBottom: '1.2pt solid #000', paddingBottom: '2pt', lineHeight: 1.15 }}>
+                              Độc lập - Tự do - Hạnh phúc
+                            </span>
                           </div>
-                          <div style={{ width: '75%', margin: '2pt auto 3pt auto', borderBottom: '1.2pt solid #000' }}></div>
                         </>
                       )}
                       <div style={{ fontSize: '10pt', fontStyle: 'italic', marginTop: '3pt' }}>
