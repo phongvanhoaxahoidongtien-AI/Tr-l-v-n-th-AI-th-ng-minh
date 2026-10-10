@@ -2,7 +2,7 @@ import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
   WidthType, AlignmentType, BorderStyle, HeadingLevel, UnderlineType 
 } from 'docx';
-import { StructuredDoc, formatDocCodeForDisplay } from './decree30Formatter';
+import { StructuredDoc, formatDocCodeForDisplay, getStandardAgencyHeaderParts } from './decree30Formatter';
 import { AgencySettings } from '../types';
 
 /**
@@ -25,121 +25,42 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
   };
 
-  // 1. CỘT TRÁI HEADER: Tên cơ quan, số ký hiệu, trích yếu V/v (nếu là công văn)
+  // 1. CỘT TRÁI HEADER: Tên cơ quan ban hành chuẩn NĐ 30 & HD 05
+  // - Cấp UBND: Dòng 1 ỦY BAN NHÂN DÂN (đứng, 12pt), Dòng 2 <CẤP> (in đậm, 12pt)
+  // - Phòng ban trực thuộc: Dòng 1 UBND cấp trên (đứng, 12pt), Dòng 2 Phòng ban ban hành (in đậm, 12pt)
   const leftHeaderParagraphs: Paragraph[] = [];
-  const cleanParent = doc.parentAgency?.trim();
-  const cleanAgency = doc.agencyName?.trim();
+  const agencyParts = getStandardAgencyHeaderParts(doc.parentAgency, doc.agencyName);
 
-  if (cleanParent) {
-    // Có cơ quan cấp trên (chỉ áp dụng đối với phòng, ban, trung tâm chuyên môn trực thuộc)
-    leftHeaderParagraphs.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 40, line: 240 },
-        children: [
-          new TextRun({
-            text: cleanParent.toUpperCase(),
-            font: 'Times New Roman',
-            size: 24, // 12pt
-          }),
-        ],
-      })
-    );
+  leftHeaderParagraphs.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: agencyParts.hasLine2 ? 40 : 60, line: 240 },
+      children: [
+        new TextRun({
+          text: agencyParts.line1,
+          font: 'Times New Roman',
+          size: 24, // 12pt
+          bold: agencyParts.line1Bold,
+        }),
+      ],
+    })
+  );
+
+  if (agencyParts.hasLine2) {
     leftHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 60, line: 240 },
         children: [
           new TextRun({
-            text: cleanAgency.toUpperCase(),
+            text: agencyParts.line2,
             font: 'Times New Roman',
             size: 24, // 12pt
-            bold: true,
+            bold: agencyParts.line2Bold,
           }),
         ],
       })
     );
-  } else if (cleanAgency) {
-    // Không có cơ quan cấp trên
-    if (cleanAgency.includes('\n')) {
-      const parts = cleanAgency.split('\n').map(p => p.trim()).filter(Boolean);
-      leftHeaderParagraphs.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 40, line: 240 },
-          children: [
-            new TextRun({
-              text: parts[0].toUpperCase(),
-              font: 'Times New Roman',
-              size: 24, // 12pt
-            }),
-          ],
-        })
-      );
-      if (parts[1]) {
-        leftHeaderParagraphs.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 60, line: 240 },
-            children: [
-              new TextRun({
-                text: parts[1].toUpperCase(),
-                font: 'Times New Roman',
-                size: 24, // 12pt
-                bold: true,
-              }),
-            ],
-          })
-        );
-      }
-    } else {
-      const ubndMatch = cleanAgency.match(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s+(.+)$/i);
-      if (ubndMatch) {
-        // UBND các cấp: Dòng 1 "ỦY BAN NHÂN DÂN" thường, Dòng 2 "<CẤP>" đậm
-        leftHeaderParagraphs.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 40, line: 240 },
-            children: [
-              new TextRun({
-                text: 'ỦY BAN NHÂN DÂN',
-                font: 'Times New Roman',
-                size: 24, // 12pt
-              }),
-            ],
-          })
-        );
-        leftHeaderParagraphs.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 60, line: 240 },
-            children: [
-              new TextRun({
-                text: ubndMatch[1].toUpperCase(),
-                font: 'Times New Roman',
-                size: 24, // 12pt
-                bold: true,
-              }),
-            ],
-          })
-        );
-      } else {
-        leftHeaderParagraphs.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 60, line: 240 },
-            children: [
-              new TextRun({
-                text: cleanAgency.toUpperCase(),
-                font: 'Times New Roman',
-                size: 24, // 12pt
-                bold: true,
-              }),
-            ],
-          })
-        );
-      }
-    }
   }
 
   // Đường kẻ ngang dưới tên cơ quan (1/3 đến 1/2 độ dài)
@@ -668,7 +589,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       bodyParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
-          indent: { left: 708 }, // Thụt lề 1.25cm
+          indent: { firstLine: 850 }, // Thụt lề đầu dòng Điểm (a, b, c...) 1.5cm chuẩn NĐ 30 & HD 05
           spacing: { before: 60, after: 60, line: 320 },
           children: runs,
         })
@@ -681,7 +602,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       bodyParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
-          indent: { left: 850 },
+          indent: { firstLine: 992 }, // Thụt lề đầu dòng gạch đầu dòng 1.75cm
           spacing: { before: 60, after: 60, line: 320 },
           children: [
             new TextRun({

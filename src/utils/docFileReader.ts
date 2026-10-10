@@ -394,7 +394,7 @@ export async function parseDocumentFile(file: File): Promise<{
       let extractedContent = '';
       try {
         const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
-        if (htmlResult && htmlResult.value && htmlResult.value.includes('<table')) {
+        if (htmlResult && htmlResult.value && htmlResult.value.trim()) {
           extractedContent = htmlResult.value;
         }
       } catch {

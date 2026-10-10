@@ -117,6 +117,8 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
       locationDate: `${defaultLoc}, ngày      tháng      năm ${targetYear}`,
     };
     handleDocUpdate(updated);
+    setDownloadNotice(`✓ Đã đồng bộ cơ quan: "${agencySettings.agencyName}" và địa danh: "${defaultLoc}" theo Cài đặt mặc định!`);
+    setTimeout(() => setDownloadNotice(null), 3500);
   };
 
   // Tạo HTML A4 real-time theo nội dung đã chỉnh sửa (sử dụng activeDoc trực tiếp)
@@ -192,6 +194,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
   };
 
   const handleTextChange = (newText: string) => {
+    lastEmittedTextRef.current = newText;
     if (onUpdateNormalizedText) {
       onUpdateNormalizedText(newText);
     }

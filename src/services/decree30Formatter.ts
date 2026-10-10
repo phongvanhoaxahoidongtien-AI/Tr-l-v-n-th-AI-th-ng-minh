@@ -176,59 +176,106 @@ export function unboldBulletHeadings(text: string): { text: string; count: numbe
  *   Nếu chứa \n: dòng 1 đứng, dòng 2 đậm
  *   Ngược lại: dòng 1 đậm
  */
+export interface AgencyHeaderParts {
+  line1: string;
+  line1Bold: boolean;
+  line2: string;
+  line2Bold: boolean;
+  hasLine2: boolean;
+  isUbndLevel: boolean;
+}
+
+/**
+ * Chuẩn hóa tên cơ quan ban hành (Cột trái) theo Nghị định 30/2020/NĐ-CP & Hướng dẫn 05:
+ * - Đối với cấp UBND (Phường, Xã, Thị trấn, Huyện, Quận, Thị xã, Tỉnh, Thành phố):
+ *   Không có cơ quan cấp trên; tiêu đề cơ quan ban hành được trình bày chuẩn 2 dòng:
+ *   Dòng 1: ỦY BAN NHÂN DÂN (chữ in hoa, đứng, size 12pt)
+ *   Dòng 2: PHƯỜNG ĐÔNG TIẾN (hoặc TỈNH THANH HÓA, XÃ ĐÔNG TIẾN...) (chữ in hoa, in đậm, size 12pt)
+ * - Đối với phòng, ban, trung tâm chuyên môn trực thuộc tỉnh hoặc xã/phường (áp dụng Cơ quan cấp trên & Cơ quan ban hành):
+ *   Dòng 1: UBND cấp trên (chữ in hoa, đứng, size 12pt)
+ *   Dòng 2: Phòng/ban chuyên môn ban hành (chữ in hoa, in đậm, size 12pt)
+ */
+export function getStandardAgencyHeaderParts(parentAgency?: string, agencyName?: string): AgencyHeaderParts {
+  const cleanParent = (parentAgency || '').trim();
+  const cleanAgency = (agencyName || '').trim();
+
+  // 1. Kiểm tra xem có phải cơ quan cấp UBND không
+  const isUbnd = /^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\b/i.test(cleanAgency) ||
+    /^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)$/i.test(cleanParent);
+
+  if (isUbnd) {
+    let locality = '';
+    const match = cleanAgency.match(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*(.*)$/i);
+    if (match && match[1].trim()) {
+      locality = match[1].trim();
+    } else if (cleanParent && !/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)$/i.test(cleanAgency)) {
+      locality = cleanAgency;
+    } else {
+      locality = 'PHƯỜNG ĐÔNG TIẾN';
+    }
+
+    return {
+      line1: 'ỦY BAN NHÂN DÂN',
+      line1Bold: false, // Dòng 1: chữ in hoa, đứng, size 12pt
+      line2: locality.toUpperCase(),
+      line2Bold: true,  // Dòng 2: chữ in hoa, in đậm, size 12pt
+      hasLine2: true,
+      isUbndLevel: true,
+    };
+  }
+
+  // 2. Trường hợp phòng, ban, trung tâm chuyên môn trực thuộc (Dòng 1: Cấp trên đứng, Dòng 2: Phòng/ban đậm)
+  if (cleanParent && cleanAgency) {
+    return {
+      line1: cleanParent.toUpperCase(),
+      line1Bold: false,
+      line2: cleanAgency.toUpperCase(),
+      line2Bold: true,
+      hasLine2: true,
+      isUbndLevel: false,
+    };
+  }
+
+  // 3. Cơ quan ban hành có 2 dòng (chứa \n)
+  if (cleanAgency && cleanAgency.includes('\n')) {
+    const parts = cleanAgency.split('\n').map(p => p.trim()).filter(Boolean);
+    return {
+      line1: (parts[0] || '').toUpperCase(),
+      line1Bold: false,
+      line2: (parts[1] || '').toUpperCase(),
+      line2Bold: true,
+      hasLine2: Boolean(parts[1]),
+      isUbndLevel: false,
+    };
+  }
+
+  // 4. Các trường hợp cơ quan đơn lẻ khác
+  const single = cleanAgency || cleanParent || 'ỦY BAN NHÂN DÂN PHƯỜNG ĐÔNG TIẾN';
+  return {
+    line1: single.toUpperCase(),
+    line1Bold: true,
+    line2: '',
+    line2Bold: false,
+    hasLine2: false,
+    isUbndLevel: false,
+  };
+}
+
+/**
+ * Hiển thị khối tên cơ quan ban hành trên A4 HTML (chuẩn NĐ 30 & HD 05)
+ */
 export function renderAgencyHeaderHtml(parentAgency: string, agencyName: string): string {
-  const cleanParent = parentAgency?.trim();
-  const cleanAgency = agencyName?.trim();
-
-  if (cleanParent) {
-    return `
-      <div style="font-size: 12pt; text-transform: uppercase; font-weight: normal; margin-bottom: 2pt; letter-spacing: -0.1px; font-family: 'Times New Roman', serif;">
-        ${cleanParent}
-      </div>
-      <div style="font-size: 12pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
-        ${cleanAgency}
-      </div>
-    `;
-  }
-
-  if (cleanAgency) {
-    if (cleanAgency.includes('\n')) {
-      const parts = cleanAgency.split('\n').map(p => p.trim()).filter(Boolean);
-      return `
-        <div style="font-size: 12pt; text-transform: uppercase; font-weight: normal; margin-bottom: 2pt; letter-spacing: -0.1px; font-family: 'Times New Roman', serif;">
-          ${parts[0]}
-        </div>
-        ${parts[1] ? `
-          <div style="font-size: 12pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
-            ${parts[1]}
-          </div>
-        ` : ''}
-      `;
-    }
-
-    const ubndMatch = cleanAgency.match(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s+(.+)$/i);
-    if (ubndMatch) {
-      return `
-        <div style="font-size: 12pt; text-transform: uppercase; font-weight: normal; margin-bottom: 2pt; letter-spacing: -0.1px; font-family: 'Times New Roman', serif;">
-          ỦY BAN NHÂN DÂN
-        </div>
-        <div style="font-size: 12pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
-          ${ubndMatch[1].toUpperCase()}
-        </div>
-      `;
-    }
-
-    return `
-      <div style="font-size: 12pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
-        ${cleanAgency}
-      </div>
-    `;
-  }
+  const parts = getStandardAgencyHeaderParts(parentAgency, agencyName);
 
   return `
-    <div style="font-size: 12pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
-      ỦY BAN NHÂN DÂN PHƯỜNG ĐÔNG TIẾN
+    <div style="font-size: 12pt; text-transform: uppercase; font-weight: ${parts.line1Bold ? 'bold' : 'normal'}; margin-bottom: 2pt; letter-spacing: -0.1px; font-family: 'Times New Roman', serif;">
+      ${parts.line1}
     </div>
+    ${parts.hasLine2 ? `
+      <div style="font-size: 12pt; text-transform: uppercase; font-weight: ${parts.line2Bold ? 'bold' : 'normal'}; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
+        ${parts.line2}
+      </div>
+    ` : ''}
   `;
 }
 
@@ -575,8 +622,24 @@ export function parseDocumentStructure(
   }
 
   if (foundAgencies.length >= 2) {
-    parentAgency = foundAgencies[0].text.trim();
-    agencyName = foundAgencies[1].text.trim();
+    const firstText = foundAgencies[0].text.trim();
+    const secondText = foundAgencies[1].text.trim();
+
+    // Đối với cấp UBND (Phường, Xã, Huyện, Tỉnh): Không có cơ quan cấp trên
+    // Nếu dòng 1 là "ỦY BAN NHÂN DÂN" / "UBND" và dòng 2 là tên địa phương hoặc cả dòng 2 là UBND
+    if (/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)$/i.test(firstText)) {
+      agencyName = `ỦY BAN NHÂN DÂN ${secondText.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, '')}`.trim();
+      parentAgency = '';
+    } else if (/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\b/i.test(secondText)) {
+      // Dòng 2 là UBND -> chính là cơ quan ban hành, cấp UBND không có cấp trên
+      agencyName = secondText;
+      parentAgency = '';
+    } else {
+      // Cơ quan cấp trên (UBND) và Phòng/ban/trung tâm chuyên môn ban hành
+      parentAgency = firstText;
+      agencyName = secondText;
+    }
+
     // Xóa các dòng cơ quan đã tìm thấy từ dưới lên trên (descending index) để không làm lệch chỉ số mảng
     const sortedFound = [...foundAgencies].sort((a, b) => b.index - a.index);
     for (const item of sortedFound) {
@@ -1128,7 +1191,7 @@ export function generateDecree30A4Html(
             `;
           }
 
-          // 7. Điểm (a), b), c)...) -> TỰ ĐỘNG TÔ ĐẬM ĐẦU DÒNG BULLET
+          // 7. Điểm (a), b), c)...) -> TỰ ĐỘNG TÔ ĐẬM ĐẦU DÒNG BULLET & THỤT ĐẦU DÒNG 1.5CM
           const letterMatch = cleanP.match(/^([a-zđ]\))(?:\s+(.*))?$/i);
           if (letterMatch) {
             const letterBullet = letterMatch[1];
@@ -1136,13 +1199,13 @@ export function generateDecree30A4Html(
             const colonMatch = rest.match(/^([^:]{2,40}:)\s*(.*)$/);
             if (colonMatch) {
               return `
-                <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.25cm; font-family: 'Times New Roman', serif;">
+                <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.5cm; font-family: 'Times New Roman', serif;">
                   <strong>${letterBullet} ${colonMatch[1]}</strong> ${colonMatch[2]}
                 </p>
               `;
             }
             return `
-              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.25cm; font-family: 'Times New Roman', serif;">
+              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.5cm; font-family: 'Times New Roman', serif;">
                 <strong>${letterBullet}</strong> ${rest}
               </p>
             `;
@@ -1151,7 +1214,7 @@ export function generateDecree30A4Html(
           // 8. Gạch đầu dòng (-)
           if (/^-\s+/.test(cleanP)) {
             return `
-              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.5cm; font-family: 'Times New Roman', serif;">
+              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.75cm; font-family: 'Times New Roman', serif;">
                 ${cleanP}
               </p>
             `;
@@ -1160,7 +1223,7 @@ export function generateDecree30A4Html(
           // 9. Dấu cộng (+)
           if (/^\+\s+/.test(cleanP)) {
             return `
-              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1.75cm; font-family: 'Times New Roman', serif;">
+              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 2cm; font-family: 'Times New Roman', serif;">
                 ${cleanP}
               </p>
             `;

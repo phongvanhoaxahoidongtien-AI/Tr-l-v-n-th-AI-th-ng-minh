@@ -323,6 +323,52 @@ export function extractTablesFromHtmlClipboard(html: string): string | null {
 }
 
 /**
+ * Kiểm tra xem bảng HTML có phải là Bảng bố cục 2 cột thể thức (Đầu văn bản: Cơ quan / Quốc hiệu, Số / Ngày tháng) không
+ */
+export function isHeaderLayoutTable(tableHtml: string): boolean {
+  const text = tableHtml.replace(/<[^>]+>/g, ' ');
+  const hasNational = /CỘNG\s+H[ÒO]A|Độc\s+lập|ĐẢNG\s+CỘNG\s+SẢN/i.test(text);
+  const hasAgencyOrCode = /(?:ỦY\s+BAN|UBND|HỘI\s+ĐỒNG|ĐẢNG|SỞ|PHÒNG|BỘ|BAN|TRƯỜNG|CHI\s+BỘ|Số:\s*|Số\s*[\d\.\/])/i.test(text);
+  const hasDate = /ngày\s+[\d\s…]+tháng\s+[\d\s…]+năm/i.test(text);
+  return (hasNational && (hasAgencyOrCode || hasDate)) || (hasAgencyOrCode && hasDate);
+}
+
+/**
+ * Kiểm tra xem bảng HTML có phải là Bảng bố cục 2 cột chân trang (Nơi nhận & Chữ ký) không
+ */
+export function isFooterLayoutTable(tableHtml: string): boolean {
+  const text = tableHtml.replace(/<[^>]+>/g, ' ');
+  const hasRecipients = /Nơi\s+nhận/i.test(text);
+  const hasSigner = /(?:CHỦ\s+TỊCH|BÍ\s+THƯ|PHÓ\s+CHỦ\s+TỊCH|GIÁM\s+ĐỐC|TRƯỞNG\s+PHÒNG|HIỆU\s+TRƯỞNG|TM\.|T\/M|KT\.|Q\.|TL\.)/i.test(text);
+  return hasRecipients && hasSigner;
+}
+
+/**
+ * Giải nén Bảng bố cục 2 cột thể thức thành các dòng văn bản tuần tự (Cột trái trước, Cột phải sau)
+ */
+export function unpackLayoutTable(tableHtml: string): string {
+  const cells: string[] = [];
+  const cellRegex = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+  let m;
+  while ((m = cellRegex.exec(tableHtml)) !== null) {
+    let cellContent = m[1];
+    cellContent = cellContent
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&quot;/gi, '"')
+      .trim();
+    if (cellContent) {
+      cells.push(cellContent);
+    }
+  }
+  return cells.join('\n\n');
+}
+
+/**
  * Xóa bỏ Tiêu đề Quốc ngữ (khi người dùng chủ động yêu cầu gỡ bỏ)
  */
 export function stripImportedNationalHeaders(text: string): { cleanedText: string; strippedFound: boolean } {
@@ -449,6 +495,10 @@ export function cleanAIText(
   if (preserveTables) {
     // A. Bảng HTML
     text = text.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (match) => {
+      // Bóc tách bảng bố cục 2 cột (Header hoặc Footer) thành dòng văn bản thuần thay vì nhốt vào bảng
+      if (isHeaderLayoutTable(match) || isFooterLayoutTable(match)) {
+        return `\n\n${unpackLayoutTable(match)}\n\n`;
+      }
       const cleanTable = formatHtmlTableToFitA4(match);
       const placeholder = `___TABLE_BLOCK_${tablePlaceholders.length}___`;
       tablePlaceholders.push(cleanTable);
@@ -507,8 +557,20 @@ export function cleanAIText(
   text = text.replace(/~~(.*?)~~/g, '$1');
   text = text.replace(/`([^`\n]+)`/g, '$1');
 
-  // Thẻ HTML thông dụng không phải bảng (<p>, <br>, <b>, <span>...)
-  text = text.replace(/<\/?(?:p|br|b|strong|i|em|span|div|font|ul|ol|li)\b[^>]*>/gi, '');
+  // Chuyển đổi các thẻ khối HTML thành xuống dòng trước khi bóc thẻ để tránh dính liền chữ
+  text = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/<\/?(?:p|b|strong|i|em|span|div|font|ul|ol|li|h[1-6]|body|html|center|u|s|small|big)\b[^>]*>/gi, '');
 
   // 9. Loại bỏ Emoji
   text = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1FA00}-\u{1FAFF}]/gu, '');

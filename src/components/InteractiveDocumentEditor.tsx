@@ -54,6 +54,10 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
   // Sync with externalDoc if provided from parent Step4Export
   useEffect(() => {
+    if (isInternalUpdateRef.current) {
+      isInternalUpdateRef.current = false;
+      return;
+    }
     if (externalDoc) {
       setDoc(externalDoc);
       setKinhGuiText(externalDoc.recipientsHeader ? formatBulletLines(externalDoc.recipientsHeader).join('\n') : '');
