@@ -1,9 +1,176 @@
 import { 
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
-  WidthType, AlignmentType, BorderStyle, HeadingLevel, UnderlineType 
+  WidthType, AlignmentType, BorderStyle, HeadingLevel, UnderlineType,
+  Header, PageNumber
 } from 'docx';
 import { StructuredDoc, formatDocCodeForDisplay, getStandardAgencyHeaderParts } from './decree30Formatter';
 import { AgencySettings } from '../types';
+
+/**
+ * Chuyển đổi chuỗi bảng HTML hoặc bảng Markdown thành đối tượng Table docx chuẩn Nghị định 30
+ */
+export function convertTableToDocxTable(tableContent: string): Table | null {
+  try {
+    // 1. Trường hợp bảng HTML (từ mammoth hoặc paste từ Word/Web)
+    if (tableContent.includes('<table')) {
+      const rowMatches = tableContent.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi);
+      if (!rowMatches || rowMatches.length === 0) return null;
+
+      const docxRows: TableRow[] = [];
+
+      for (let rIdx = 0; rIdx < rowMatches.length; rIdx++) {
+        const rowHtml = rowMatches[rIdx];
+        const isHeaderRow = /<th\b/i.test(rowHtml) || rIdx === 0;
+
+        const cellMatches = rowHtml.match(/<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi);
+        if (!cellMatches || cellMatches.length === 0) continue;
+
+        const cells = cellMatches.map((cellHtml, cIdx) => {
+          const cellText = cellHtml
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n')
+            .replace(/<\/div>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&quot;/gi, '"')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .trim();
+
+          const isStt = cIdx === 0 && (isHeaderRow || /^\d+$/.test(cellText) || /^stt\b/i.test(cellText));
+          const isNumber = /^\d+(?:[.,]\d+)?%?$/.test(cellText);
+
+          const align = isHeaderRow 
+            ? AlignmentType.CENTER 
+            : isStt 
+            ? AlignmentType.CENTER 
+            : isNumber 
+            ? AlignmentType.RIGHT 
+            : AlignmentType.LEFT;
+
+          return new TableCell({
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+              bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+              left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+              right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+            },
+            shading: isHeaderRow ? { fill: 'F8FAFC' } : undefined,
+            children: [
+              new Paragraph({
+                alignment: align,
+                spacing: { before: isHeaderRow ? 70 : 45, after: isHeaderRow ? 70 : 45, line: 240 },
+                children: [
+                  new TextRun({
+                    text: cellText,
+                    font: 'Times New Roman',
+                    size: isHeaderRow ? 24 : 22, // 12pt tiêu đề, 11pt nội dung
+                    bold: isHeaderRow,
+                  }),
+                ],
+              }),
+            ],
+          });
+        });
+
+        docxRows.push(
+          new TableRow({
+            tableHeader: isHeaderRow,
+            cantSplit: true,
+            children: cells,
+          })
+        );
+      }
+
+      if (docxRows.length > 0) {
+        return new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: docxRows,
+        });
+      }
+    }
+
+    // 2. Trường hợp bảng Markdown
+    if (tableContent.includes('|')) {
+      const lines = tableContent.split('\n').filter(l => l.trim().startsWith('|'));
+      if (lines.length >= 2) {
+        const parseRow = (line: string) => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+        const headerCells = parseRow(lines[0]);
+        const dataLines = lines.slice(1).filter(l => !/^[|\s:-]+$/.test(l));
+        const dataRows = dataLines.map(parseRow);
+
+        const docxRows: TableRow[] = [
+          new TableRow({
+            tableHeader: true,
+            cantSplit: true,
+            children: headerCells.map(cellText => new TableCell({
+              borders: {
+                top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+              },
+              shading: { fill: 'F8FAFC' },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 70, after: 70, line: 240 },
+                  children: [
+                    new TextRun({
+                      text: cellText,
+                      font: 'Times New Roman',
+                      size: 24, // 12pt
+                      bold: true,
+                    }),
+                  ],
+                }),
+              ],
+            })),
+          }),
+          ...dataRows.map(rowCells => new TableRow({
+            cantSplit: true,
+            children: rowCells.map((cellText, cIdx) => {
+              const isStt = cIdx === 0 && (/^\d+$/.test(cellText) || /^stt\b/i.test(cellText));
+              const isNumber = /^\d+(?:[.,]\d+)?%?$/.test(cellText);
+              const align = isStt ? AlignmentType.CENTER : isNumber ? AlignmentType.RIGHT : AlignmentType.LEFT;
+
+              return new TableCell({
+                borders: {
+                  top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                  left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                  right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                },
+                children: [
+                  new Paragraph({
+                    alignment: align,
+                    spacing: { before: 45, after: 45, line: 240 },
+                    children: [
+                      new TextRun({
+                        text: cellText,
+                        font: 'Times New Roman',
+                        size: 22, // 11pt
+                      }),
+                    ],
+                  }),
+                ],
+              });
+            }),
+          })),
+        ];
+
+        return new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: docxRows,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Lỗi phân tích bảng docx:', err);
+  }
+  return null;
+}
 
 /**
  * Xuất file .docx chuẩn thể thức Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW
@@ -362,16 +529,27 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     );
   }
 
-  // 6. NỘI DUNG VĂN BẢN
-  const bodyParagraphs: Paragraph[] = [];
+  // 6. NỘI DUNG VĂN BẢN (HỖ TRỢ BẢNG BIỂU CHUẨN NGHỊ ĐỊNH 30)
+  const bodyElements: (Paragraph | Table)[] = [];
   for (const p of doc.bodyParagraphs) {
     const cleanP = p.replace(/[\*_~`#]/g, '').trim();
     if (!cleanP) continue;
 
+    // 0. BẢNG BIỂU (HTML Table hoặc Markdown Table)
+    if (cleanP.includes('<table') || cleanP.includes('___TABLE_BLOCK_') || (cleanP.includes('|') && cleanP.split('\n').filter(l => l.trim().startsWith('|')).length >= 2)) {
+      const docxTable = convertTableToDocxTable(cleanP);
+      if (docxTable) {
+        bodyElements.push(new Paragraph({ spacing: { before: 140 } }));
+        bodyElements.push(docxTable);
+        bodyElements.push(new Paragraph({ spacing: { after: 140 } }));
+        continue;
+      }
+    }
+
     // A. Chỉ thị hành động chính (QUYẾT ĐỊNH:, QUYẾT NGHỊ:, CHỈ THỊ:, KẾT LUẬN:, YÊU CẦU:)
     if (/^(QUYẾT ĐỊNH|QUYẾT NGHỊ|CHỈ THỊ|KẾT LUẬN|YÊU CẦU|CÔNG NHẬN|PHÊ CHUẨN|CHUẨN Y)\s*[:\.]?$/i.test(cleanP)) {
       const cmdName = cleanP.replace(/[:\.\s]+$/, '').toUpperCase();
-      bodyParagraphs.push(
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { before: 240, after: 180, line: 300 },
@@ -391,7 +569,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     // B. Tiêu đề Chương (CHƯƠNG I, CHƯƠNG II...)
     const chapterMatch = cleanP.match(/^(Chương\s+[IVXLCDM\d]+)[\.:]?\s*(.*)$/i);
     if (chapterMatch) {
-      bodyParagraphs.push(
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { before: 200, after: 60, line: 300 },
@@ -406,7 +584,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         })
       );
       if (chapterMatch[2]?.trim()) {
-        bodyParagraphs.push(
+        bodyElements.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { before: 40, after: 160, line: 300 },
@@ -427,7 +605,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     // C. Tiêu đề Điều khoản (Điều 1., Điều 2...)
     const articleMatch = cleanP.match(/^(Điều\s+\d+)[\.:]?\s*(.*)$/i);
     if (articleMatch) {
-      bodyParagraphs.push(
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
           indent: { firstLine: 567 },
@@ -488,7 +666,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         );
       }
 
-      bodyParagraphs.push(
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
           indent: { firstLine: 567 },
@@ -537,7 +715,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         );
       }
 
-      bodyParagraphs.push(
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
           indent: { firstLine: 567 },
@@ -586,10 +764,10 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         );
       }
 
-      bodyParagraphs.push(
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
-          indent: { firstLine: 850 }, // Thụt lề đầu dòng Điểm (a, b, c...) 1.5cm chuẩn NĐ 30 & HD 05
+          indent: { firstLine: 567 }, // Thống nhất tất cả các bullet & điểm (a, b, c...) có khoảng cách thụt lề bằng nhau (1cm)
           spacing: { before: 60, after: 60, line: 320 },
           children: runs,
         })
@@ -597,16 +775,18 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       continue;
     }
 
-    // E. Gạch đầu dòng (-)
-    if (/^-\s+/.test(cleanP)) {
-      bodyParagraphs.push(
+    // E. Thống nhất tất cả các bullet (-, +, *, •, ●, ○) có khoảng cách thụt lề bằng nhau (1cm = 567 dxa)
+    // Không phân chia -/+ thụt lề nhiều hơn, tất cả bullet thụt lề bằng nhau chuẩn Nghị định 30
+    if (/^[\-\+\*•●○■◆❖✓►➢]\s*/.test(cleanP)) {
+      const unifiedBulletText = cleanP.replace(/^[\-\+\*•●○■◆❖✓►➢]\s*/, '- ');
+      bodyElements.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
-          indent: { firstLine: 992 }, // Thụt lề đầu dòng gạch đầu dòng 1.75cm
+          indent: { firstLine: 567 }, // Thống nhất tất cả các bullet có khoảng cách thụt lề bằng nhau (1cm)
           spacing: { before: 60, after: 60, line: 320 },
           children: [
             new TextRun({
-              text: cleanP,
+              text: unifiedBulletText,
               font: 'Times New Roman',
               size: 28,
             }),
@@ -617,7 +797,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     }
 
     // F. Đoạn văn thông thường
-    bodyParagraphs.push(
+    bodyElements.push(
       new Paragraph({
         alignment: AlignmentType.JUSTIFIED,
         indent: { firstLine: 567 },
@@ -855,73 +1035,18 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         );
       }
 
-      // Nội dung và Bảng biểu Phụ lục
+      // Nội dung và Bảng biểu Phụ lục (Tự động chuyển đổi sang bảng Word chuẩn)
       for (const p of app.paragraphs) {
         const cleanP = p.replace(/[\*_~`#]/g, '').trim();
-        // Kiểm tra bảng Markdown
-        if (cleanP.includes('|') && cleanP.split('\n').filter(l => l.includes('|')).length >= 2) {
-          const tableLines = cleanP.split('\n').filter(l => l.trim().startsWith('|'));
-          if (tableLines.length >= 2) {
-            const parseRow = (line: string) => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
-            const headerCells = parseRow(tableLines[0]);
-            const dataRows = tableLines.slice(2).map(parseRow);
-            
-            const docxRows: TableRow[] = [
-              new TableRow({
-                tableHeader: true,
-                children: headerCells.map(cellText => new TableCell({
-                  borders: {
-                    top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                    bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                    left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                    right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                  },
-                  children: [
-                    new Paragraph({
-                      alignment: AlignmentType.CENTER,
-                      spacing: { before: 60, after: 60 },
-                      children: [
-                        new TextRun({
-                          text: cellText,
-                          font: 'Times New Roman',
-                          size: 22, // 11pt
-                          bold: true,
-                        }),
-                      ],
-                    }),
-                  ],
-                })),
-              }),
-              ...dataRows.map(rowCells => new TableRow({
-                children: rowCells.map(cellText => new TableCell({
-                  borders: {
-                    top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                    bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                    left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                    right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-                  },
-                  children: [
-                    new Paragraph({
-                      spacing: { before: 40, after: 40 },
-                      children: [
-                        new TextRun({
-                          text: cellText,
-                          font: 'Times New Roman',
-                          size: 22, // 11pt
-                        }),
-                      ],
-                    }),
-                  ],
-                })),
-              })),
-            ];
+        if (!cleanP) continue;
 
-            appendixElements.push(
-              new Table({
-                width: { size: 100, type: WidthType.PERCENTAGE },
-                rows: docxRows,
-              })
-            );
+        // Kiểm tra bảng HTML hoặc bảng Markdown trong phụ lục
+        if (cleanP.includes('<table') || cleanP.includes('___TABLE_BLOCK_') || (cleanP.includes('|') && cleanP.split('\n').filter(l => l.includes('|')).length >= 2)) {
+          const docxTable = convertTableToDocxTable(cleanP);
+          if (docxTable) {
+            appendixElements.push(new Paragraph({ spacing: { before: 120 } }));
+            appendixElements.push(docxTable);
+            appendixElements.push(new Paragraph({ spacing: { after: 120 } }));
             continue;
           }
         }
@@ -945,10 +1070,37 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     });
   }
 
-  // Tạo toàn bộ document
+  // Tạo toàn bộ document (Tự động điền số trang theo chuẩn Nghị định 30 & HD 05)
+  // - Vị trí: Ở giữa theo chiều ngang của lề trên trang văn bản
+  // - Phông chữ: Times New Roman, cỡ 13-14pt (size 28), chữ đứng, chữ số Ả Rập
+  // - Trang 1 không ghi số trang, tự động đánh số từ trang thứ 2 trở đi
   const wordDocument = new Document({
     sections: [
       {
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { before: 0, after: 120, line: 240 },
+                children: [
+                  new TextRun({
+                    children: [PageNumber.CURRENT],
+                    font: 'Times New Roman',
+                    size: 28, // 14pt chuẩn NĐ 30
+                  }),
+                ],
+              }),
+            ],
+          }),
+          first: new Header({
+            children: [
+              new Paragraph({
+                children: [], // Trang 1 không hiển thị số trang theo Nghị định 30
+              }),
+            ],
+          }),
+        },
         properties: {
           page: {
             size: {
@@ -961,7 +1113,11 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
               left: 1701, // 30mm
               right: 850, // 15mm
             },
+            pageNumbers: {
+              start: 1,
+            },
           },
+          titlePage: true, // Trang 1 sử dụng first header (trống), từ trang 2 trở đi đánh số trang ở giữa lề trên
         },
         children: [
           headerTable,
@@ -969,7 +1125,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
           ...titleParagraphs,
           ...recipientParagraphs,
           ...legalBaseParagraphs,
-          ...bodyParagraphs,
+          ...bodyElements,
           new Paragraph({ spacing: { before: 240, after: 120 } }),
           footerTable,
           ...appendixElements,

@@ -1,6 +1,7 @@
 import { AgencySettings, NormalizeResult } from '../types';
 import { parseDocumentStructure, reconstructNormalizedText } from './decree30Formatter';
 import { analyzeDocumentText } from './documentAnalyzer';
+import { autoFixVietnameseSpelling } from '../utils/vietnameseSpellingChecker';
 
 // Danh mục lỗi chính tả & văn phong hành chính tiếng Việt chuyên sâu theo chuẩn trolyvanthu.isavn.edu.vn
 const SPELLING_RULES: Array<{ pattern: RegExp; replacement: string; reason: string; category: 'chinh_ta' | 'van_phong' | 'the_thuc' }> = [
@@ -239,17 +240,16 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     warningAgency = null;
   }
 
-  // 2. Chạy từ điển lỗi chính tả và thể thức
-  for (const rule of SPELLING_RULES) {
-    if (rule.pattern.test(content)) {
-      content = content.replace(rule.pattern, rule.replacement);
-      errorList.push(rule.reason);
-      spellingFixes.push({
-        wrong: rule.pattern.toString().replace(/[/\\^$*+?.()|[\]{}]/g, ''),
-        right: rule.replacement,
-        context: rule.reason
-      });
-    }
+  // 2. Chạy từ điển lỗi chính tả và thể thức chuyên sâu (an toàn với ranh giới từ tiếng Việt)
+  const spellResult = autoFixVietnameseSpelling(content);
+  content = spellResult.fixedText;
+  for (const fix of spellResult.appliedFixes) {
+    errorList.push(fix.reason);
+    spellingFixes.push({
+      wrong: fix.wrong,
+      right: fix.right,
+      context: fix.reason
+    });
   }
 
   // 3. Chuẩn hóa Quốc hiệu & Tiêu ngữ theo Nghị định 30/2020/NĐ-CP (nếu không phải văn bản Đảng)

@@ -119,9 +119,23 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </nav>
 
-          {/* Action buttons (Settings & Offline Export) */}
-          <div className="flex items-center gap-2">
+          {/* Action buttons (Home, Settings & Offline Export) */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
             
+            {/* Dedicated HOME button (Nút hình ngôi nhà) */}
+            <button
+              onClick={() => setCurrentTab('home')}
+              title="Quay về mặc định Trang chủ (HOME)"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer border ${
+                currentTab === 'home'
+                  ? 'bg-amber-400 text-red-950 border-yellow-200 shadow-md ring-2 ring-yellow-300/60'
+                  : 'bg-white/15 hover:bg-white/25 text-white border-white/20 hover:scale-105 active:scale-95'
+              }`}
+            >
+              <Home className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-amber-300 shrink-0" />
+              <span className="font-sans tracking-wide">HOME</span>
+            </button>
+
             {/* Quick Agency Badge */}
             <button
               onClick={openSettings}
@@ -139,10 +153,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={handleDownloadOfflineBundle}
               title="Tải trọn bộ ứng dụng 1 file HTML duy nhất để chạy Offline không cần Internet"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 text-xs font-bold px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 text-xs font-bold px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95"
             >
               <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Tải App Offline</span> (.html)
+              <span className="hidden sm:inline">Tải App Offline</span>
             </button>
 
             {/* Settings Mobile Button */}

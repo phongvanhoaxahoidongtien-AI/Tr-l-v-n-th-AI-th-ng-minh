@@ -22,6 +22,7 @@ interface Step4ExportProps {
   originalText?: string;
   originalFileName?: string;
   onBack?: () => void;
+  onGoHome?: () => void;
 }
 
 export const Step4Export: React.FC<Step4ExportProps> = ({
@@ -34,7 +35,8 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
   analysisReport,
   originalText,
   originalFileName,
-  onBack
+  onBack,
+  onGoHome
 }) => {
   // Mặc định hiển thị chế độ 'split' (Xem song song: Sửa trái, Xem A4 phải) chuẩn trolyvanthu
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
@@ -510,6 +512,7 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
               onUpdateDoc={handleDocUpdate}
               analysisReport={analysisReport}
               externalDoc={activeDoc}
+              onGoHome={onGoHome}
             />
           </div>
 

@@ -6,10 +6,11 @@ import { downloadWordDocument, copyFormattedDocument } from '../services/fileDow
 import { analyzeDocumentText } from '../services/documentAnalyzer';
 import { DocumentAnalysisReportView } from './DocumentAnalysisReportView';
 import { InteractiveDocumentEditor } from './InteractiveDocumentEditor';
+import { checkVietnameseSpelling, autoFixVietnameseSpelling, SpellingErrorMatch } from '../utils/vietnameseSpellingChecker';
 import { 
   AlertTriangle, CheckCircle, ShieldCheck, ArrowRight, ArrowLeft, 
   Copy, FileCheck, Eye, GitCompare, Sparkles, Check, X, Edit3, Printer,
-  Search, Replace, ChevronDown, ChevronUp, RefreshCw, Download, FileText
+  Search, Replace, ChevronDown, ChevronUp, RefreshCw, Download, FileText, Home, Wand2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -23,6 +24,7 @@ interface Step3ExpertAnalysisProps {
   onNext: () => void;
   onBack: () => void;
   onUpdateNormalizedText: (text: string) => void;
+  onGoHome?: () => void;
 }
 
 export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
@@ -34,12 +36,77 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
   onDismissAgencyFix,
   onNext,
   onBack,
-  onUpdateNormalizedText
+  onUpdateNormalizedText,
+  onGoHome
 }) => {
   const [activeTab, setActiveTab] = useState<'paper' | 'report' | 'edit' | 'diff' | 'errors'>('paper');
   const [isCopied, setIsCopied] = useState(false);
   const [isCopiedWord, setIsCopiedWord] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [hasCompletedAgencySync, setHasCompletedAgencySync] = useState(false);
+
+  // Soát lỗi chính tả chuyên sâu thời gian thực
+  const spellingCheckList = useMemo(() => {
+    return checkVietnameseSpelling(result.noiDungChuanHoa);
+  }, [result.noiDungChuanHoa]);
+
+  // Phát âm thanh chúc mừng pháo hoa nhẹ nhàng (Web Audio API offline)
+  const playFireworksChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // Hợp âm Đô trưởng C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + idx * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.12);
+        osc.stop(ctx.currentTime + idx * 0.12 + 0.5);
+      });
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  // Kích hoạt pháo hoa chúc mừng khi người dùng bấm Chuẩn hóa thông tin cài đặt
+  const handleNormalizeAgencyWithFireworks = () => {
+    playFireworksChime();
+    const duration = 3.5 * 1000;
+    const animationEnd = Date.now() + duration;
+    const defaults = { startVelocity: 40, spread: 360, ticks: 70, zIndex: 9999 };
+
+    function randomInRange(min: number, max: number) {
+      return Math.random() * (max - min) + min;
+    }
+
+    const interval: any = setInterval(function() {
+      const timeLeft = animationEnd - Date.now();
+      if (timeLeft <= 0) {
+        return clearInterval(interval);
+      }
+      const particleCount = 55 * (timeLeft / duration);
+      // Pháo hoa 2 bên bắn lên
+      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, colors: ['#ff0000', '#ffd700', '#00ff88', '#00e1ff', '#ff00ea', '#ff6b00'] });
+      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, colors: ['#ff0000', '#ffd700', '#00ff88', '#00e1ff', '#ff00ea', '#ff6b00'] });
+    }, 220);
+
+    // Bắn chùm pháo hoa cực lớn ở trung tâm
+    confetti({
+      particleCount: 160,
+      spread: 120,
+      origin: { y: 0.6 },
+      colors: ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ffd700', '#ec4899']
+    });
+
+    setHasCompletedAgencySync(true);
+    onApplyAgencyFix();
+  };
 
   // Báo cáo phân tích chuyên sâu chuẩn trolyvanthu.isavn.edu.vn
   const analysisReport = useMemo(() => {
@@ -174,6 +241,35 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
   return (
     <div className="space-y-6 font-serif">
       
+      {/* Top Quick Bar with HOME button */}
+      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 font-sans">
+        <div className="flex items-center gap-2">
+          {onGoHome && (
+            <button
+              type="button"
+              onClick={onGoHome}
+              title="Quay về Trang chủ mặc định (HOME)"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs sm:text-sm font-bold transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
+            >
+              <Home className="w-4 h-4 text-amber-700" />
+              <span>Trang chủ (HOME)</span>
+            </button>
+          )}
+          <span className="text-xs font-bold text-slate-700">
+            Bước 3: Nhận dạng thể thức (Ý kiến chuyên gia & Chấm điểm Nghị định 30)
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={onNext}
+          className="bg-gradient-to-r from-red-700 to-rose-700 hover:from-red-800 hover:to-rose-800 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+        >
+          <span>Sang Bước 4: Chỉnh sửa văn bản</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
       {/* Critical Agency & Location Difference Warning */}
       {result.canhBaoCoQuan && (
         <div className="bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-100 border-2 border-amber-500 rounded-2xl p-5 shadow-md">
@@ -206,27 +302,50 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
 
               {/* Confirmation Question & Actions */}
               <div className="mt-4 pt-3 border-t border-amber-300/80 flex flex-wrap items-center gap-3">
-                <span className="text-xs font-bold text-amber-950">
-                  {getOfficerSalutation(agencySettings).shortName} có muốn Tiểu Bảo Bối sửa thành tên cơ quan đã cài đặt không?
+                <span className="text-xs sm:text-sm font-bold text-amber-950">
+                  {getOfficerSalutation(agencySettings).shortName} ơi, Tiểu Bảo Bối Bối sửa thành tên cơ sở đã cài đặt không?
                 </span>
 
                 <button
-                  onClick={onApplyAgencyFix}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 active:scale-95 font-sans"
+                  type="button"
+                  onClick={handleNormalizeAgencyWithFireworks}
+                  className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-xl shadow-md flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95 font-sans ring-2 ring-emerald-400/50"
                 >
-                  <Check className="w-4 h-4 stroke-[3]" />
-                  Đồng ý sửa thành tên đã cài đặt
+                  <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
+                  <span>Chuẩn hóa thông tin cài đặt</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={onDismissAgencyFix}
-                  className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors cursor-pointer font-sans"
+                  className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors cursor-pointer font-sans"
                 >
                   <X className="w-3.5 h-3.5 inline mr-1" />
                   Giữ nguyên theo văn bản gốc
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hiệu ứng pháo hoa thông báo hoàn thành chuẩn hóa tên cơ sở theo cài đặt */}
+      {hasCompletedAgencySync && (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100 border-2 border-emerald-500 rounded-2xl p-4 sm:p-5 shadow-lg animate-fade-in font-sans">
+          <div className="flex items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <span className="text-3xl sm:text-4xl animate-bounce shrink-0">🎆</span>
+              <div>
+                <h4 className="font-extrabold text-sm sm:text-base text-emerald-950 flex flex-wrap items-center gap-2">
+                  <span>ĐÃ HOÀN THÀNH CHUẨN HÓA THÔNG TIN CÀI ĐẶT THÀNH CÔNG!</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold">100% Khớp Cài Đặt</span>
+                </h4>
+                <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
+                  Tiểu Bảo Bối Bối đã thay thế tên cơ sở: <strong>"{agencySettings.agencyName}"</strong> và địa danh <strong>"{agencySettings.shortLocation}"</strong> vào toàn bộ văn bản.
+                </p>
+              </div>
+            </div>
+            <span className="text-2xl hidden md:inline">✨</span>
           </div>
         </div>
       )}
@@ -288,6 +407,18 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
         {/* Tab Buttons & Search/Replace Trigger Bar */}
         <div className="p-3.5 md:p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 font-sans">
           <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
+            {onGoHome && (
+              <button
+                type="button"
+                onClick={onGoHome}
+                title="Quay về Trang chủ mặc định (HOME)"
+                className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs md:text-sm font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+              >
+                <Home className="w-4 h-4 text-amber-700" />
+                <span>Trang chủ</span>
+              </button>
+            )}
+
             <button
               onClick={() => setActiveTab('paper')}
               className={`px-3.5 py-1.5 rounded-lg text-xs md:text-sm font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -624,6 +755,53 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
         {/* Tab 4: Errors and Recommendations */}
         {activeTab === 'errors' && (
           <div className="p-5 md:p-6 space-y-6">
+            {/* Thẻ soát lỗi chính tả chuyên sâu */}
+            {spellingCheckList.length > 0 && (
+              <div className="p-4 rounded-xl bg-amber-50/90 border-2 border-amber-400 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-amber-600 text-white">
+                      <Wand2 className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h5 className="font-bold text-amber-950 text-sm">
+                        Phát hiện {spellingCheckList.length} lỗi chính tả & văn phong:
+                      </h5>
+                      <p className="text-xs text-amber-800">
+                        Hệ thống tự động phát hiện theo chuẩn từ điển tiếng Việt & Nghị định 30
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fixed = autoFixVietnameseSpelling(result.noiDungChuanHoa);
+                      onUpdateNormalizedText(fixed.fixedText);
+                      setDownloadNotice(`Đã tự động sửa ${fixed.fixedCount} lỗi chính tả thành công!`);
+                      setTimeout(() => setDownloadNotice(null), 3000);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer self-start sm:self-auto transition-transform hover:scale-105 active:scale-95"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Tự động sửa tất cả ({spellingCheckList.length}) lỗi ngay</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-sans">
+                  {spellingCheckList.map((err, i) => (
+                    <div key={i} className="p-2.5 rounded-lg bg-white border border-amber-200 flex items-start justify-between gap-2 shadow-2xs">
+                      <div>
+                        <span className="text-rose-600 font-bold line-through">{err.wrong}</span>
+                        <span className="text-slate-400 mx-1.5">➔</span>
+                        <strong className="text-emerald-700 font-bold">{err.right}</strong>
+                      </div>
+                      <span className="text-[10px] text-slate-500 italic shrink-0">({err.reason})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <h4 className="font-bold text-slate-900 text-sm md:text-base mb-3 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-600" />
@@ -683,14 +861,25 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
           className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 font-semibold text-slate-700 text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          Sửa lại văn bản gốc (Bước 2)
+          <span>Sửa lại văn bản gốc (Bước 2)</span>
         </button>
+
+        {onGoHome && (
+          <button
+            type="button"
+            onClick={onGoHome}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Home className="w-4 h-4 text-amber-700" />
+            <span>Trang chủ (HOME)</span>
+          </button>
+        )}
 
         <button
           onClick={onNext}
           className="w-full sm:w-auto bg-gradient-to-r from-rose-700 via-red-700 to-rose-800 hover:from-rose-800 hover:to-red-900 text-white font-bold px-7 py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
         >
-          <span>Tiến hành Xuất file chuẩn NĐ 30 & HD 05 (Bước 4)</span>
+          <span>Tiếp tục sang Bước 4: Chỉnh sửa văn bản</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -1,4 +1,5 @@
 import { AgencySettings, DocumentAnalysisReport, DetectedElements, ReviewIssue, AutoFixItem, PassedItem } from '../types';
+import { checkVietnameseSpelling } from '../utils/vietnameseSpellingChecker';
 
 /**
  * Đọc và phân tích toàn diện văn bản đầu vào theo đúng chuẩn của trolyvanthu.isavn.edu.vn:
@@ -257,31 +258,12 @@ export function analyzeDocumentText(
     });
   }
 
-  // D. Từ có thể sai chính tả theo từ điển
-  const spellingChecks = [
-    { pattern: /\bsử lý\b/gi, wrong: 'sử lý', right: 'xử lý' },
-    { pattern: /\bbổ xung\b/gi, wrong: 'bổ xung', right: 'bổ sung' },
-    { pattern: /\bxắp xếp\b/gi, wrong: 'xắp xếp', right: 'sắp xếp' },
-    { pattern: /\bqui định\b/gi, wrong: 'qui định', right: 'quy định' },
-    { pattern: /\bqui chế\b/gi, wrong: 'qui chế', right: 'quy chế' },
-    { pattern: /\bbố chí\b/gi, wrong: 'bố chí', right: 'bố trí' },
-    { pattern: /\bchủ chí\b/gi, wrong: 'chủ chí', right: 'chủ trì' },
-    { pattern: /\bchỉ chích\b/gi, wrong: 'chỉ chích', right: 'chỉ trích' },
-    { pattern: /\bxơ xuất\b/gi, wrong: 'xơ xuất', right: 'sơ suất' },
-    { pattern: /\bsơ xuất\b/gi, wrong: 'sơ xuất', right: 'sơ suất' },
-    { pattern: /\bxem sét\b/gi, wrong: 'xem sét', right: 'xem xét' },
-    { pattern: /\bba phần tư\b/gi, wrong: 'ba phần tư', right: 'ba phần tư (hoặc ba phần tư)' }
-  ];
-
-  const foundSpelling: Array<{ snippet: string; suggestion: string }> = [];
-  for (const item of spellingChecks) {
-    if (item.pattern.test(text)) {
-      foundSpelling.push({
-        snippet: `…${item.wrong} ➔ ${item.right}…`,
-        suggestion: item.right
-      });
-    }
-  }
+  // D. Từ có thể sai chính tả theo từ điển tiếng Việt & văn phong hành chính
+  const spellingErrors = checkVietnameseSpelling(text);
+  const foundSpelling: Array<{ snippet: string; suggestion: string }> = spellingErrors.map(err => ({
+    snippet: `…${err.wrong} ➔ ${err.right} (${err.reason})…`,
+    suggestion: err.right
+  }));
 
   if (foundSpelling.length > 0) {
     reviewIssues.push({
@@ -289,9 +271,9 @@ export function analyzeDocumentText(
       type: 'can_xem_lai',
       title: `Từ có thể sai chính tả theo từ điển (${foundSpelling.length} chỗ)`,
       count: foundSpelling.length,
-      description: 'Các từ dưới đây không có trong từ điển tiếng Việt (hoặc ghép thành cụm không có nghĩa). Bạn cũng có thể bấm vào chỗ tô vàng ở bước chỉnh sửa để xem gợi ý và sửa từng chỗ. Tên riêng, từ viết tắt, từ nước ngoài được bỏ qua.',
+      description: 'Các từ dưới đây sai chính tả hoặc văn phong hành chính. Bạn có thể bấm vào chỗ tô vàng ở bước chỉnh sửa hoặc bấm "Soát lỗi chính tả" để sửa ngay lập tức 100%.',
       examples: foundSpelling,
-      basis: 'Căn cứ: Từ điển tiếng Việt (duyet/vietnamese-wordlist), thuật toán SymSpell'
+      basis: 'Căn cứ: Từ điển chính tả tiếng Việt & Quy chuẩn văn bản hành chính NĐ 30/2020/NĐ-CP'
     });
   }
 

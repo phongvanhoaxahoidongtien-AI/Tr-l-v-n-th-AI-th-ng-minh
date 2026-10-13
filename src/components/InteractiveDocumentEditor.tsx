@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport, IllogicalSegment } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport, IllogicalSegment, DocumentAppendix } from '../types';
 import { 
   parseDocumentStructure, 
   reconstructNormalizedText, 
@@ -8,12 +8,21 @@ import {
   unboldBulletHeadings,
   StructuredDoc 
 } from '../services/decree30Formatter';
-import { cleanAIText } from '../utils/cleanAIText';
+import { cleanAIText, formatHtmlTableToFitA4 } from '../utils/cleanAIText';
 import { AGENCY_PRESETS } from '../utils/agencyPresets';
+import { 
+  checkVietnameseSpelling, 
+  autoFixVietnameseSpelling, 
+  fixSingleSpellingMatch, 
+  getSpellingHighlightPatterns,
+  escapeRegex,
+  SpellingErrorMatch 
+} from '../utils/vietnameseSpellingChecker';
 import { 
   Building2, FileText, CheckCircle2, AlertTriangle, Sparkles, 
   HelpCircle, UserCheck, ChevronDown, ChevronUp, Edit3, Wand2,
-  Check, X, Eye, Undo2, ArrowRight, Building, Bold, ListOrdered
+  Check, X, Eye, Undo2, ArrowRight, Building, Bold, ListOrdered,
+  Table as TableIcon, AlignCenter, Plus, Home, Trash2, Paperclip, FilePlus
 } from 'lucide-react';
 
 interface InteractiveDocumentEditorProps {
@@ -24,6 +33,7 @@ interface InteractiveDocumentEditorProps {
   onUpdateDoc?: (doc: StructuredDoc) => void;
   analysisReport?: DocumentAnalysisReport;
   externalDoc?: StructuredDoc;
+  onGoHome?: () => void;
 }
 
 export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps> = ({
@@ -33,7 +43,8 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   onUpdateText,
   onUpdateDoc,
   analysisReport,
-  externalDoc
+  externalDoc,
+  onGoHome
 }) => {
   // Parse document into 3 structured sections
   const [doc, setDoc] = useState<StructuredDoc>(() => 
@@ -82,6 +93,141 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   const [openSection1, setOpenSection1] = useState(true); // Đầu văn bản
   const [openSection2, setOpenSection2] = useState(true); // Nội dung văn bản
   const [openSection3, setOpenSection3] = useState(true); // Nơi nhận & Chữ ký
+  const [openSection4, setOpenSection4] = useState(true); // Phụ lục văn bản (sau Nơi nhận & Chữ ký)
+
+  // Tự động chèn bảng biểu chuẩn Nghị định 30 vào thân văn bản
+  const handleInsertStandardTable = () => {
+    const tableTemplate = `\n\n| STT | Nhiệm vụ / Nội dung công việc | Đơn vị chủ trì / thực hiện | Thời gian hoàn thành | Ghi chú |\n|:---:|:---|:---|:---:|:---|\n| 1 | Rà soát và hoàn thiện hồ sơ văn bản theo NĐ 30 | Văn phòng / Bộ phận chuyên môn | Quý IV/2026 | Theo kế hoạch |\n| 2 | Tổng hợp số liệu và báo cáo kết quả thực hiện | Đơn vị trực thuộc | Trước ngày 15/12/2026 | Báo cáo chính thức |\n\n`;
+    const newText = (normalizedText + tableTemplate).normalize('NFC');
+    onUpdateText(newText);
+    setFixNotice('Đã tự động tạo bảng biểu chuẩn Word / Nghị định 30 vào văn bản!');
+    setTimeout(() => setFixNotice(null), 3000);
+  };
+
+  // Căn chỉnh bảng biểu theo chuẩn Nghị định 30 (cả bảng Markdown lẫn HTML)
+  const handleAlignTables = () => {
+    let updatedText = normalizedText;
+    let tableCount = 0;
+
+    // 1. Chuẩn hóa bảng HTML (nếu có từ Mammoth hoặc copy từ Word)
+    const htmlTableRegex = /<table\b[^>]*>[\s\S]*?<\/table>/gi;
+    if (htmlTableRegex.test(updatedText)) {
+      updatedText = updatedText.replace(htmlTableRegex, (match) => {
+        tableCount++;
+        return formatHtmlTableToFitA4(match);
+      });
+    }
+
+    // 2. Chuẩn hóa bảng Markdown (căn lề STT căn giữa, số căn phải, chữ căn trái, viền 100%)
+    const mdTableRegex = /(?:^|\n)(\|[^\n]+\|\r?\n\|[\s:-|]+\|\r?\n(?:\|[^\n]+\|\r?\n?)+)/g;
+    updatedText = updatedText.replace(mdTableRegex, (tableBlock) => {
+      tableCount++;
+      const lines = tableBlock.trim().split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return tableBlock;
+
+      const headers = lines[0].replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+      const newSeparators = headers.map((h, i) => {
+        if (i === 0 && /^stt\b/i.test(h)) return ':---:';
+        if (/ngày|thời gian|năm|số lượng|tỷ lệ|%/i.test(h)) return ':---:';
+        if (/số tiền|kinh phí|đơn giá|thành tiền|kinh phí/i.test(h)) return '---:';
+        return ':---';
+      });
+
+      const formattedHeader = `| ${headers.join(' | ')} |`;
+      const formattedSep = `| ${newSeparators.join(' | ')} |`;
+      const dataRows = lines.slice(2).map(r => {
+        const cells = r.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+        return `| ${cells.join(' | ')} |`;
+      });
+
+      return `\n\n${formattedHeader}\n${formattedSep}\n${dataRows.join('\n')}\n\n`;
+    });
+
+    onUpdateText(updatedText.normalize('NFC'));
+    setFixNotice(tableCount > 0 ? `Đã căn chỉnh ${tableCount} bảng biểu theo định dạng chuẩn NĐ 30!` : 'Đã chuẩn hóa định dạng toàn bộ bảng biểu vừa vặn khổ A4!');
+    setTimeout(() => setFixNotice(null), 3000);
+  };
+
+  // Thêm phụ lục mới (ngắt trang A4 độc lập sau Nơi nhận & Chữ ký)
+  const handleAddAppendix = () => {
+    const currentApps = doc.appendices ? [...doc.appendices] : [];
+    const newIdx = currentApps.length + 1;
+    const newApp: DocumentAppendix = {
+      id: `appendix_${Date.now()}`,
+      header: `PHỤ LỤC ${newIdx}`,
+      title: 'DANH MỤC CHI TIẾT KÈM THEO',
+      referenceNote: `(Kèm theo ${doc.docTypeName || 'văn bản'} số ${doc.docCode || '...'} ngày ${doc.locationDate || '...'})`,
+      paragraphs: [
+        '| STT | Nội dung / Danh mục công việc | Đơn vị thực hiện | Thời gian | Ghi chú |',
+        '|:---:|:---|:---|:---:|:---|',
+        '| 1 | Rà soát và hoàn thiện hồ sơ | Bộ phận chuyên môn | Quý IV/2026 | Theo kế hoạch |',
+        '| 2 | Báo cáo kết quả triển khai | Các đơn vị liên quan | Trước 15/12/2026 | Báo cáo chính thức |'
+      ]
+    };
+    const updatedApps = [...currentApps, newApp];
+    updateDocField('appendices', updatedApps);
+    setFixNotice(`Đã thêm ${newApp.header} (phân tách trang A4 độc lập sau Nơi nhận & Chữ ký)!`);
+    setTimeout(() => setFixNotice(null), 3000);
+  };
+
+  // Cập nhật phụ lục
+  const handleUpdateAppendix = (index: number, updatedFields: Partial<DocumentAppendix>) => {
+    if (!doc.appendices) return;
+    const currentApps = [...doc.appendices];
+    currentApps[index] = { ...currentApps[index], ...updatedFields };
+    updateDocField('appendices', currentApps);
+  };
+
+  // Xóa phụ lục
+  const handleDeleteAppendix = (index: number) => {
+    if (!doc.appendices) return;
+    const currentApps = doc.appendices.filter((_, i) => i !== index);
+    updateDocField('appendices', currentApps);
+    setFixNotice('Đã xóa phụ lục khỏi văn bản!');
+    setTimeout(() => setFixNotice(null), 2500);
+  };
+
+  // Thêm bảng chuẩn Word vào phụ lục
+  const handleInsertTableToAppendix = (index: number) => {
+    if (!doc.appendices || !doc.appendices[index]) return;
+    const app = doc.appendices[index];
+    const tableTemplate = `\n| STT | Tên mục / Chỉ tiêu | Đơn vị tính | Số lượng | Ghi chú |\n|:---:|:---|:---:|:---:|:---|\n| 1 | Hạng mục thực hiện số 01 | Bộ | 10 | Đạt chuẩn NĐ 30 |\n| 2 | Hạng mục thực hiện số 02 | Chiếc | 25 | Hoàn thành |\n`;
+    const updatedParas = [...app.paragraphs, tableTemplate];
+    handleUpdateAppendix(index, { paragraphs: updatedParas });
+    setFixNotice(`Đã tự động tạo bảng biểu chuẩn Word vào ${app.header}!`);
+    setTimeout(() => setFixNotice(null), 3000);
+  };
+
+  // Căn chỉnh bảng biểu trong phụ lục theo chuẩn NĐ 30
+  const handleAlignAppendixTables = (index: number) => {
+    if (!doc.appendices || !doc.appendices[index]) return;
+    const app = doc.appendices[index];
+    let appText = app.paragraphs.join('\n');
+    let count = 0;
+    const mdTableRegex = /(?:^|\n)(\|[^\n]+\|\r?\n\|[\s:-|]+\|\r?\n(?:\|[^\n]+\|\r?\n?)+)/g;
+    appText = appText.replace(mdTableRegex, (tableBlock) => {
+      count++;
+      const lines = tableBlock.trim().split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return tableBlock;
+      const headers = lines[0].replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+      const newSeparators = headers.map((h, i) => {
+        if (i === 0 && /^stt\b/i.test(h)) return ':---:';
+        if (/ngày|thời gian|năm|số lượng|tỷ lệ|%/i.test(h)) return ':---:';
+        return ':---';
+      });
+      const formattedHeader = `| ${headers.join(' | ')} |`;
+      const formattedSep = `| ${newSeparators.join(' | ')} |`;
+      const dataRows = lines.slice(2).map(r => {
+        const cells = r.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+        return `| ${cells.join(' | ')} |`;
+      });
+      return `\n\n${formattedHeader}\n${formattedSep}\n${dataRows.join('\n')}\n\n`;
+    });
+    const updatedParas = appText.split('\n').map(l => l.trim()).filter(Boolean);
+    handleUpdateAppendix(index, { paragraphs: updatedParas });
+    setFixNotice(`Đã căn chỉnh ${count > 0 ? `${count} ` : ''}bảng biểu chuẩn NĐ 30 trong ${app.header}!`);
+    setTimeout(() => setFixNotice(null), 3000);
+  };
 
   // Body editor mode: 'highlight' (tô vàng sửa ngay) vs 'raw' (soạn thảo tự do)
   const [bodyMode, setBodyMode] = useState<'highlight' | 'raw'>('highlight');
@@ -99,10 +245,43 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   const [blankInputVal, setBlankInputVal] = useState('');
   const [fixNotice, setFixNotice] = useState<string | null>(null);
 
+  // Danh sách lỗi chính tả phát hiện trong văn bản
+  const spellingErrors: SpellingErrorMatch[] = useMemo(() => {
+    return checkVietnameseSpelling(normalizedText);
+  }, [normalizedText]);
+
+  // Tự động sửa tất cả lỗi chính tả
+  const handleAutoFixAllSpelling = () => {
+    const res = autoFixVietnameseSpelling(normalizedText);
+    if (res.fixedCount > 0) {
+      onUpdateText(res.fixedText);
+      setFixNotice(`Đã tự động sửa triệt để ${res.fixedCount} lỗi chính tả & văn phong theo chuẩn NĐ 30!`);
+      setTimeout(() => setFixNotice(null), 3000);
+    } else {
+      setFixNotice('Văn bản hiện không có lỗi chính tả nào cần sửa!');
+      setTimeout(() => setFixNotice(null), 2500);
+    }
+  };
+
   // Update a single field in doc and trigger parent onUpdateText & onUpdateDoc
   const updateDocField = (field: keyof StructuredDoc, value: any) => {
     isInternalUpdateRef.current = true;
-    const updated = { ...doc, [field]: value };
+    let cleanParas = doc.bodyParagraphs;
+
+    // Khi người dùng chỉnh sửa Cơ quan ban hành: loại bỏ triệt để dòng tên cơ quan khỏi thân bài (ngăn lệch xuống sau tiêu đề báo cáo)
+    if (field === 'agencyName' || field === 'parentAgency') {
+      const valStr = String(value || '').trim();
+      const oldValStr = String(doc[field] || '').trim();
+      cleanParas = cleanParas.filter(p => {
+        const pTrim = p.trim();
+        if (!pTrim) return true;
+        if (valStr && (pTrim.toUpperCase() === valStr.toUpperCase() || (pTrim.length <= 80 && !pTrim.endsWith('.') && valStr.toUpperCase().includes(pTrim.toUpperCase())))) return false;
+        if (oldValStr && (pTrim.toUpperCase() === oldValStr.toUpperCase() || (pTrim.length <= 80 && !pTrim.endsWith('.') && oldValStr.toUpperCase().includes(pTrim.toUpperCase())))) return false;
+        return true;
+      });
+    }
+
+    const updated = { ...doc, [field]: value, bodyParagraphs: cleanParas };
     setDoc(updated);
     if (onUpdateDoc) {
       onUpdateDoc(updated);
@@ -122,12 +301,9 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     onUpdateText(newText);
   };
 
-  // Sửa lỗi chính tả từ chỗ tô vàng
+  // Sửa lỗi chính tả từ chỗ tô vàng (dùng ranh giới từ tiếng Việt an toàn)
   const handleApplySpellingFix = (wrong: string, right: string) => {
-    const currentFullText = normalizedText;
-    const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escaped, 'gi');
-    const newText = currentFullText.replace(regex, right);
+    const newText = fixSingleSpellingMatch(normalizedText, wrong, right);
     onUpdateText(newText);
     setActiveFix(null);
     setFixNotice(`Đã sửa "${wrong}" ➔ "${right}" thành công!`);
@@ -240,6 +416,47 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
           <span>{fixNotice}</span>
         </div>
       )}
+
+      {/* Top Action Toolbar: Nút HOME hình ngôi nhà & Tự động tạo / Căn chỉnh bảng biểu chuẩn Word */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 bg-white rounded-2xl border border-slate-200 shadow-xs font-sans">
+        <div className="flex items-center gap-2">
+          {onGoHome && (
+            <button
+              type="button"
+              onClick={onGoHome}
+              title="Quay về Trang chủ mặc định (HOME)"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-2xs"
+            >
+              <Home className="w-4 h-4 text-amber-700" />
+              <span>Trang chủ (HOME)</span>
+            </button>
+          )}
+          <span className="text-xs font-bold text-slate-700 hidden sm:inline">
+            Khung chuẩn hóa 4 phần thể thức (Kèm ngắt trang Phụ lục A4 sau Nơi nhận & Chữ ký)
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleInsertStandardTable}
+            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+            title="Tự động tạo bảng biểu chuẩn Word / Nghị định 30"
+          >
+            <TableIcon className="w-3.5 h-3.5" />
+            <span>+ Tạo bảng Word NĐ 30</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleAlignTables}
+            className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+            title="Căn chỉnh toàn bộ bảng biểu (Markdown/HTML) theo chuẩn NĐ 30 vừa vặn trang A4"
+          >
+            <AlignCenter className="w-3.5 h-3.5" />
+            <span>Căn chỉnh bảng chuẩn</span>
+          </button>
+        </div>
+      </div>
 
       {/* =========================================================================
           HẠNG MỤC 1: ĐẦU VĂN BẢN (Quốc hiệu, Tiêu ngữ, Cơ quan, Số, Trích yếu, Kính gửi)
@@ -520,7 +737,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">
-                    Trích yếu nội dung (V/v hoặc Về việc):
+                    {doc.docTypeName === 'BÁO CÁO' ? 'Tiêu đề Báo cáo (Chuẩn NĐ 30):' : 'Trích yếu nội dung (V/v hoặc Về việc):'}
                   </label>
                   <input
                     type="text"
@@ -533,9 +750,39 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         updateDocField('docTitle', val);
                       }
                     }}
-                    placeholder="Ví dụ: V/v tăng cường an toàn PCCC hoặc Về việc ban hành..."
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder={doc.docTypeName === 'BÁO CÁO' ? 'Ví dụ: Kết quả thực hiện nhiệm vụ công tác năm 2026...' : 'Ví dụ: V/v tăng cường an toàn PCCC hoặc Về việc ban hành...'}
+                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                  {(doc.docTypeName === 'BÁO CÁO' || selectedType.name === 'Báo cáo') && (
+                    <div className="mt-2 p-2.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-1.5 font-sans">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                          Gợi ý nhanh tiêu đề Báo cáo chuẩn Nghị định 30:
+                        </span>
+                        <span className="text-[10px] text-blue-700 italic">In thường, cỡ 13-14, chữ đứng hoặc đậm, căn giữa</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          'Kết quả thực hiện nhiệm vụ công tác',
+                          'Tình hình kinh tế - xã hội và nhiệm vụ trọng tâm',
+                          'Đánh giá tiến độ triển khai thực hiện',
+                          'Tổng kết công tác thi đua, khen thưởng năm'
+                        ].map((sug, sIdx) => (
+                          <button
+                            key={sIdx}
+                            type="button"
+                            onClick={() => {
+                              updateDocField('docTitle', sug);
+                            }}
+                            className="text-[10px] bg-white hover:bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded cursor-pointer transition-colors shadow-2xs font-sans"
+                          >
+                            + {sug}...
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -691,7 +938,42 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   <strong>Chuẩn thể thức NĐ 30:</strong> Các đầu dòng <strong>1., 2., 3...</strong>, <strong>I., II...</strong>, <strong>a), b)...</strong> được <strong>tự động in đậm</strong> trên bản in A4 & file Word!
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleAutoFixAllSpelling}
+                  className={`px-2.5 py-1 rounded-lg text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs ${
+                    spellingErrors.length > 0
+                      ? 'bg-rose-600 hover:bg-rose-700 animate-pulse'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                  title="Tự động phát hiện và sửa triệt để tất cả các lỗi chính tả, sai phụ âm s/x, ch/tr, d/gi/r, i/y, hỏi/ngã theo chuẩn NĐ 30"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  <span>
+                    {spellingErrors.length > 0 
+                      ? `🪄 Sửa ${spellingErrors.length} lỗi chính tả` 
+                      : '✓ Soát chính tả (0 lỗi)'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInsertStandardTable}
+                  className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                  title="Tự động tạo bảng biểu phân công/thống kê chuẩn thể thức Nghị định 30"
+                >
+                  <TableIcon className="w-3.5 h-3.5" />
+                  <span>+ Chèn bảng biểu NĐ 30</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAlignTables}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                  title="Căn chỉnh toàn bộ bảng biểu theo chuẩn thể thức: vừa khít trang A4, viền đơn rõ nét, căn đều"
+                >
+                  <AlignCenter className="w-3.5 h-3.5" />
+                  <span>Căn chỉnh bảng chuẩn</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleBoldBullets}
@@ -699,7 +981,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 >
                   <Bold className="w-3.5 h-3.5" />
                   <ListOrdered className="w-3.5 h-3.5" />
-                  <span>Tô đậm số thứ tự vào văn bản</span>
+                  <span>Tô đậm số thứ tự</span>
                 </button>
                 <button
                   type="button"
@@ -809,18 +1091,25 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
                         {/* Sửa chính tả */}
                         {activeFix.type === 'spelling' && activeFix.suggestion && (
-                          <div className="mt-2 text-xs text-slate-800">
-                            <span>Từ trong văn bản: </span>
-                            <span className="line-through text-rose-700 font-bold mr-2">{activeFix.target}</span>
-                            <span>➔ Gợi ý sửa đúng: </span>
-                            <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 text-sm">
-                              {activeFix.suggestion}
-                            </strong>
+                          <div className="mt-2 text-xs text-slate-800 space-y-1.5">
+                            {activeFix.reason && (
+                              <div className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                                💡 {activeFix.reason}
+                              </div>
+                            )}
+                            <div>
+                              <span>Từ trong văn bản: </span>
+                              <span className="line-through text-rose-700 font-bold mr-2">{activeFix.target}</span>
+                              <span>➔ Gợi ý sửa đúng: </span>
+                              <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 text-sm">
+                                {activeFix.suggestion}
+                              </strong>
+                            </div>
                             <div className="mt-3 flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleApplySpellingFix(activeFix.target, activeFix.suggestion!)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
                               >
                                 <Check className="w-3.5 h-3.5" />
                                 <span>Sửa ngay thành: {activeFix.suggestion}</span>
@@ -913,21 +1202,8 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       );
                     }
 
-                    // Tô vàng các lỗi chính tả và chỗ trống trong đoạn
-                    // Danh sách từ cần tô vàng
-                    const highlightKeywords = [
-                      { pattern: /sử lý/gi, wrong: 'sử lý', right: 'xử lý' },
-                      { pattern: /bổ xung/gi, wrong: 'bổ xung', right: 'bổ sung' },
-                      { pattern: /xắp xếp/gi, wrong: 'xắp xếp', right: 'sắp xếp' },
-                      { pattern: /qui định/gi, wrong: 'qui định', right: 'quy định' },
-                      { pattern: /qui chế/gi, wrong: 'qui chế', right: 'quy chế' },
-                      { pattern: /bố chí/gi, wrong: 'bố chí', right: 'bố trí' },
-                      { pattern: /chủ chí/gi, wrong: 'chủ chí', right: 'chủ trì' },
-                      { pattern: /xơ xuất/gi, wrong: 'xơ xuất', right: 'sơ suất' },
-                      { pattern: /sơ xuất/gi, wrong: 'sơ xuất', right: 'sơ suất' },
-                      { pattern: /xem sét/gi, wrong: 'xem sét', right: 'xem xét' },
-                      { pattern: /ba phần tư/gi, wrong: 'ba phần tư', right: 'ba phần tư' }
-                    ];
+                    // Tô vàng các lỗi chính tả và chỗ trống trong đoạn từ bộ từ điển chuyên sâu NĐ 30
+                    const highlightKeywords = getSpellingHighlightPatterns();
 
                     return (
                       <p key={pIdx} className="text-justify indent-6 text-slate-800 leading-relaxed">
@@ -935,8 +1211,8 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                           trimmed,
                           highlightKeywords,
                           doc.illogicalFindings || [],
-                          (wrong, right) => {
-                            setActiveFix({ type: 'spelling', target: wrong, suggestion: right });
+                          (wrong, right, reason) => {
+                            setActiveFix({ type: 'spelling', target: wrong, suggestion: right, reason });
                           },
                           (blankStr) => {
                             setActiveFix({ type: 'blank', target: blankStr });
@@ -965,7 +1241,25 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     <Edit3 className="w-3.5 h-3.5 text-rose-600" />
                     <span>Soạn thảo tự do (Paste bảng Word/Excel giữ nguyên viền, ngắt trang A4 tự động)</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleInsertStandardTable}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                      title="Tự động tạo bảng biểu chuẩn Nghị định 30"
+                    >
+                      <TableIcon className="w-3 h-3" />
+                      <span>+ Chèn bảng NĐ 30</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAlignTables}
+                      className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                      title="Căn chỉnh toàn bộ bảng biểu trong văn bản theo chuẩn thể thức"
+                    >
+                      <AlignCenter className="w-3 h-3" />
+                      <span>Căn chỉnh bảng</span>
+                    </button>
                     <button
                       type="button"
                       onClick={handleBoldBullets}
@@ -973,7 +1267,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       title="Tô đậm các đầu dòng 1., 2., 3..., Điều, Khoản, Điểm"
                     >
                       <Bold className="w-3 h-3" />
-                      <span>Tô đậm Bullet (1, 2, 3...)</span>
+                      <span>Tô đậm Bullet</span>
                     </button>
                     <button
                       type="button"
@@ -1012,162 +1306,6 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 />
               </div>
             )}
-
-            {/* THÔNG TIN & CHỈNH SỬA PHỤ LỤC KÈM THEO (TỰ ĐỘNG NGẮT SANG TRANG A4 MỚI) */}
-            <div className="mt-4 p-4 bg-emerald-50/90 rounded-xl border border-emerald-300 space-y-3 font-sans animate-fade-in shadow-2xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-base">📄</span>
-                  <h5 className="font-bold text-emerald-950 text-xs uppercase">
-                    Phụ lục kèm theo ({doc.appendices?.length || 0} phụ lục - Tự động ngắt sang trang A4 thứ 2 riêng biệt)
-                  </h5>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300">
-                    ✓ Có ngắt trang chuẩn A4
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextNum = (doc.appendices?.length || 0) + 1;
-                      const newApp = {
-                        id: `appendix_${Date.now()}`,
-                        header: `PHỤ LỤC ${nextNum}`,
-                        title: 'SỐ LƯỢNG CÁC ĐƠN VỊ THAM GIA LỄ PHÁT ĐỘNG',
-                        referenceNote: `(Ban hành kèm theo Công văn số ${doc.docCode ? doc.docCode.replace(/^Số:\s*/i, '') : '/UBND-VHXH'} ngày tháng 10 năm 2026 của ${doc.agencyName || 'UBND phường Đông Tiến'})`,
-                        paragraphs: [
-                          '| STT | Đơn vị tham gia | Số lượng người | Ghi chú |',
-                          '|:---:|:---|:---:|:---|',
-                          '| 1 | Các ban ngành đoàn thể phường | 35 | Đại biểu |',
-                          '| 2 | Nhân dân các tổ dân phố | 120 | Lực lượng tham gia |'
-                        ]
-                      };
-                      const updatedApps = [...(doc.appendices || []), newApp];
-                      updateDocField('appendices', updatedApps);
-                      setFixNotice(`Đã thêm PHỤ LỤC ${nextNum} ngắt trang A4 mới!`);
-                      setTimeout(() => setFixNotice(null), 2500);
-                    }}
-                    className="text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-2xs flex items-center gap-1"
-                  >
-                    <span>+</span>
-                    <span>Thêm phụ lục</span>
-                  </button>
-                </div>
-              </div>
-
-              {doc.appendices && doc.appendices.length > 0 ? (
-                <div className="space-y-3">
-                  {doc.appendices.map((app, idx) => (
-                    <div key={app.id || idx} className="p-3 bg-white rounded-xl border border-emerald-300 text-xs space-y-2.5 shadow-2xs">
-                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                        <span className="font-bold text-emerald-800 text-xs flex items-center gap-1.5 font-sans">
-                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-mono">
-                            {idx + 1}
-                          </span>
-                          <span>Phụ lục {idx + 1}</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updatedApps = (doc.appendices || []).filter((_, i) => i !== idx);
-                            updateDocField('appendices', updatedApps);
-                            setFixNotice(`Đã xóa phụ lục ${idx + 1}!`);
-                            setTimeout(() => setFixNotice(null), 2500);
-                          }}
-                          className="text-[10px] text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-0.5 rounded cursor-pointer transition-colors"
-                        >
-                          Xóa phụ lục này
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-sans">
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
-                            Tiêu đề phụ lục (Dòng 1):
-                          </label>
-                          <input
-                            type="text"
-                            value={app.header}
-                            onChange={(e) => {
-                              const updated = [...(doc.appendices || [])];
-                              updated[idx] = { ...updated[idx], header: e.target.value.toUpperCase() };
-                              updateDocField('appendices', updated);
-                            }}
-                            placeholder="PHỤ LỤC 1..."
-                            className="w-full p-2 rounded-lg border border-slate-300 text-xs font-bold uppercase text-slate-900 font-serif"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
-                            Tên phụ lục (Dòng 2):
-                          </label>
-                          <input
-                            type="text"
-                            value={app.title}
-                            onChange={(e) => {
-                              const updated = [...(doc.appendices || [])];
-                              updated[idx] = { ...updated[idx], title: e.target.value };
-                              updateDocField('appendices', updated);
-                            }}
-                            placeholder="- SỐ LƯỢNG CÁC ĐƠN VỊ THAM GIA LỄ PHÁT ĐỘNG..."
-                            className="w-full p-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-900 font-serif"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="font-sans">
-                        <label className="text-[11px] font-bold text-slate-700 block mb-0.5">
-                          Ghi chú ban hành kèm theo (Dòng 3):
-                        </label>
-                        <input
-                          type="text"
-                          value={app.referenceNote}
-                          onChange={(e) => {
-                            const updated = [...(doc.appendices || [])];
-                            updated[idx] = { ...updated[idx], referenceNote: e.target.value };
-                            updateDocField('appendices', updated);
-                          }}
-                          placeholder="(Ban hành kèm theo Công văn số .../UBND-VHXH ngày tháng 10 năm 2026 của UBND phường Đông Tiến)..."
-                          className="w-full p-2 rounded-lg border border-slate-300 text-xs italic text-slate-700 font-serif"
-                        />
-                      </div>
-
-                      <div className="font-sans">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <label className="text-[11px] font-bold text-slate-700">
-                            Nội dung chi tiết & Bảng biểu (Markdown hoặc văn bản):
-                          </label>
-                          <span className="text-[10px] text-slate-500 italic">
-                            Hỗ trợ bảng dạng | Cột 1 | Cột 2 |
-                          </span>
-                        </div>
-                        <textarea
-                          rows={4}
-                          value={app.paragraphs.join('\n')}
-                          onChange={(e) => {
-                            const updated = [...(doc.appendices || [])];
-                            updated[idx] = { ...updated[idx], paragraphs: e.target.value.split('\n') };
-                            updateDocField('appendices', updated);
-                          }}
-                          placeholder="| STT | Tên đơn vị | Số lượng |..."
-                          className="w-full p-2 rounded-lg border border-slate-300 text-xs font-mono text-slate-900"
-                        />
-                      </div>
-
-                      <div className="pt-1.5 border-t border-slate-100 text-[11px] text-emerald-800 font-medium flex items-center justify-between">
-                        <span>✓ Tự động ngắt sang trang thứ 2 trong Live Preview và file Word</span>
-                        <span className="text-slate-500 text-[10px]">{app.paragraphs.length} dòng</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-3 bg-white/80 rounded-lg border border-dashed border-emerald-300 text-center text-xs text-slate-600">
-                  <p>Chưa có phụ lục kèm theo. Đồng chí có thể bấm nút <strong>"+ Thêm phụ lục"</strong> ở trên nếu văn bản có bảng biểu số liệu riêng cần ngắt trang A4.</p>
-                </div>
-              )}
-            </div>
 
           </div>
         )}
@@ -1456,6 +1594,205 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
         )}
       </div>
 
+      {/* =========================================================================
+          HẠNG MỤC 4: PHỤ LỤC VĂN BẢN (Phân tách trang A4 độc lập sau Nơi nhận & Chữ ký)
+          ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setOpenSection4(!openSection4)}
+          className="w-full p-4 bg-gradient-to-r from-purple-50 via-slate-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 flex items-center justify-between transition-colors cursor-pointer border-b border-slate-200"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg bg-purple-700 text-white flex items-center justify-center text-xs font-bold font-mono">
+              4
+            </span>
+            <div className="text-left">
+              <div className="flex items-center gap-2">
+                <h4 className="font-bold text-slate-800 text-sm md:text-base font-serif">
+                  Phụ lục kèm theo (Phân tách trang A4 độc lập sau Nơi nhận & Chữ ký)
+                </h4>
+                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-bold">
+                  {doc.appendices?.length || 0} Phụ lục
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Tự động ngắt sang trang mới độc lập, chứa danh mục, bảng biểu số liệu chi tiết
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-purple-700 font-bold hidden sm:inline">
+              {openSection4 ? 'Thu gọn' : 'Mở rộng chỉnh sửa'}
+            </span>
+            {openSection4 ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+          </div>
+        </button>
+
+        {openSection4 && (
+          <div className="p-4 md:p-6 space-y-5 bg-white animate-fade-in text-xs font-sans">
+            
+            {/* Thanh công cụ quản lý Phụ lục */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-purple-50/70 border border-purple-200 rounded-xl">
+              <span className="text-xs font-semibold text-purple-950 flex items-center gap-1.5">
+                <Paperclip className="w-4 h-4 text-purple-700 shrink-0" />
+                <span>Theo Nghị định 30, Phụ lục luôn bắt đầu trên trang A4 độc lập sau Nơi nhận và chữ ký</span>
+              </span>
+
+              <button
+                type="button"
+                onClick={handleAddAppendix}
+                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+              >
+                <FilePlus className="w-4 h-4" />
+                <span>+ Thêm Phụ lục mới (Ngắt trang A4)</span>
+              </button>
+            </div>
+
+            {/* Danh sách các Phụ lục */}
+            {(!doc.appendices || doc.appendices.length === 0) ? (
+              <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 space-y-2">
+                <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center mx-auto text-lg">
+                  📑
+                </div>
+                <h5 className="font-bold text-slate-700 text-sm">Văn bản hiện tại chưa có Phụ lục</h5>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Nếu văn bản có bảng số liệu lớn hoặc danh mục đính kèm, đồng chí hãy nhấn nút dưới đây để tạo Phụ lục phân tách trang A4 độc lập sau Nơi nhận và chữ ký.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAddAppendix}
+                  className="mt-2 px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tạo Phụ lục I ngay</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {doc.appendices.map((app, appIdx) => (
+                  <div key={app.id || appIdx} className="p-4 rounded-xl border border-purple-200 bg-purple-50/30 space-y-3.5 shadow-2xs">
+                    
+                    {/* Header bar của từng phụ lục */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-purple-200">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-md bg-purple-700 text-white flex items-center justify-center font-bold text-xs">
+                          {appIdx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={app.header}
+                          onChange={(e) => handleUpdateAppendix(appIdx, { header: e.target.value.toUpperCase() })}
+                          placeholder="Ví dụ: PHỤ LỤC I hoặc PHỤ LỤC 1"
+                          className="font-bold text-purple-950 font-serif text-sm bg-white border border-purple-300 rounded px-2.5 py-1 focus:ring-2 focus:ring-purple-500 uppercase"
+                        />
+                        <span className="text-[11px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded">
+                          Trang A4 độc lập #{appIdx + 1}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleInsertTableToAppendix(appIdx)}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          title="Tự động tạo bảng biểu chuẩn Word vào phụ lục này"
+                        >
+                          <TableIcon className="w-3 h-3" />
+                          <span>+ Bảng biểu Word</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAlignAppendixTables(appIdx)}
+                          className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          title="Căn chỉnh toàn bộ bảng biểu trong phụ lục này theo chuẩn NĐ 30"
+                        >
+                          <AlignCenter className="w-3 h-3" />
+                          <span>Căn bảng</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAppendix(appIdx)}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Xóa phụ lục này"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Xóa</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tiêu đề & Ghi chú ban hành */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">
+                          Tên tiêu đề Phụ lục:
+                        </label>
+                        <input
+                          type="text"
+                          value={app.title}
+                          onChange={(e) => handleUpdateAppendix(appIdx, { title: e.target.value })}
+                          placeholder="Ví dụ: DANH MỤC CÁC CƠ SỞ HOẠT ĐỘNG TRÊN ĐỊA BÀN"
+                          className="w-full p-2 bg-white rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-purple-500 uppercase"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">
+                          Ghi chú Ban hành kèm theo:
+                        </label>
+                        <input
+                          type="text"
+                          value={app.referenceNote}
+                          onChange={(e) => handleUpdateAppendix(appIdx, { referenceNote: e.target.value })}
+                          placeholder="Ví dụ: (Kèm theo Báo cáo số 15/BC-UBND ngày 10/10/2026 của UBND...)"
+                          className="w-full p-2 bg-white rounded-lg border border-slate-300 font-serif text-xs italic text-slate-800 focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Nội dung và Bảng biểu phụ lục */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-slate-700">
+                          Nội dung & Bảng biểu phụ lục (Dán trực tiếp từ Word/Excel giữ nguyên viền và cấu trúc cột):
+                        </label>
+                        <span className="text-[11px] text-slate-500 italic">
+                          Tự động xuất bảng chuẩn Microsoft Word
+                        </span>
+                      </div>
+                      <textarea
+                        rows={7}
+                        value={app.paragraphs.join('\n')}
+                        onChange={(e) => {
+                          const val = e.target.value.normalize('NFC');
+                          const lines = val.split('\n');
+                          handleUpdateAppendix(appIdx, { paragraphs: lines });
+                        }}
+                        placeholder="| STT | Tên hạng mục | Số lượng | Ghi chú |&#10;|:---:|:---|:---:|:---|&#10;| 1 | Nội dung công việc | 10 | Đạt chuẩn |"
+                        className="w-full p-2.5 bg-white rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-purple-500 font-mono leading-relaxed"
+                      />
+                    </div>
+
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={handleAddAppendix}
+                  className="w-full py-2.5 border-2 border-dashed border-purple-300 hover:border-purple-500 text-purple-800 rounded-xl font-bold flex items-center justify-center gap-2 bg-purple-50/40 hover:bg-purple-50 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Thêm Phụ lục tiếp theo (Tự động ngắt sang trang A4 mới)</span>
+                </button>
+              </div>
+            )}
+
+          </div>
+        )}
+      </div>
+
     </div>
   );
 };
@@ -1465,26 +1802,29 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
  */
 function renderParagraphWithHighlights(
   text: string,
-  keywords: Array<{ pattern: RegExp; wrong: string; right: string }>,
+  keywords: Array<{ pattern: RegExp; wrong: string; right: string; reason?: string }>,
   illogicalFindings: IllogicalSegment[],
-  onSpellingClick: (wrong: string, right: string) => void,
+  onSpellingClick: (wrong: string, right: string, reason?: string) => void,
   onBlankClick: (blank: string) => void,
   onIllogicalClick: (segment: IllogicalSegment) => void
 ) {
   // Lọc các illogical findings xuất hiện trong đoạn văn này
   const matchedIllogicals = illogicalFindings.filter(f => f.target && text.includes(f.target));
 
-  // Tạo mảng regex tổng hợp
+  // Lọc các từ chính tả thực sự xuất hiện trong đoạn văn này để tối ưu tốc độ
+  const activeKeywords = keywords.filter(k => k.pattern.test(text));
+
+  // Tạo mảng regex tổng hợp an toàn với tiếng Việt (không dùng \\b ASCII)
   const regexTokens: string[] = [];
 
   // 1. Illogical snippets
   matchedIllogicals.forEach(f => {
-    regexTokens.push(f.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    regexTokens.push(escapeRegex(f.target));
   });
 
   // 2. Spelling mistakes
-  keywords.forEach(k => {
-    regexTokens.push(`\\b${k.wrong}\\b`);
+  activeKeywords.forEach(k => {
+    regexTokens.push(escapeRegex(k.wrong));
   });
 
   // 3. Blanks
@@ -1493,7 +1833,11 @@ function renderParagraphWithHighlights(
   regexTokens.push('_{3,}');
   regexTokens.push('\\[\\s*\\.{3,}\\s*\\]');
 
-  const combinedRegex = new RegExp(`(${regexTokens.join('|')})`, 'gi');
+  if (regexTokens.length === 0) return text;
+
+  // Sắp xếp các token theo độ dài giảm dần để ưu tiên cụm từ dài nhất trước
+  const sortedTokens = [...regexTokens].sort((a, b) => b.length - a.length);
+  const combinedRegex = new RegExp(`(${sortedTokens.join('|')})`, 'gi');
   const parts = text.split(combinedRegex);
 
   return parts.map((part, i) => {
@@ -1531,14 +1875,14 @@ function renderParagraphWithHighlights(
     }
 
     // C. Kiểm tra lỗi chính tả
-    const matchedRule = keywords.find(k => k.pattern.test(part));
+    const matchedRule = activeKeywords.find(k => k.wrong.toLowerCase() === part.trim().toLowerCase());
     if (matchedRule) {
       return (
         <span
           key={`spell_${i}`}
-          onClick={() => onSpellingClick(part, matchedRule.right)}
-          title={`Gợi ý sửa chính tả: Bấm để sửa thành "${matchedRule.right}"`}
-          className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1 py-0.5 rounded border border-yellow-400 font-bold cursor-pointer transition-colors inline-flex items-center gap-0.5 mx-0.5"
+          onClick={() => onSpellingClick(part, matchedRule.right, matchedRule.reason)}
+          title={`Gợi ý sửa chính tả: Bấm để sửa thành "${matchedRule.right}" (${matchedRule.reason || ''})`}
+          className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1 py-0.5 rounded border border-yellow-400 font-bold cursor-pointer transition-colors inline-flex items-center gap-0.5 mx-0.5 shadow-2xs"
         >
           {part}
           <span className="text-[10px] text-yellow-800">🪄</span>

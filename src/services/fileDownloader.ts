@@ -29,13 +29,22 @@ export function wrapWordHtmlDocument(innerHtml: string, title: string = 'VanBan_
   <style>
     @page Section1 {
       size: 21.0cm 29.7cm; /* Khổ A4 */
-      margin: 2.0cm 2.0cm 2.0cm 3.0cm; /* Lề chuẩn NĐ 30: Trên 2cm, Phải 2cm, Dưới 2cm, Trái 3cm */
+      margin: 2.0cm 1.5cm 2.0cm 3.0cm; /* Lề chuẩn NĐ 30: Trên 2cm, Phải 1.5cm, Dưới 2cm, Trái 3cm */
       mso-header-margin: 36.0pt;
       mso-footer-margin: 36.0pt;
+      mso-header: h1;
+      mso-title-page: yes;
       mso-paper-source: 0;
     }
     div.Section1 { 
       page: Section1; 
+      font-family: 'Times New Roman', Times, serif;
+    }
+    p.MsoHeader, div.MsoHeader {
+      margin: 0;
+      margin-bottom: .0001pt;
+      text-align: center;
+      font-size: 13.5pt;
       font-family: 'Times New Roman', Times, serif;
     }
     body {
@@ -58,6 +67,31 @@ export function wrapWordHtmlDocument(innerHtml: string, title: string = 'VanBan_
       mso-border-alt: none;
       vertical-align: top;
     }
+    table.decree30-table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      border: 1pt solid #000000 !important;
+      mso-border-alt: solid windowtext .5pt;
+      margin: 12pt 0 !important;
+    }
+    table.decree30-table th {
+      border: 1pt solid #000000 !important;
+      mso-border-alt: solid windowtext .5pt;
+      padding: 5pt !important;
+      font-weight: bold;
+      text-align: center;
+      background-color: #f1f5f9;
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 11pt;
+    }
+    table.decree30-table td {
+      border: 1pt solid #000000 !important;
+      mso-border-alt: solid windowtext .5pt;
+      padding: 4pt 6pt !important;
+      vertical-align: top;
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 11pt;
+    }
     p {
       margin: 0;
       padding: 0;
@@ -69,6 +103,15 @@ export function wrapWordHtmlDocument(innerHtml: string, title: string = 'VanBan_
   </style>
 </head>
 <body>
+  <!-- HEADER SỐ TRANG CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP & HD 05 (ĐẶT Ở GIỮA LỀ TRÊN, CỠ 13-14PT ĐỨNG, TỰ ĐỘNG ĐÁNH SỐ TỪ TRANG 2) -->
+  <div style='mso-element:header' id=h1>
+    <p class=MsoHeader align=center style='text-align:center'>
+      <!--[if supportFields]><span style='font-size:13.5pt;font-family:"Times New Roman",serif'><span style='mso-element:field-begin'></span>PAGE<span style='mso-element:field-separator'></span></span><![endif]-->
+      <span style='font-size:13.5pt;font-family:"Times New Roman",serif'><span style='mso-no-proof:yes'>2</span></span>
+      <!--[if supportFields]><span style='font-size:13.5pt;font-family:"Times New Roman",serif'><span style='mso-element:field-end'></span></span><![endif]-->
+    </p>
+  </div>
+
   <div class="Section1">
     ${innerHtml}
   </div>

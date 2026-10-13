@@ -637,15 +637,11 @@ export function cleanAIText(
       continue;
     }
 
-    // Bullet phân cấp:
+    // Bullet: Thống nhất tất cả các bullet có khoảng cách thụt lề bằng nhau, không phân chia -/+ thụt lề nhiều hơn
     const bulletMatch = trimmed.match(/^[•●○■◆❖✓►➢*+\-–—]{1,2}\s+(.*)$/);
     if (bulletMatch) {
       const itemContent = bulletMatch[1].trim();
-      if (leadingSpaces >= 2 || trimmed.startsWith('+')) {
-        trimmed = `+ ${itemContent}`;
-      } else {
-        trimmed = `- ${itemContent}`;
-      }
+      trimmed = `- ${itemContent}`;
       cleanedLines.push(trimmed);
       continue;
     }
@@ -657,9 +653,9 @@ export function cleanAIText(
       continue;
     }
 
-    // Dấu cộng dính liền chữ: "+Nội dung" -> "+ Nội dung"
+    // Dấu cộng dính liền chữ: "+Nội dung" -> "- Nội dung" (thống nhất về bullet chuẩn)
     if (/^\+\s*([^\s\+])/.test(trimmed)) {
-      trimmed = trimmed.replace(/^\+\s*([^\s\+])/, '+ $1');
+      trimmed = trimmed.replace(/^\+\s*([^\s\+])/, '- $1');
       cleanedLines.push(trimmed);
       continue;
     }

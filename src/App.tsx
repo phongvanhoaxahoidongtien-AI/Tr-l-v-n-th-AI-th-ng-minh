@@ -7,6 +7,7 @@ import { ADMINISTRATIVE_DOC_TYPES, ALL_DOC_TYPES } from './data/documentTypes';
 import { SAMPLE_DOCUMENTS } from './data/sampleDocs';
 import { runDocumentNormalization, detectAgencyDifference } from './services/normalizerEngine';
 import { generateSingleHtmlBundle } from './services/offlineBundleExporter';
+import { parseDocumentStructure, validateMandatoryDocumentElements } from './services/decree30Formatter';
 
 import { Navbar } from './components/Navbar';
 import { HeroMascot } from './components/HeroMascot';
@@ -14,6 +15,8 @@ import { StepIndicator } from './components/StepIndicator';
 import { Step1SelectType } from './components/Step1SelectType';
 import { Step2UploadDocument } from './components/Step2UploadDocument';
 import { Step3ExpertAnalysis } from './components/Step3ExpertAnalysis';
+import { Step4EditDocument } from './components/Step4EditDocument';
+import { Step5FinalExport } from './components/Step5FinalExport';
 import { Step4Export } from './components/Step4Export';
 import { SettingsModal } from './components/SettingsModal';
 import { TemplatesView } from './components/TemplatesView';
@@ -127,7 +130,7 @@ export default function App() {
 
       setNormalizeResult(res);
       setCurrentStep(3);
-      setMaxAccessibleStep(4);
+      setMaxAccessibleStep(5);
 
       if (res.canhBaoCoQuan) {
         setMascotMessage(`⚠️ ${salutation.shortName} ơi, Tiểu Bảo Bối phát hiện có sự khác biệt về tên cơ quan hoặc địa danh trong văn bản so với Cài đặt! Hãy xem phần cảnh báo bên dưới nhé.`);
@@ -391,13 +394,30 @@ export default function App() {
         {currentTab === 'normalize' && (
           <div className="space-y-6 animate-fade-in">
             
-            {/* 4-Step Progress Bar */}
+            {/* 5-Step Progress Bar */}
             <StepIndicator
               currentStep={currentStep}
               setStep={(s) => {
+                if (s === 5) {
+                  if (!normalizeResult) return;
+                  const doc = parseDocumentStructure(
+                    normalizeResult.noiDungChuanHoa,
+                    agencySettings,
+                    selectedType.category,
+                    selectedType.name
+                  );
+                  const val = validateMandatoryDocumentElements(doc, agencySettings);
+                  if (!val.isValid) {
+                    setCurrentStep(4);
+                    const salutation = getOfficerSalutation(agencySettings);
+                    setMascotMessage(`⚠️ ${salutation.shortName} ơi, chưa thể xuất sang Bước 5 vì còn thiếu ${val.missingCount} thông tin bắt buộc: ${val.missingItems.map(m => m.name).join(', ')}. Hãy bổ sung đầy đủ tại Bước 4 nhé!`);
+                    return;
+                  }
+                }
                 if (s <= maxAccessibleStep) setCurrentStep(s);
               }}
               maxAccessibleStep={maxAccessibleStep}
+              onGoHome={() => setCurrentTab('home')}
             />
 
             {/* Step 1: Chọn loại văn bản */}
@@ -426,7 +446,7 @@ export default function App() {
               />
             )}
 
-            {/* Step 3: Ý kiến chuyên gia (Tiểu Bảo chuẩn hóa) */}
+            {/* Step 3: Nhận dạng thể thức (Ý kiến chuyên gia & Chấm điểm) */}
             {currentStep === 3 && normalizeResult && (
               <Step3ExpertAnalysis
                 result={normalizeResult}
@@ -435,8 +455,12 @@ export default function App() {
                 originalText={inputText}
                 onApplyAgencyFix={handleApplyAgencyFix}
                 onDismissAgencyFix={handleDismissAgencyFix}
-                onNext={() => setCurrentStep(4)}
+                onNext={() => {
+                  setCurrentStep(4);
+                  setMaxAccessibleStep(Math.max(maxAccessibleStep, 4) as StepNumber);
+                }}
                 onBack={() => setCurrentStep(2)}
+                onGoHome={() => setCurrentTab('home')}
                 onUpdateNormalizedText={(newText) => {
                   setNormalizeResult({
                     ...normalizeResult,
@@ -446,21 +470,42 @@ export default function App() {
               />
             )}
 
-            {/* Step 4: Chỉnh sửa và xuất file */}
+            {/* Step 4: Chỉnh sửa văn bản (Toàn bộ phần chỉnh sửa làm ở đây: Sửa song song & Live A4) */}
             {currentStep === 4 && normalizeResult && (
-              <Step4Export
+              <Step4EditDocument
                 normalizedText={normalizeResult.noiDungChuanHoa}
                 selectedType={selectedType}
                 agencySettings={agencySettings}
                 analysisReport={normalizeResult.analysisReport}
                 originalText={inputText}
                 originalFileName={originalFileName}
+                onNext={() => {
+                  setCurrentStep(5);
+                  setMaxAccessibleStep(Math.max(maxAccessibleStep, 5) as StepNumber);
+                }}
+                onBack={() => setCurrentStep(3)}
+                onGoHome={() => setCurrentTab('home')}
                 onUpdateNormalizedText={(newText) => {
                   setNormalizeResult({
                     ...normalizeResult,
                     noiDungChuanHoa: newText
                   });
                 }}
+                openGuidelines={() => setIsGuidelinesOpen(true)}
+              />
+            )}
+
+            {/* Step 5: Xuất file cuối cùng */}
+            {currentStep === 5 && normalizeResult && (
+              <Step5FinalExport
+                normalizedText={normalizeResult.noiDungChuanHoa}
+                selectedType={selectedType}
+                agencySettings={agencySettings}
+                analysisReport={normalizeResult.analysisReport}
+                originalText={inputText}
+                originalFileName={originalFileName}
+                onBack={() => setCurrentStep(4)}
+                onGoHome={() => setCurrentTab('home')}
                 onReset={() => {
                   setInputText('');
                   setOriginalFileName('van_ban');
@@ -469,7 +514,6 @@ export default function App() {
                   setCurrentTab('home');
                 }}
                 openGuidelines={() => setIsGuidelinesOpen(true)}
-                onBack={() => setCurrentStep(3)}
               />
             )}
 
