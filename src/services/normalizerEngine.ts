@@ -1,7 +1,7 @@
 import { AgencySettings, NormalizeResult } from '../types';
 import { parseDocumentStructure, reconstructNormalizedText } from './decree30Formatter';
 import { analyzeDocumentText } from './documentAnalyzer';
-import { autoFixVietnameseSpelling } from '../utils/vietnameseSpellingChecker';
+import { autoFixVietnameseSpelling, detectAllDocumentProposals } from '../utils/vietnameseSpellingChecker';
 
 // Danh mục lỗi chính tả & văn phong hành chính tiếng Việt chuyên sâu theo chuẩn trolyvanthu.isavn.edu.vn
 const SPELLING_RULES: Array<{ pattern: RegExp; replacement: string; reason: string; category: 'chinh_ta' | 'van_phong' | 'the_thuc' }> = [
@@ -240,15 +240,15 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     warningAgency = null;
   }
 
-  // 2. Chạy từ điển lỗi chính tả và thể thức chuyên sâu (an toàn với ranh giới từ tiếng Việt)
-  const spellResult = autoFixVietnameseSpelling(content);
-  content = spellResult.fixedText;
-  for (const fix of spellResult.appliedFixes) {
-    errorList.push(fix.reason);
+  // 2. Quét phát hiện lỗi chính tả, nhầm từ và văn phong (TUYỆT ĐỐI KHÔNG TỰ ĐỘNG SỬA NỘI DUNG GỐC)
+  // Chỉ phát hiện và đưa vào danh sách đề xuất để người dùng tự quyết định qua nút [Đồng ý sửa] / [Bỏ qua]
+  const detectedProposals = detectAllDocumentProposals(content);
+  for (const item of detectedProposals) {
+    errorList.push(item.reason);
     spellingFixes.push({
-      wrong: fix.wrong,
-      right: fix.right,
-      context: fix.reason
+      wrong: item.wrong,
+      right: item.right,
+      context: item.reason
     });
   }
 

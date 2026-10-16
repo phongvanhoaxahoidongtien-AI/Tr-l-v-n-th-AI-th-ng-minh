@@ -45,6 +45,16 @@ export interface IllogicalSegment {
   category: 'duplicate_header' | 'authority_mismatch' | 'invalid_basis' | 'informal_phrasing' | 'incomplete_placeholder' | 'numbering_jump' | 'contradiction';
 }
 
+export interface SpellingProposal {
+  id: string;
+  wrong: string;
+  right: string;
+  reason: string;
+  category: 'chinh_ta' | 'nham_tu' | 'logic' | 'van_phong' | 'lap_tu';
+  snippet: string;
+  index: number;
+}
+
 export interface DetectedElements {
   agencyName: string | null;
   parentAgency: string | null;

@@ -11,6 +11,7 @@ import {
 
 interface Step5FinalExportProps {
   normalizedText: string;
+  structuredDoc?: StructuredDoc | null;
   selectedType: DocumentTypeItem;
   agencySettings: AgencySettings;
   onReset: () => void;
@@ -24,6 +25,7 @@ interface Step5FinalExportProps {
 
 export const Step5FinalExport: React.FC<Step5FinalExportProps> = ({
   normalizedText,
+  structuredDoc,
   selectedType,
   agencySettings,
   onReset,
@@ -39,15 +41,18 @@ export const Step5FinalExport: React.FC<Step5FinalExportProps> = ({
   const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
 
-  // Parse tài liệu đã hoàn thiện
+  // Parse tài liệu đã hoàn thiện: ƯU TIÊN SỐ 1 LÀ KẾT QUẢ CHỈNH SỬA TỪ "XEM VÀ SỬA SONG SONG" (BƯỚC 4)
   const doc = useMemo(() => {
+    if (structuredDoc) {
+      return structuredDoc;
+    }
     return parseDocumentStructure(
       normalizedText, 
       agencySettings, 
       selectedType.category, 
       selectedType.name
     );
-  }, [normalizedText, agencySettings, selectedType.category, selectedType.name]);
+  }, [structuredDoc, normalizedText, agencySettings, selectedType.category, selectedType.name]);
 
   // Tên file xuất
   const getExportFileName = (extension: 'docx' | 'doc') => {

@@ -22,6 +22,10 @@ export interface StructuredDoc {
   signerAuthority: string; // TM. ỦY BAN NHÂN DÂN / KT. CHỦ TỊCH / T/M CHI BỘ
   signerTitle: string; // CHỦ TỊCH / PHÓ CHỦ TỊCH / BÍ THƯ
   signerName: string;
+  tableStats?: {
+    tableCount: number;
+    mergedCellCount: number;
+  };
   cacMucDaChinh?: string[];
   illogicalFindings?: IllogicalSegment[];
 }
@@ -496,6 +500,101 @@ export function parseAppendicesFromLines(lines: string[]): {
   }
 
   return { cleanLines, appendices };
+}
+
+/**
+ * Rà soát và loại bỏ triệt để trùng lặp giữa Nơi nhận và Khối chữ ký theo chuẩn Nghị định 30:
+ * - Không để các thành phần của chữ ký (Quyền hạn ký, chức vụ, họ tên người ký, ghi chú ký) lẫn vào Nơi nhận
+ * - Loại bỏ các mục trùng lặp, chuẩn hóa dấu gạch ngang đầu dòng (-)
+ * - Bảo đảm mục "Lưu: VT, ..." luôn được đặt ở dòng cuối cùng của Nơi nhận
+ */
+export function cleanAndDeduplicateRecipients(
+  recipients: string[], 
+  signerInfo?: {
+    quyenHanKy?: string;
+    signerAuthority?: string;
+    signerTitle?: string;
+    signerName?: string;
+  }
+): string[] {
+  if (!recipients || recipients.length === 0) return [];
+
+  const signerNameUpper = (signerInfo?.signerName || '').trim().toUpperCase();
+  const signerTitleUpper = (signerInfo?.signerTitle || '').trim().toUpperCase();
+  const signerAuthUpper = (signerInfo?.signerAuthority || signerInfo?.quyenHanKy || '').trim().toUpperCase();
+
+  const signatureKeywords = [
+    /^(?:KT\.\s*CHỦ\s*TỊCH|KT\.|TM\.|T\/M|Q\.|TL\.|TUQ\.)(?:\s+.*)?$/i,
+    /^(?:CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)$/i,
+    /^\(?(?:Ký|Ký tên|Ký số|Ký,?\s*ghi\s*rõ\s*họ\s*tên|Ký,?\s*đóng\s*dấu|Đã ký|Chữ ký số|Chứng thư số)\)?$/i,
+    /^(?:KT\.\s*CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|BÍ\s*THƯ)\s*[\-–—\.]\s*[A-ZÀ-Ỹ\s]+$/i,
+    /^[A-ZÀ-Ỹ\s]{3,35}$/
+  ];
+
+  const cleanedItems: string[] = [];
+  const seenUpper = new Set<string>();
+  let luuItem = '';
+
+  for (const raw of recipients) {
+    let line = raw.trim();
+    if (!line) continue;
+
+    // Bỏ tiền tố "Nơi nhận:" nếu bị dính
+    line = line.replace(/^Nơi\s*nhận\s*:?\s*/i, '').trim();
+    if (!line) continue;
+
+    const lineNoDash = line.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+    const upper = lineNoDash.toUpperCase();
+
+    // 1. Kiểm tra nếu là dòng chỉ thị ký hoặc ghi chú ký
+    if (signatureKeywords.slice(0, 4).some(rx => rx.test(lineNoDash))) {
+      continue;
+    }
+
+    // 2. Kiểm tra nếu trùng họ tên người ký
+    if (signerNameUpper && (upper === signerNameUpper || (lineNoDash.length >= 4 && upper.includes(signerNameUpper)))) {
+      continue;
+    }
+
+    // 3. Kiểm tra nếu trùng chức vụ người ký đứng một mình
+    if (signerTitleUpper && upper === signerTitleUpper) {
+      continue;
+    }
+
+    // 4. Kiểm tra nếu trùng quyền hạn ký
+    if (signerAuthUpper && upper === signerAuthUpper) {
+      continue;
+    }
+
+    // 4.1. Nếu dòng chỉ gồm họ tên người ký viết hoa đứng một mình (thường là tên người ký bị dính vào nơi nhận)
+    if (upper.length >= 4 && upper.length <= 35 && !/[;,\.:]/.test(lineNoDash) && !/^(?:NHƯ TRÊN|LƯU|CÁC PHÒNG|BAN|UBND|HĐND|THƯỜNG TRỰC)/i.test(upper)) {
+      if (/^[A-ZÀ-Ỹ\s]+$/.test(upper) && signerNameUpper && (signerNameUpper.includes(upper) || upper.includes(signerNameUpper))) {
+        continue;
+      }
+    }
+
+    // 5. Tách dòng "Lưu: ..." để đặt ở cuối
+    if (/^Lưu\s*:\s*/i.test(lineNoDash)) {
+      luuItem = `- ${lineNoDash.replace(/^Lưu\s*:\s*/i, 'Lưu: ')}`;
+      continue;
+    }
+
+    // 6. Định dạng chuẩn với dấu "-" ở đầu dòng và chuẩn hóa kết thúc bằng dấu chấm phẩy (;)
+    const formatted = `- ${lineNoDash}`;
+    const dedupeKey = lineNoDash.replace(/[;\.]+$/, '').toUpperCase();
+
+    if (!seenUpper.has(dedupeKey)) {
+      seenUpper.add(dedupeKey);
+      cleanedItems.push(formatted);
+    }
+  }
+
+  // Đặt dòng Lưu: VT, ... ở vị trí cuối cùng
+  if (luuItem && !seenUpper.has(luuItem.replace(/^[-\s]+/, '').replace(/[;\.]+$/, '').toUpperCase())) {
+    cleanedItems.push(luuItem);
+  }
+
+  return cleanedItems;
 }
 
 /**
@@ -1164,8 +1263,26 @@ export function parseDocumentStructure(
     }
   }
 
+  let totalMergedCells = 0;
+  for (const tbl of atomicTableBlocks) {
+    const colspans = tbl.match(/colspan\s*=\s*["']?(\d+)["']?/gi) || [];
+    const rowspans = tbl.match(/rowspan\s*=\s*["']?(\d+)["']?/gi) || [];
+    for (const cs of colspans) {
+      const m = cs.match(/\d+/);
+      if (m && parseInt(m[0], 10) > 1) totalMergedCells += (parseInt(m[0], 10) - 1);
+    }
+    for (const rs of rowspans) {
+      const m = rs.match(/\d+/);
+      if (m && parseInt(m[0], 10) > 1) totalMergedCells += (parseInt(m[0], 10) - 1);
+    }
+  }
+
   cacMucDaChinh.push('Đã loại bỏ triệt để tên cơ quan ban hành và tiêu đề quốc ngữ khỏi thân văn bản');
-  cacMucDaChinh.push('Bảo toàn tuyệt đối trình tự nội dung và toàn vẹn bảng biểu có trong file');
+  if (atomicTableBlocks.length > 0) {
+    cacMucDaChinh.push(`Đã giữ nguyên ${atomicTableBlocks.length} bảng biểu, trong đó có ${totalMergedCells} ô gộp`);
+  } else {
+    cacMucDaChinh.push('Bảo toàn tuyệt đối trình tự nội dung và toàn vẹn bố cục văn bản');
+  }
 
   // BƯỚC 4: QUYỀN HẠN KÝ & CHỨC VỤ NGƯỜI KÝ CHUẨN NĐ 30 & HD 05
   // (Giữ nguyên vẹn chức vụ và người ký có trong văn bản, KHÔNG tự ý chèn tên giả)
@@ -1193,6 +1310,13 @@ export function parseDocumentStructure(
     cacMucDaChinh.push(`Đã phát hiện ${illogicalFindings.length} điểm thiếu tính logic để gợi ý bôi vàng`);
   }
 
+  const sanitizedRecipients = cleanAndDeduplicateRecipients(recipients, {
+    quyenHanKy,
+    signerAuthority,
+    signerTitle,
+    signerName
+  });
+
   return {
     isPartyDoc,
     parentAgency,
@@ -1208,14 +1332,60 @@ export function parseDocumentStructure(
     legalBases,
     bodyParagraphs,
     appendices,
-    recipients,
+    recipients: sanitizedRecipients,
     quyenHanKy,
     signerAuthority,
     signerTitle,
     signerName,
+    tableStats: {
+      tableCount: atomicTableBlocks.length,
+      mergedCellCount: totalMergedCells
+    },
     cacMucDaChinh,
     illogicalFindings
   };
+}
+
+/**
+ * Bôi vàng (highlight) các vị trí lỗi chính tả / đoạn không logic trên HTML Live Preview
+ * An toàn 100% với cấu trúc HTML: chỉ bôi vàng trên nội dung chữ hiển thị, không làm hỏng thẻ HTML.
+ * Mỗi điểm lỗi được bọc trong <mark class="decree30-spelling-highlight" ...> để click chọn sửa hoặc bỏ qua.
+ */
+export function highlightHtmlTextContent(
+  html: string,
+  proposals?: Array<{ id: string; wrong: string; right: string; reason?: string }>
+): string {
+  if (!html || !proposals || proposals.length === 0) return html;
+
+  const validProposals = proposals.filter(p => p && p.wrong && p.wrong.trim().length > 0);
+  if (validProposals.length === 0) return html;
+
+  // Sắp xếp các cụm từ theo độ dài giảm dần để ưu tiên cụm từ dài nhất trước
+  const sorted = [...validProposals].sort((a, b) => b.wrong.length - a.wrong.length);
+
+  // Tách HTML thành các đoạn tag <...> và đoạn text thông thường
+  const tokens = html.split(/(<[^>]+>)/g);
+
+  return tokens.map(token => {
+    // Nếu là tag HTML thì giữ nguyên tuyệt đối
+    if (token.startsWith('<') && token.endsWith('>')) {
+      return token;
+    }
+
+    // Nếu là text, tìm và bôi vàng các lỗi
+    let textChunk = token;
+    for (const p of sorted) {
+      if (!textChunk.includes(p.wrong)) continue;
+      const escaped = p.wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(?<![a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ])(${escaped})(?![a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ])`, 'gi');
+
+      textChunk = textChunk.replace(regex, (match) => {
+        return `<mark class="decree30-spelling-highlight" data-proposal-id="${p.id}" data-proposal-wrong="${encodeURIComponent(p.wrong)}" data-proposal-right="${encodeURIComponent(p.right)}" data-proposal-reason="${encodeURIComponent(p.reason || '')}" style="background-color: #fef08a; color: #713f12; padding: 1px 3px; border-radius: 3px; border: 1px solid #facc15; font-weight: 600; cursor: pointer; text-decoration: underline wavy #eab308;" title="⚠️ ${p.reason || 'Lỗi chính tả/không logic'}: Bấm để xem đề xuất sửa [Đồng ý sửa / Bỏ qua]">${match}</mark>`;
+      });
+    }
+
+    return textChunk;
+  }).join('');
 }
 
 /**
@@ -1224,12 +1394,14 @@ export function parseDocumentStructure(
  * - Font chữ duy nhất: Times New Roman, bộ mã Unicode
  * - Bảng biểu căn vừa khít trang A4, không vỡ layout
  * - Kính gửi & Nơi nhận mặc định có sẵn, các dòng tự động bắt đầu bằng dấu gạch ngang (-)
+ * - Hỗ trợ bôi vàng trực quan các điểm lỗi chính tả/logic chưa xử lý theo yêu cầu người dùng
  */
 export function generateDecree30A4Html(
   textOrDoc: string | StructuredDoc, 
   settings: AgencySettings, 
   docCategory?: string,
-  docTypeNameHint?: string
+  docTypeNameHint?: string,
+  highlightProposals?: Array<{ id: string; wrong: string; right: string; reason?: string }>
 ): string {
   const doc = (typeof textOrDoc === 'object' && textOrDoc !== null)
     ? textOrDoc
@@ -1241,7 +1413,7 @@ export function generateDecree30A4Html(
     ? doc.recipientsHeader.split('\n').map(l => l.trim()).filter(Boolean)
     : [];
 
-  return `
+  const rawHtml = `
     <div class="a4-document-page font-times text-slate-950 bg-white" style="font-family: 'Times New Roman', Times, 'Tinos', serif; font-size: 14pt; line-height: 1.5; color: #000; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; border-radius: 4px; padding: 20mm 15mm 20mm 30mm; min-height: 297mm; box-sizing: border-box; background-color: #ffffff;">
       
       <!-- SỐ TRANG VĂN BẢN CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP & HD 05 (ĐẶT Ở GIỮA LỀ TRÊN, CỠ 13-14PT ĐỨNG, TỰ ĐỘNG TỪ TRANG 2) -->
@@ -1274,24 +1446,24 @@ export function generateDecree30A4Html(
           <!-- Cột 2: Quốc hiệu & Tiêu ngữ HOẶC Tiêu đề Đảng -->
           <td style="width: 55%; vertical-align: top; text-align: center; padding: 0 0 0 8pt; border: none;">
             ${!doc.isPartyDoc ? `
-              <div style="font-size: 12pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
+              <div style="font-size: 12.5pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25;">
                 CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
               </div>
               <!-- Tiêu ngữ: Gạch chân chuẩn NĐ 30 bằng đúng 100% độ dài của dòng chữ, khoảng cách khít thanh thoát -->
-              <div style="font-size: 13pt; font-weight: bold; margin-top: 2pt; font-family: 'Times New Roman', serif; text-align: center;">
-                <span style="display: inline-block; border-bottom: 1.2pt solid #000; padding-bottom: 2pt; line-height: 1.15;">
+              <div style="font-size: 13.5pt; font-weight: bold; margin-top: 2pt; font-family: 'Times New Roman', serif; text-align: center; line-height: 1.2;">
+                <span style="display: inline-block; border-bottom: 1.2pt solid #000; padding-bottom: 2pt;">
                   Độc lập - Tự do - Hạnh phúc
                 </span>
               </div>
             ` : `
-              <div style="font-size: 13pt; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; font-family: 'Times New Roman', serif;">
+              <div style="font-size: 13.5pt; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; font-family: 'Times New Roman', serif; line-height: 1.25;">
                 ĐẢNG CỘNG SẢN VIỆT NAM
               </div>
               <!-- Nét gạch nhỏ dưới tiêu đề Đảng theo HD 05 (1/3 đến 1/2 độ dài dòng chữ) -->
               <div style="width: 38%; margin: 2.5pt auto 4pt auto; border-bottom: 1.2pt solid #000;"></div>
             `}
 
-            <div style="font-size: 13pt; font-style: italic; margin-top: 5pt; font-family: 'Times New Roman', serif;">
+            <div style="font-size: 13.5pt; font-style: italic; margin-top: 5pt; font-family: 'Times New Roman', serif;">
               ${(doc.locationDate || `${settings.shortLocation || 'Đông Tiến'}, ngày      tháng      năm ${settings.issuingYear || new Date().getFullYear()}`)
                 .replace(/ {2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')
                 .replace(/[\.…]{2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')}
@@ -1502,61 +1674,102 @@ export function generateDecree30A4Html(
       <!-- BẢNG BỐ CỤC CHÂN TRANG: NƠI NHẬN & CHỮ KÝ (2 CỘT ẨN VIỀN) -->
       <table style="width: 100%; border-collapse: collapse; border: none; margin-top: 20pt; page-break-inside: avoid; font-family: 'Times New Roman', Times, serif;">
         <tr>
-          <!-- Cột 1: Nơi nhận (MẶC ĐỊNH CÁC DÒNG CÓ DẤU - Ở ĐẦU) -->
+          <!-- Cột 1: Nơi nhận (Rà soát và loại bỏ sạch trùng lặp với khối chữ ký) -->
           <td style="width: 48%; vertical-align: top; padding: 0 10pt 0 0; border: none;">
-            ${(doc.recipients && doc.recipients.length > 0) ? `
-              <div style="font-size: 12pt; font-weight: bold; font-style: italic; margin-bottom: 3pt; font-family: 'Times New Roman', serif;">
-                Nơi nhận:
-              </div>
-              <div style="font-size: 11pt; line-height: 1.35; font-family: 'Times New Roman', serif;">
-                ${doc.recipients.map(r => {
-                  const withDash = r.startsWith('-') ? r : `- ${r.replace(/^[-\u2013\u2014]\s*/, '')}`;
-                  return `<div style="margin-bottom: 1.5pt;">${withDash}</div>`;
-                }).join('')}
-              </div>
-            ` : ''}
+            ${(() => {
+              const safeRecs = cleanAndDeduplicateRecipients(doc.recipients || [], {
+                quyenHanKy: doc.quyenHanKy,
+                signerAuthority: doc.signerAuthority,
+                signerTitle: doc.signerTitle,
+                signerName: doc.signerName,
+              });
+              if (safeRecs.length === 0) return '';
+              return `
+                <div style="font-size: 12pt; font-weight: bold; font-style: italic; margin-bottom: 3pt; font-family: 'Times New Roman', serif;">
+                  Nơi nhận:
+                </div>
+                <div style="font-size: 11pt; line-height: 1.35; font-family: 'Times New Roman', serif;">
+                  ${safeRecs.map(r => {
+                    const withDash = r.startsWith('-') ? r : `- ${r.replace(/^[-\u2013\u2014]\s*/, '')}`;
+                    return `<div style="margin-bottom: 1.5pt;">${withDash}</div>`;
+                  }).join('')}
+                </div>
+              `;
+            })()}
           </td>
 
-          <!-- Cột 2: Quyền hạn, chức vụ & chữ ký -->
+          <!-- Cột 2: Quyền hạn, chức vụ & chữ ký (Tách rõ Dòng 1: Quyền hạn + Chức vụ; Dòng 2: Họ và tên) -->
           <td style="width: 52%; vertical-align: top; text-align: center; padding: 0 0 0 10pt; border: none;">
-            ${(doc.quyenHanKy === 'KT. CHỦ TỊCH' || doc.signerAuthority === 'KT. CHỦ TỊCH') ? `
-              <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif;">
-                KT. CHỦ TỊCH
-              </div>
-              <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin-top: 2pt; font-family: 'Times New Roman', serif;">
-                ${doc.signerTitle || 'PHÓ CHỦ TỊCH'}
-              </div>
-            ` : (doc.quyenHanKy === 'Q.' || doc.signerAuthority.startsWith('Q.')) ? `
-              <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif;">
-                ${doc.signerAuthority || 'Q. CHỦ TỊCH'}
-              </div>
-            ` : (doc.signerAuthority || doc.quyenHanKy || doc.signerTitle) ? `
-              ${(doc.signerAuthority || doc.quyenHanKy) ? `
-                <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif;">
-                  ${doc.signerAuthority || doc.quyenHanKy}
-                </div>
-              ` : ''}
-              ${doc.signerTitle ? `
-                <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin-top: 2pt; font-family: 'Times New Roman', serif;">
-                  ${doc.signerTitle}
-                </div>
-              ` : ''}
-            ` : ''}
-            
-            ${(doc.signerName || doc.signerAuthority || doc.signerTitle || doc.quyenHanKy) ? `
-              <!-- Khoảng trống ký tên & đóng dấu -->
-              <div style="height: 50pt; display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 10pt; color: #94a3b8; font-style: italic; font-family: 'Times New Roman', serif;">
-                  (Ký, ghi rõ họ tên / Ký số)
-                </span>
-              </div>
+            ${(() => {
+              const auth = (doc.signerAuthority || doc.quyenHanKy || '').trim().toUpperCase();
+              const title = (doc.signerTitle || '').trim().toUpperCase();
 
-              ${doc.signerName ? `
-                <div style="font-size: 14pt; font-weight: bold; margin-top: 4pt; font-family: 'Times New Roman', serif;">
-                  ${doc.signerName}
-                </div>
-              ` : ''}
-            ` : ''}
+              if (auth === 'KT. CHỦ TỊCH' || doc.quyenHanKy === 'KT. CHỦ TỊCH') {
+                return `
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    KT. CHỦ TỊCH
+                  </div>
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin-top: 2pt; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${title || 'PHÓ CHỦ TỊCH'}
+                  </div>
+                `;
+              }
+
+              if (doc.quyenHanKy === 'Q.' || auth.startsWith('Q.')) {
+                return `
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${auth || 'Q. CHỦ TỊCH'}
+                  </div>
+                `;
+              }
+
+              if (auth && title && auth === title) {
+                return `
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${title}
+                  </div>
+                `;
+              }
+
+              if (auth && title) {
+                return `
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${auth}
+                  </div>
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin-top: 2pt; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${title}
+                  </div>
+                `;
+              }
+
+              if (auth || title) {
+                return `
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${auth || title}
+                  </div>
+                `;
+              }
+
+              return '';
+            })()}
+            
+            <!-- Khoảng trống ký tên rộng rãi để ký tay hoặc ký số (chuẩn 55-60pt) -->
+            <div style="height: 55pt; min-height: 55pt; display: flex; align-items: center; justify-content: center;">
+              <span style="font-size: 10pt; color: #94a3b8; font-style: italic; font-family: 'Times New Roman', serif;">
+                (Ký, ghi rõ họ tên / Ký số)
+              </span>
+            </div>
+
+            <!-- Dòng 2: Họ và tên người ký (in đậm 14pt chuẩn NĐ 30) -->
+            ${doc.signerName ? `
+              <div style="font-size: 14pt; font-weight: bold; margin-top: 4pt; font-family: 'Times New Roman', serif;">
+                ${doc.signerName}
+              </div>
+            ` : `
+              <div style="font-size: 14pt; font-weight: bold; margin-top: 4pt; font-family: 'Times New Roman', serif; min-height: 18pt;">
+                &nbsp;
+              </div>
+            `}
           </td>
         </tr>
       </table>
@@ -1631,6 +1844,8 @@ export function generateDecree30A4Html(
       </div>
     `).join('') : ''}
   `;
+
+  return highlightHtmlTextContent(rawHtml, highlightProposals);
 }
 
 /**
@@ -1678,11 +1893,16 @@ export function reconstructNormalizedText(doc: StructuredDoc): string {
   doc.bodyParagraphs.forEach(p => parts.push(p));
   parts.push('');
 
-  // Nơi nhận (mặc định các dòng có dấu - ở đầu)
-  if (doc.recipients && doc.recipients.length > 0) {
+  // Nơi nhận (Rà soát và loại bỏ sạch trùng lặp với khối chữ ký)
+  const safeRecs = cleanAndDeduplicateRecipients(doc.recipients || [], {
+    quyenHanKy: doc.quyenHanKy,
+    signerAuthority: doc.signerAuthority,
+    signerTitle: doc.signerTitle,
+    signerName: doc.signerName,
+  });
+  if (safeRecs.length > 0) {
     parts.push('Nơi nhận:');
-    const rLines = formatBulletLines(doc.recipients);
-    rLines.forEach(r => parts.push(r));
+    safeRecs.forEach(r => parts.push(r));
     parts.push('');
   }
 

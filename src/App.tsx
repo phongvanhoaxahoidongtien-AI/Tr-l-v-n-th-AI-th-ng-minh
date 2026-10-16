@@ -7,7 +7,7 @@ import { ADMINISTRATIVE_DOC_TYPES, ALL_DOC_TYPES } from './data/documentTypes';
 import { SAMPLE_DOCUMENTS } from './data/sampleDocs';
 import { runDocumentNormalization, detectAgencyDifference } from './services/normalizerEngine';
 import { generateSingleHtmlBundle } from './services/offlineBundleExporter';
-import { parseDocumentStructure, validateMandatoryDocumentElements } from './services/decree30Formatter';
+import { parseDocumentStructure, validateMandatoryDocumentElements, StructuredDoc } from './services/decree30Formatter';
 
 import { Navbar } from './components/Navbar';
 import { HeroMascot } from './components/HeroMascot';
@@ -67,6 +67,7 @@ export default function App() {
   const [originalFileName, setOriginalFileName] = useState<string>('van_ban');
   const [isProcessing, setIsProcessing] = useState(false);
   const [normalizeResult, setNormalizeResult] = useState<NormalizeResult | null>(null);
+  const [activeStructuredDoc, setActiveStructuredDoc] = useState<StructuredDoc | null>(null);
   const [userAcceptedAgencyOverride, setUserAcceptedAgencyOverride] = useState(false);
   const [mascotMessage, setMascotMessage] = useState<string | undefined>(undefined);
 
@@ -129,6 +130,13 @@ export default function App() {
       });
 
       setNormalizeResult(res);
+      const initialDoc = parseDocumentStructure(
+        res.noiDungChuanHoa,
+        agencySettings,
+        selectedType.category,
+        selectedType.name
+      );
+      setActiveStructuredDoc(initialDoc);
       setCurrentStep(3);
       setMaxAccessibleStep(5);
 
@@ -474,6 +482,10 @@ export default function App() {
             {currentStep === 4 && normalizeResult && (
               <Step4EditDocument
                 normalizedText={normalizeResult.noiDungChuanHoa}
+                initialStructuredDoc={activeStructuredDoc}
+                onUpdateStructuredDoc={(doc) => {
+                  setActiveStructuredDoc(doc);
+                }}
                 selectedType={selectedType}
                 agencySettings={agencySettings}
                 analysisReport={normalizeResult.analysisReport}
@@ -499,6 +511,7 @@ export default function App() {
             {currentStep === 5 && normalizeResult && (
               <Step5FinalExport
                 normalizedText={normalizeResult.noiDungChuanHoa}
+                structuredDoc={activeStructuredDoc}
                 selectedType={selectedType}
                 agencySettings={agencySettings}
                 analysisReport={normalizeResult.analysisReport}
@@ -510,6 +523,7 @@ export default function App() {
                   setInputText('');
                   setOriginalFileName('van_ban');
                   setNormalizeResult(null);
+                  setActiveStructuredDoc(null);
                   setCurrentStep(1);
                   setCurrentTab('home');
                 }}

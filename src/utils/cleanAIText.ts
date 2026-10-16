@@ -300,13 +300,30 @@ export function convertMarkdownTableToHtml(markdownTableText: string): string {
 }
 
 /**
- * Chuẩn hóa bảng biểu HTML để luôn vừa khít trang A4
+ * Chuẩn hóa bảng biểu HTML để luôn vừa khít trang A4 nhưng BẢO TOÀN 100% THUỘC TÍNH Ô GỘP:
+ * - Bảo tồn tuyệt đối colspan, rowspan của từng ô <th> và <td>
+ * - Giữ nguyên căn lề cột, phân cấp, chỉ chuẩn hóa font Times New Roman và viền đen chuẩn Nghị định 30
  */
 export function formatHtmlTableToFitA4(tableHtml: string): string {
   return tableHtml
-    .replace(/<table\b[^>]*>/gi, '<table class="decree30-table" style="width: 100% !important; max-width: 100%; border-collapse: collapse; margin: 12pt 0; table-layout: auto; word-break: break-word; font-family: \'Times New Roman\', Times, serif; font-size: 11pt; line-height: 1.3;" border="1" cellpadding="5" cellspacing="0">')
-    .replace(/<th\b[^>]*>/gi, '<th style="border: 1px solid #000; padding: 5pt; font-weight: bold; text-align: center; background-color: #f1f5f9; font-family: \'Times New Roman\', Times, serif; font-size: 11pt;">')
-    .replace(/<td\b[^>]*>/gi, '<td style="border: 1px solid #000; padding: 4pt 6pt; font-family: \'Times New Roman\', Times, serif; font-size: 11pt; vertical-align: top;">');
+    .replace(/<table\b([^>]*)>/gi, (_match, attrs = '') => {
+      const cleanAttrs = attrs
+        .replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '')
+        .replace(/\bclass\s*=\s*["'][^"']*["']/gi, '')
+        .trim();
+      const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
+      return `<table class="decree30-table"${attrStr} style="width: 100% !important; max-width: 100%; border-collapse: collapse; margin: 12pt 0; table-layout: auto; word-break: break-word; font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.3;" border="1" cellpadding="5" cellspacing="0">`;
+    })
+    .replace(/<th\b([^>]*)>/gi, (_match, attrs = '') => {
+      const cleanAttrs = attrs.replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '').trim();
+      const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
+      return `<th${attrStr} style="border: 1px solid #000; padding: 5pt; font-weight: bold; text-align: center; background-color: #f1f5f9; font-family: 'Times New Roman', Times, serif; font-size: 11pt;">`;
+    })
+    .replace(/<td\b([^>]*)>/gi, (_match, attrs = '') => {
+      const cleanAttrs = attrs.replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '').trim();
+      const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
+      return `<td${attrStr} style="border: 1px solid #000; padding: 4pt 6pt; font-family: 'Times New Roman', Times, serif; font-size: 11pt; vertical-align: top;">`;
+    });
 }
 
 /**

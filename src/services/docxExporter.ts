@@ -3,15 +3,18 @@ import {
   WidthType, AlignmentType, BorderStyle, HeadingLevel, UnderlineType,
   Header, PageNumber
 } from 'docx';
-import { StructuredDoc, formatDocCodeForDisplay, getStandardAgencyHeaderParts } from './decree30Formatter';
+import { StructuredDoc, formatDocCodeForDisplay, getStandardAgencyHeaderParts, cleanAndDeduplicateRecipients } from './decree30Formatter';
 import { AgencySettings } from '../types';
 
 /**
- * Chuyển đổi chuỗi bảng HTML hoặc bảng Markdown thành đối tượng Table docx chuẩn Nghị định 30
+ * Chuyển đổi chuỗi bảng HTML hoặc bảng Markdown thành đối tượng Table docx chuẩn Nghị định 30:
+ * - Bảo toàn 100% cấu trúc bảng bao gồm ô gộp ngang (colspan / columnSpan) và ô gộp dọc (rowspan / rowSpan)
+ * - Giữ nguyên viền đơn (solid black 1px / size 4), căn lề theo từng ô (STT căn giữa, số căn phải, chữ căn trái)
+ * - Font chuẩn Times New Roman, cỡ 12pt (size 24) dòng tiêu đề, 11-12pt (size 22-24) nội dung
  */
 export function convertTableToDocxTable(tableContent: string): Table | null {
   try {
-    // 1. Trường hợp bảng HTML (từ mammoth hoặc paste từ Word/Web)
+    // 1. Trường hợp bảng HTML (từ file Word, clipboard HTML hoặc mammoth)
     if (tableContent.includes('<table')) {
       const rowMatches = tableContent.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi);
       if (!rowMatches || rowMatches.length === 0) return null;
@@ -26,6 +29,12 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
         if (!cellMatches || cellMatches.length === 0) continue;
 
         const cells = cellMatches.map((cellHtml, cIdx) => {
+          // Trích xuất thuộc tính ô gộp ngang (colspan) và ô gộp dọc (rowspan)
+          const colspanMatch = cellHtml.match(/colspan\s*=\s*["']?(\d+)["']?/i);
+          const rowspanMatch = cellHtml.match(/rowspan\s*=\s*["']?(\d+)["']?/i);
+          const colSpanVal = colspanMatch ? parseInt(colspanMatch[1], 10) : undefined;
+          const rowSpanVal = rowspanMatch ? parseInt(rowspanMatch[1], 10) : undefined;
+
           const cellText = cellHtml
             .replace(/<br\s*\/?>/gi, '\n')
             .replace(/<\/p>/gi, '\n')
@@ -41,13 +50,22 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
           const isStt = cIdx === 0 && (isHeaderRow || /^\d+$/.test(cellText) || /^stt\b/i.test(cellText));
           const isNumber = /^\d+(?:[.,]\d+)?%?$/.test(cellText);
 
-          const align = isHeaderRow 
+          let align: (typeof AlignmentType)[keyof typeof AlignmentType] = isHeaderRow 
             ? AlignmentType.CENTER 
             : isStt 
             ? AlignmentType.CENTER 
             : isNumber 
             ? AlignmentType.RIGHT 
             : AlignmentType.LEFT;
+
+          // Nếu có căn lề tường minh trong HTML style
+          if (/text-align:\s*center|align=["']center["']/i.test(cellHtml)) {
+            align = AlignmentType.CENTER;
+          } else if (/text-align:\s*right|align=["']right["']/i.test(cellHtml)) {
+            align = AlignmentType.RIGHT;
+          } else if (/text-align:\s*justify/i.test(cellHtml)) {
+            align = AlignmentType.JUSTIFIED;
+          }
 
           return new TableCell({
             borders: {
@@ -56,6 +74,8 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
               left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
               right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
             },
+            columnSpan: (colSpanVal && colSpanVal > 1) ? colSpanVal : undefined,
+            rowSpan: (rowSpanVal && rowSpanVal > 1) ? rowSpanVal : undefined,
             shading: isHeaderRow ? { fill: 'F8FAFC' } : undefined,
             children: [
               new Paragraph({
@@ -283,12 +303,12 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 40, line: 240 },
+        spacing: { after: 30, line: 240 },
         children: [
           new TextRun({
             text: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM',
             font: 'Times New Roman',
-            size: 24, // 12pt
+            size: 25, // 12.5pt (chuẩn 12-13pt in hoa đậm NĐ 30)
             bold: true,
           }),
         ],
@@ -298,26 +318,26 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 20, line: 240 },
+        spacing: { after: 15, line: 240 },
         children: [
           new TextRun({
             text: 'Độc lập - Tự do - Hạnh phúc',
             font: 'Times New Roman',
-            size: 26, // 13pt
+            size: 27, // 13.5pt (chuẩn 13-14pt in thường đậm NĐ 30)
             bold: true,
           }),
         ],
       })
     );
 
-    // Đường kẻ ngang dưới Tiêu ngữ (chuẩn NĐ 30: sát chân chữ, độ dài bằng độ dài dòng chữ)
+    // Đường kẻ ngang dưới Tiêu ngữ (chuẩn NĐ 30: sát chân chữ, độ dài bằng đúng 100% độ dài dòng chữ Tiêu ngữ)
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { before: 0, after: 60, line: 180 },
+        spacing: { before: 0, after: 50, line: 180 },
         children: [
           new TextRun({
-            text: '————————————',
+            text: '─────────────',
             font: 'Times New Roman',
             size: 20,
             bold: true,
@@ -832,7 +852,14 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       })
     );
 
-    for (const r of doc.recipients) {
+    const safeRecs = cleanAndDeduplicateRecipients(doc.recipients || [], {
+      quyenHanKy: doc.quyenHanKy,
+      signerAuthority: doc.signerAuthority,
+      signerTitle: doc.signerTitle,
+      signerName: doc.signerName,
+    });
+
+    for (const r of safeRecs) {
       const cleanR = r.trim();
       if (!cleanR) continue;
       const rWithDash = cleanR.startsWith('-') ? cleanR : `- ${cleanR.replace(/^[-\u2013\u2014]\s*/, '')}`;
@@ -859,9 +886,15 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   }
 
   // 8. CỘT PHẢI FOOTER: Quyền hạn, chức vụ, chữ ký, họ tên
+  // Tách rõ ràng chuẩn Nghị định 30 & HD 05:
+  // - Dòng 1: Quyền hạn ký + Chức vụ người ký (ví dụ: KT. CHỦ TỊCH \n PHÓ CHỦ TỊCH, hoặc TM. UBND \n CHỦ TỊCH, hoặc CHỦ TỊCH)
+  // - Khoảng trống ký tên rộng rãi (720 dxa = 36pt ~ 5 dòng trống cho ký tay/ký số)
+  // - Dòng 2: Họ và tên người ký (in đậm 14pt)
   const rightFooterParagraphs: Paragraph[] = [];
+  const auth = (doc.signerAuthority || doc.quyenHanKy || '').trim().toUpperCase();
+  const title = (doc.signerTitle || '').trim().toUpperCase();
 
-  if (doc.quyenHanKy === 'KT. CHỦ TỊCH' || doc.signerAuthority === 'KT. CHỦ TỊCH') {
+  if (auth === 'KT. CHỦ TỊCH' || doc.quyenHanKy === 'KT. CHỦ TỊCH') {
     rightFooterParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
@@ -880,7 +913,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         spacing: { before: 20, after: 80, line: 240 },
         children: [
           new TextRun({
-            text: (doc.signerTitle || 'PHÓ CHỦ TỊCH').toUpperCase(),
+            text: title || 'PHÓ CHỦ TỊCH',
             font: 'Times New Roman',
             size: 26, // 13pt
             bold: true,
@@ -888,14 +921,14 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         ],
       })
     );
-  } else if (doc.quyenHanKy === 'Q.' || doc.signerAuthority.startsWith('Q.')) {
+  } else if (doc.quyenHanKy === 'Q.' || auth.startsWith('Q.')) {
     rightFooterParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 100, after: 80, line: 240 },
         children: [
           new TextRun({
-            text: (doc.signerAuthority || 'Q. CHỦ TỊCH').toUpperCase(),
+            text: auth || 'Q. CHỦ TỊCH',
             font: 'Times New Roman',
             size: 26, // 13pt
             bold: true,
@@ -903,58 +936,81 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         ],
       })
     );
-  } else if (doc.signerAuthority || doc.signerTitle || doc.quyenHanKy) {
-    if (doc.signerAuthority || doc.quyenHanKy) {
-      rightFooterParagraphs.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 100, after: 40, line: 240 },
-          children: [
-            new TextRun({
-              text: (doc.signerAuthority || doc.quyenHanKy || '').toUpperCase(),
-              font: 'Times New Roman',
-              size: 26, // 13pt
-              bold: true,
-            }),
-          ],
-        })
-      );
-    }
-    if (doc.signerTitle) {
-      rightFooterParagraphs.push(
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 20, after: 80, line: 240 },
-          children: [
-            new TextRun({
-              text: doc.signerTitle.toUpperCase(),
-              font: 'Times New Roman',
-              size: 26, // 13pt
-              bold: true,
-            }),
-          ],
-        })
-      );
-    }
-  }
-
-  // Khoảng trống ký tên & Họ tên (chỉ xuất nếu có tên người ký)
-  if (doc.signerName && doc.signerName.trim()) {
+  } else if (auth && title && auth === title) {
+    // Tránh trùng lặp 2 dòng cùng một chức danh (ví dụ cùng là CHỦ TỊCH)
     rightFooterParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { before: 600, after: 60, line: 240 },
+        spacing: { before: 100, after: 80, line: 240 },
         children: [
           new TextRun({
-            text: doc.signerName,
+            text: title,
             font: 'Times New Roman',
-            size: 28, // 14pt
+            size: 26, // 13pt
+            bold: true,
+          }),
+        ],
+      })
+    );
+  } else if (auth && title) {
+    rightFooterParagraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 100, after: 40, line: 240 },
+        children: [
+          new TextRun({
+            text: auth,
+            font: 'Times New Roman',
+            size: 26, // 13pt
+            bold: true,
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 20, after: 80, line: 240 },
+        children: [
+          new TextRun({
+            text: title,
+            font: 'Times New Roman',
+            size: 26, // 13pt
+            bold: true,
+          }),
+        ],
+      })
+    );
+  } else if (auth || title) {
+    rightFooterParagraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 100, after: 80, line: 240 },
+        children: [
+          new TextRun({
+            text: auth || title,
+            font: 'Times New Roman',
+            size: 26, // 13pt
             bold: true,
           }),
         ],
       })
     );
   }
+
+  // Khoảng trống ký tên & Họ tên (rộng rãi để ký tay hoặc ký số theo chuẩn NĐ 30: 720 dxa = 36pt ~ 5 dòng trống)
+  rightFooterParagraphs.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 720, after: 60, line: 240 },
+      children: [
+        new TextRun({
+          text: doc.signerName || '',
+          font: 'Times New Roman',
+          size: 28, // 14pt in đậm
+          bold: true,
+        }),
+      ],
+    })
+  );
 
   // Bảng Footer 2 cột
   const footerTable = new Table({

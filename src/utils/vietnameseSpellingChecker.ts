@@ -5,12 +5,15 @@
  * Sử dụng regex ranh giới từ tiếng Việt an toàn (tránh lỗi của \\b trên ký tự có dấu)
  */
 
+import { SpellingProposal, IllogicalSegment } from '../types';
+import { detectIllogicalAdministrativeText } from './illogicalTextDetector';
+
 export interface SpellingRule {
   pattern: RegExp;
   wrong: string;
   right: string;
   reason: string;
-  category: 'chinh_ta' | 'van_phong' | 'the_thuc';
+  category: 'chinh_ta' | 'nham_tu' | 'logic' | 'van_phong' | 'the_thuc' | 'lap_tu';
 }
 
 export interface SpellingErrorMatch {
@@ -41,7 +44,7 @@ interface RawSpellingEntry {
   wrong: string;
   right: string;
   reason: string;
-  category?: 'chinh_ta' | 'van_phong' | 'the_thuc';
+  category?: 'chinh_ta' | 'nham_tu' | 'logic' | 'van_phong' | 'the_thuc' | 'lap_tu';
 }
 
 const RAW_SPELLING_ENTRIES: RawSpellingEntry[] = [
@@ -231,7 +234,56 @@ const RAW_SPELLING_ENTRIES: RawSpellingEntry[] = [
   { wrong: 'Độc lập-Tự do-Hạnh phúc', right: 'Độc lập - Tự do - Hạnh phúc', reason: 'Thể thức NĐ 30: Tiêu ngữ có dấu cách trước và sau dấu gạch nối (-)', category: 'the_thuc' },
   { wrong: 'Độc Lập - Tự Do - Hạnh Phúc', right: 'Độc lập - Tự do - Hạnh phúc', reason: 'Thể thức NĐ 30: Tiêu ngữ viết hoa chữ cái đầu mỗi cụm từ', category: 'the_thuc' },
   { wrong: 'Căn cứ vào', right: 'Căn cứ', reason: 'Thể thức NĐ 30: Viết "Căn cứ", không viết "Căn cứ vào"', category: 'the_thuc' },
-  { wrong: 'ba phần tư', right: 'ba phần tư', reason: 'Chuẩn chính tả: "ba phần tư"', category: 'chinh_ta' }
+  { wrong: 'ba phần tư', right: 'ba phần tư', reason: 'Chuẩn chính tả: "ba phần tư"', category: 'chinh_ta' },
+
+  // 10. Lỗi viết sai / nhầm từ thông dụng trong văn bản hành chính (Theo yêu cầu nâng cấp Tiểu Bảo Bối)
+  { wrong: 'cơ quann', right: 'cơ quan', reason: 'Viết nhầm từ: "cơ quann" ➔ "cơ quan"', category: 'nham_tu' },
+  { wrong: 'quyêt định', right: 'quyết định', reason: 'Sai dấu chính tả: "quyêt định" ➔ "quyết định"', category: 'chinh_ta' },
+  { wrong: 'quyết đinh', right: 'quyết định', reason: 'Sai dấu chính tả: "quyết đinh" ➔ "quyết định"', category: 'chinh_ta' },
+  { wrong: 'quyêt đinh', right: 'quyết định', reason: 'Sai dấu chính tả: "quyêt đinh" ➔ "quyết định"', category: 'chinh_ta' },
+  { wrong: 'báo cáoo', right: 'báo cáo', reason: 'Viết nhầm từ: "báo cáoo" ➔ "báo cáo"', category: 'nham_tu' },
+  { wrong: 'báo cáio', right: 'báo cáo', reason: 'Viết nhầm từ: "báo cáio" ➔ "báo cáo"', category: 'nham_tu' },
+  { wrong: 'kế hoạc', right: 'kế hoạch', reason: 'Sai phụ âm cuối: "kế hoạc" ➔ "kế hoạch"', category: 'chinh_ta' },
+  { wrong: 'kế hoặch', right: 'kế hoạch', reason: 'Sai chính tả: "kế hoặch" ➔ "kế hoạch"', category: 'chinh_ta' },
+  { wrong: 'kế hoach', right: 'kế hoạch', reason: 'Thiếu dấu thanh: "kế hoach" ➔ "kế hoạch"', category: 'chinh_ta' },
+  { wrong: 'chuẩn bi', right: 'chuẩn bị', reason: 'Thiếu dấu thanh: "chuẩn bi" ➔ "chuẩn bị"', category: 'chinh_ta' },
+  { wrong: 'thực hiên', right: 'thực hiện', reason: 'Thiếu dấu thanh: "thực hiên" ➔ "thực hiện"', category: 'chinh_ta' },
+  { wrong: 'chủ tich', right: 'chủ tịch', reason: 'Thiếu dấu thanh: "chủ tich" ➔ "chủ tịch"', category: 'chinh_ta' },
+  { wrong: 'phó chủ tich', right: 'phó chủ tịch', reason: 'Thiếu dấu thanh: "phó chủ tich" ➔ "phó chủ tịch"', category: 'chinh_ta' },
+  { wrong: 'thủ tương', right: 'thủ tướng', reason: 'Thiếu dấu thanh: "thủ tương" ➔ "thủ tướng"', category: 'chinh_ta' },
+  { wrong: 'chính phu', right: 'chính phủ', reason: 'Sai dấu thanh: "chính phu" ➔ "chính phủ"', category: 'chinh_ta' },
+  { wrong: 'chính phũ', right: 'chính phủ', reason: 'Sai dấu thanh: "chính phũ" ➔ "chính phủ"', category: 'chinh_ta' },
+  { wrong: 'nghị đinh', right: 'nghị định', reason: 'Thiếu dấu thanh: "nghị đinh" ➔ "nghị định"', category: 'chinh_ta' },
+  { wrong: 'quyết nghi', right: 'quyết nghị', reason: 'Thiếu dấu thanh: "quyết nghi" ➔ "quyết nghị"', category: 'chinh_ta' },
+  { wrong: 'quyêt nghị', right: 'quyết nghị', reason: 'Sai dấu thanh: "quyêt nghị" ➔ "quyết nghị"', category: 'chinh_ta' },
+  { wrong: 'chỉ đao', right: 'chỉ đạo', reason: 'Thiếu dấu thanh: "chỉ đao" ➔ "chỉ đạo"', category: 'chinh_ta' },
+  { wrong: 'nhiệm vu', right: 'nhiệm vụ', reason: 'Thiếu dấu thanh: "nhiệm vu" ➔ "nhiệm vụ"', category: 'chinh_ta' },
+  { wrong: 'nhiệm vũ', right: 'nhiệm vụ', reason: 'Sai dấu thanh: "nhiệm vũ" ➔ "nhiệm vụ"', category: 'chinh_ta' },
+  { wrong: 'nghiệm thuu', right: 'nghiệm thu', reason: 'Viết nhầm từ: "nghiệm thuu" ➔ "nghiệm thu"', category: 'nham_tu' },
+  { wrong: 'công vann', right: 'công văn', reason: 'Viết nhầm từ: "công vann" ➔ "công văn"', category: 'nham_tu' },
+  { wrong: 'thông báoo', right: 'thông báo', reason: 'Viết nhầm từ: "thông báoo" ➔ "thông báo"', category: 'nham_tu' },
+  { wrong: 'tờ chình', right: 'tờ trình', reason: 'Sai phụ âm: "tờ chình" ➔ "tờ trình"', category: 'chinh_ta' },
+  { wrong: 'biên bãn', right: 'biên bản', reason: 'Sai dấu thanh: "biên bãn" ➔ "biên bản"', category: 'chinh_ta' },
+  { wrong: 'đề nghi', right: 'đề nghị', reason: 'Thiếu dấu thanh: "đề nghi" ➔ "đề nghị"', category: 'chinh_ta' },
+  { wrong: 'phối hơp', right: 'phối hợp', reason: 'Thiếu dấu thanh: "phối hơp" ➔ "phối hợp"', category: 'chinh_ta' },
+  { wrong: 'tham mưuu', right: 'tham mưu', reason: 'Viết nhầm từ: "tham mưuu" ➔ "tham mưu"', category: 'nham_tu' },
+  { wrong: 'đính kềm', right: 'đính kèm', reason: 'Sai chính tả: "đính kềm" ➔ "đính kèm"', category: 'chinh_ta' },
+  { wrong: 'kính gữi', right: 'kính gửi', reason: 'Sai dấu thanh: "kính gữi" ➔ "kính gửi" (chỉ đề xuất, người dùng duyệt)', category: 'chinh_ta' },
+  { wrong: 'kính gởi', right: 'kính gửi', reason: 'Phương ngữ: "kính gởi" ➔ "kính gửi" (chuẩn hành chính)', category: 'van_phong' },
+  { wrong: 'kinh gửi', right: 'kính gửi', reason: 'Thiếu dấu sắc: "kinh gửi" ➔ "kính gửi"', category: 'chinh_ta' },
+  { wrong: 'nơi nhân', right: 'nơi nhận', reason: 'Thiếu dấu nặng: "nơi nhân" ➔ "nơi nhận"', category: 'chinh_ta' },
+  { wrong: 'liên quann', right: 'liên quan', reason: 'Viết nhầm từ: "liên quann" ➔ "liên quan"', category: 'nham_tu' },
+  { wrong: 'tiến đô', right: 'tiến độ', reason: 'Thiếu dấu nặng: "tiến đô" ➔ "tiến độ"', category: 'chinh_ta' },
+  { wrong: 'tiến đọ', right: 'tiến độ', reason: 'Sai dấu thanh: "tiến đọ" ➔ "tiến độ"', category: 'chinh_ta' },
+  { wrong: 'kinh phi', right: 'kinh phí', reason: 'Thiếu dấu sắc: "kinh phi" ➔ "kinh phí"', category: 'chinh_ta' },
+  { wrong: 'nội dungg', right: 'nội dung', reason: 'Viết nhầm từ: "nội dungg" ➔ "nội dung"', category: 'nham_tu' },
+  { wrong: 'mục tiêuu', right: 'mục tiêu', reason: 'Viết nhầm từ: "mục tiêuu" ➔ "mục tiêu"', category: 'nham_tu' },
+  { wrong: 'kết quã', right: 'kết quả', reason: 'Sai dấu thanh: "kết quã" ➔ "kết quả"', category: 'chinh_ta' },
+  { wrong: 'kêt quả', right: 'kết quả', reason: 'Sai dấu: "kêt quả" ➔ "kết quả"', category: 'chinh_ta' },
+  { wrong: 'thực tê', right: 'thực tế', reason: 'Thiếu dấu sắc: "thực tê" ➔ "thực tế"', category: 'chinh_ta' },
+  { wrong: 'đánh dá', right: 'đánh giá', reason: 'Sai phụ âm: "đánh dá" ➔ "đánh giá"', category: 'chinh_ta' },
+  { wrong: 'uy ban', right: 'ủy ban', reason: 'Chuẩn dấu thanh: "uy ban" ➔ "ủy ban"', category: 'chinh_ta' },
+  { wrong: 'uỷ ban', right: 'ủy ban', reason: 'Chuẩn hóa dấu thanh: "uỷ ban" ➔ "ủy ban"', category: 'chinh_ta' }
 ];
 
 export const VIETNAMESE_SPELLING_RULES: SpellingRule[] = RAW_SPELLING_ENTRIES.map(entry => ({
@@ -239,7 +291,7 @@ export const VIETNAMESE_SPELLING_RULES: SpellingRule[] = RAW_SPELLING_ENTRIES.ma
   wrong: entry.wrong,
   right: entry.right,
   reason: entry.reason,
-  category: entry.category || 'chinh_ta'
+  category: (entry.category as any) || 'chinh_ta'
 }));
 
 /**
@@ -350,4 +402,120 @@ export function getSpellingHighlightPatterns(): Array<{ pattern: RegExp; wrong: 
     right: r.right,
     reason: r.reason
   }));
+}
+
+/**
+ * Phát hiện từ lặp liền kề bất thường (e.g. "các các", "trong trong", "đã đã", "và và", "được được", v.v.)
+ */
+export function detectRepeatedWords(text: string): SpellingProposal[] {
+  if (!text) return [];
+  const proposals: SpellingProposal[] = [];
+  
+  // Các từ tiếng Việt thường bị lặp nhầm khi gõ văn bản
+  const REPEATED_WORDS_REGEX = /(?<![a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ])(các|trong|và|được|đã|những|cho|tại|với|đến|của|để|là|thì|mà|rằng)\s+\1(?![a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ])/gi;
+
+  let m: RegExpExecArray | null;
+  let counter = 1;
+  while ((m = REPEATED_WORDS_REGEX.exec(text)) !== null) {
+    const fullMatch = m[0];
+    const singleWord = m[1];
+    const start = Math.max(0, m.index - 20);
+    const end = Math.min(text.length, m.index + fullMatch.length + 20);
+    const snippet = (start > 0 ? '…' : '') + text.substring(start, end) + (end < text.length ? '…' : '');
+
+    proposals.push({
+      id: `rep_${counter++}_${m.index}`,
+      wrong: fullMatch,
+      right: singleWord,
+      reason: `Lặp từ bất thường: Bỏ từ lặp "${fullMatch}" ➔ "${singleWord}"`,
+      category: 'lap_tu',
+      snippet: snippet.replace(/\r?\n/g, ' '),
+      index: m.index
+    });
+  }
+
+  return proposals;
+}
+
+/**
+ * Rà soát và tổng hợp toàn bộ các đề xuất sửa lỗi (Chính tả, Nhầm từ, Lặp từ, Đoạn thiếu logic)
+ * TUYỆT ĐỐI KHÔNG TỰ SỬA VĂN BẢN GỐC, KHÔNG ĐỤNG VÀO TÊN RIÊNG, ĐỊA DANH, SỐ HIỆU, NGÀY THÁNG.
+ */
+export function detectAllDocumentProposals(
+  text: string, 
+  externalIllogicals?: IllogicalSegment[]
+): SpellingProposal[] {
+  if (!text) return [];
+
+  const proposals: SpellingProposal[] = [];
+  const seenKeys = new Set<string>();
+
+  // 1. Quét lỗi từ bộ từ điển chuyên sâu
+  const spellMatches = checkVietnameseSpelling(text);
+  for (const m of spellMatches) {
+    const key = `${m.wrong.toLowerCase()}_${m.index}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      proposals.push({
+        id: `spell_${proposals.length + 1}_${m.index}`,
+        wrong: m.wrong,
+        right: m.right,
+        reason: m.reason,
+        category: (m.category as any) || 'chinh_ta',
+        snippet: m.snippet,
+        index: m.index
+      });
+    }
+  }
+
+  // 2. Quét từ lặp liền kề
+  const repeated = detectRepeatedWords(text);
+  for (const r of repeated) {
+    const key = `${r.wrong.toLowerCase()}_${r.index}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      proposals.push(r);
+    }
+  }
+
+  // 3. Tích hợp các đoạn thiếu tính logic (từ externalIllogicals hoặc tự động quét)
+  const allIllogicals: IllogicalSegment[] = [];
+  if (externalIllogicals && externalIllogicals.length > 0) {
+    allIllogicals.push(...externalIllogicals);
+  }
+  // Tự động quét bổ sung từ bộ quy tắc logic văn bản hành chính
+  const autoIllogicals = detectIllogicalAdministrativeText(text);
+  for (const autoIll of autoIllogicals) {
+    if (!allIllogicals.some(existing => existing.target.toLowerCase() === autoIll.target.toLowerCase())) {
+      allIllogicals.push(autoIll);
+    }
+  }
+
+  for (const ill of allIllogicals) {
+    if (!ill.target || !text.includes(ill.target)) continue;
+    const idx = text.indexOf(ill.target);
+    const key = `${ill.target.toLowerCase()}_${idx}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      let right = ill.suggestion || '';
+      const matchQuotes = right.match(/["“](.*?)["”]/);
+      if (matchQuotes) {
+        right = matchQuotes[1];
+      } else if (right.startsWith('Sửa thành: ')) {
+        right = right.replace(/^Sửa thành:\s*/i, '');
+      }
+
+      proposals.push({
+        id: ill.id || `ill_${proposals.length + 1}_${idx}`,
+        wrong: ill.target,
+        right: right || 'Xóa bỏ đoạn thừa',
+        reason: ill.reason || 'Đoạn văn thiếu tính logic hoặc không phù hợp thể thức',
+        category: 'logic',
+        snippet: ill.target,
+        index: idx >= 0 ? idx : 0
+      });
+    }
+  }
+
+  return proposals.sort((a, b) => a.index - b.index);
 }

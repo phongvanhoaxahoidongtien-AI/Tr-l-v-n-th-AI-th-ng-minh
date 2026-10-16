@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport, IllogicalSegment, DocumentAppendix } from '../types';
+import { DocumentTypeItem, AgencySettings, DocumentAnalysisReport, IllogicalSegment, DocumentAppendix, SpellingProposal } from '../types';
 import { 
   parseDocumentStructure, 
   reconstructNormalizedText, 
   formatBulletLines, 
   boldBulletHeadings,
   unboldBulletHeadings,
+  cleanAndDeduplicateRecipients,
   StructuredDoc 
 } from '../services/decree30Formatter';
 import { cleanAIText, formatHtmlTableToFitA4 } from '../utils/cleanAIText';
@@ -15,7 +16,9 @@ import {
   autoFixVietnameseSpelling, 
   fixSingleSpellingMatch, 
   getSpellingHighlightPatterns,
-  escapeRegex,
+  detectAllDocumentProposals,
+  createVnWordRegex,
+  escapeRegex, 
   SpellingErrorMatch 
 } from '../utils/vietnameseSpellingChecker';
 import { 
@@ -34,6 +37,11 @@ interface InteractiveDocumentEditorProps {
   analysisReport?: DocumentAnalysisReport;
   externalDoc?: StructuredDoc;
   onGoHome?: () => void;
+  activeProposals?: SpellingProposal[];
+  onAcceptProposal?: (proposal: SpellingProposal) => void;
+  onDismissProposal?: (proposal: SpellingProposal) => void;
+  onAcceptAllProposals?: () => void;
+  onDismissAllProposals?: () => void;
 }
 
 export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps> = ({
@@ -44,7 +52,12 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   onUpdateDoc,
   analysisReport,
   externalDoc,
-  onGoHome
+  onGoHome,
+  activeProposals,
+  onAcceptProposal,
+  onDismissProposal,
+  onAcceptAllProposals,
+  onDismissAllProposals
 }) => {
   // Parse document into 3 structured sections
   const [doc, setDoc] = useState<StructuredDoc>(() => 
@@ -240,6 +253,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     reason?: string;
     category?: string;
     index?: number;
+    proposal?: SpellingProposal;
   } | null>(null);
 
   const [blankInputVal, setBlankInputVal] = useState('');
@@ -263,7 +277,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     }
   };
 
-  // Update a single field in doc and trigger parent onUpdateText & onUpdateDoc
+  // Update a single field in doc and trigger parent onUpdateDoc / onUpdateText
   const updateDocField = (field: keyof StructuredDoc, value: any) => {
     isInternalUpdateRef.current = true;
     let cleanParas = doc.bodyParagraphs;
@@ -285,9 +299,10 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     setDoc(updated);
     if (onUpdateDoc) {
       onUpdateDoc(updated);
+    } else {
+      const newText = reconstructNormalizedText(updated);
+      onUpdateText(newText);
     }
-    const newText = reconstructNormalizedText(updated);
-    onUpdateText(newText);
   };
 
   // Re-sync all fields
@@ -296,9 +311,10 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     setDoc(updatedDoc);
     if (onUpdateDoc) {
       onUpdateDoc(updatedDoc);
+    } else {
+      const newText = reconstructNormalizedText(updatedDoc);
+      onUpdateText(newText);
     }
-    const newText = reconstructNormalizedText(updatedDoc);
-    onUpdateText(newText);
   };
 
   // Sửa lỗi chính tả từ chỗ tô vàng (dùng ranh giới từ tiếng Việt an toàn)
@@ -939,23 +955,35 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleAutoFixAllSpelling}
-                  className={`px-2.5 py-1 rounded-lg text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs ${
-                    spellingErrors.length > 0
-                      ? 'bg-rose-600 hover:bg-rose-700 animate-pulse'
-                      : 'bg-indigo-600 hover:bg-indigo-700'
-                  }`}
-                  title="Tự động phát hiện và sửa triệt để tất cả các lỗi chính tả, sai phụ âm s/x, ch/tr, d/gi/r, i/y, hỏi/ngã theo chuẩn NĐ 30"
-                >
-                  <Wand2 className="w-3.5 h-3.5" />
-                  <span>
-                    {spellingErrors.length > 0 
-                      ? `🪄 Sửa ${spellingErrors.length} lỗi chính tả` 
-                      : '✓ Soát chính tả (0 lỗi)'}
+                {activeProposals && activeProposals.length > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={onAcceptAllProposals ? onAcceptAllProposals : handleAutoFixAllSpelling}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      title="Đồng ý sửa toàn bộ lỗi chính tả & văn phong đang được phát hiện"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Đồng ý sửa tất cả ({activeProposals.length})</span>
+                    </button>
+                    {onDismissAllProposals && (
+                      <button
+                        type="button"
+                        onClick={onDismissAllProposals}
+                        className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Bỏ qua tất cả các đề xuất, bảo toàn 100% nội dung gốc"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Bỏ qua tất cả</span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>0 lỗi chờ duyệt</span>
                   </span>
-                </button>
+                )}
                 <button
                   type="button"
                   onClick={handleInsertStandardTable}
@@ -1058,30 +1086,35 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                             <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-amber-300">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteIllogicalSnippet(activeFix.target)}
-                                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Xóa bỏ hoàn toàn đoạn văn bản thiếu tính logic này khỏi văn bản"
+                                onClick={() => {
+                                  if (activeFix.proposal && onAcceptProposal) {
+                                    onAcceptProposal(activeFix.proposal);
+                                  } else if (activeFix.suggestion && !activeFix.suggestion.toLowerCase().includes('xóa bỏ') && !activeFix.suggestion.toLowerCase().includes('xóa căn cứ')) {
+                                    handleApplyIllogicalFix(activeFix.target, activeFix.suggestion);
+                                  } else {
+                                    handleDeleteIllogicalSnippet(activeFix.target);
+                                  }
+                                  setActiveFix(null);
+                                }}
+                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
+                                title="Đồng ý sửa đoạn này theo đề xuất chuẩn mực"
                               >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Xóa bỏ đoạn này ngay</span>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Đồng ý sửa</span>
                               </button>
-
-                              {activeFix.suggestion && !activeFix.suggestion.toLowerCase().includes('xóa bỏ') && !activeFix.suggestion.toLowerCase().includes('xóa căn cứ') && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleApplyIllogicalFix(activeFix.target, activeFix.suggestion)}
-                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
-                                  title="Điều chỉnh đoạn này theo gợi ý chuẩn mực"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Điều chỉnh / Sửa logic</span>
-                                </button>
-                              )}
 
                               <button
                                 type="button"
-                                onClick={() => setActiveFix(null)}
-                                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
+                                onClick={() => {
+                                  if (activeFix.proposal && onDismissProposal) {
+                                    onDismissProposal(activeFix.proposal);
+                                  } else if (onDismissProposal && activeProposals) {
+                                    const found = activeProposals.find(p => p.wrong === activeFix.target);
+                                    if (found) onDismissProposal(found);
+                                  }
+                                  setActiveFix(null);
+                                }}
+                                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
                               >
                                 Bỏ qua
                               </button>
@@ -1097,27 +1130,48 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                                 💡 {activeFix.reason}
                               </div>
                             )}
-                            <div>
-                              <span>Từ trong văn bản: </span>
-                              <span className="line-through text-rose-700 font-bold mr-2">{activeFix.target}</span>
-                              <span>➔ Gợi ý sửa đúng: </span>
-                              <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 text-sm">
-                                {activeFix.suggestion}
-                              </strong>
+                            <div className="space-y-1">
+                              <div>
+                                <span className="text-slate-600">Đoạn bị lỗi (đã bôi vàng): </span>
+                                <mark className="bg-yellow-200 text-yellow-950 font-bold px-1.5 py-0.5 rounded border border-yellow-400 font-serif line-through decoration-rose-500 mr-2">
+                                  {activeFix.target}
+                                </mark>
+                              </div>
+                              <div>
+                                <span className="text-slate-600">Đề xuất cách viết đúng: </span>
+                                <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 text-sm font-serif">
+                                  {activeFix.suggestion}
+                                </strong>
+                              </div>
                             </div>
-                            <div className="mt-3 flex items-center gap-2">
+                            <div className="mt-3 flex items-center gap-2 pt-1">
                               <button
                                 type="button"
-                                onClick={() => handleApplySpellingFix(activeFix.target, activeFix.suggestion!)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
+                                onClick={() => {
+                                  if (activeFix.proposal && onAcceptProposal) {
+                                    onAcceptProposal(activeFix.proposal);
+                                  } else {
+                                    handleApplySpellingFix(activeFix.target, activeFix.suggestion!);
+                                  }
+                                  setActiveFix(null);
+                                }}
+                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
                               >
                                 <Check className="w-3.5 h-3.5" />
-                                <span>Sửa ngay thành: {activeFix.suggestion}</span>
+                                <span>Đồng ý sửa</span>
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setActiveFix(null)}
-                                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
+                                onClick={() => {
+                                  if (activeFix.proposal && onDismissProposal) {
+                                    onDismissProposal(activeFix.proposal);
+                                  } else if (onDismissProposal && activeProposals) {
+                                    const found = activeProposals.find(p => p.wrong === activeFix.target);
+                                    if (found) onDismissProposal(found);
+                                  }
+                                  setActiveFix(null);
+                                }}
+                                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
                               >
                                 Bỏ qua
                               </button>
@@ -1209,10 +1263,11 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       <p key={pIdx} className="text-justify indent-6 text-slate-800 leading-relaxed">
                         {renderParagraphWithHighlights(
                           trimmed,
+                          activeProposals,
                           highlightKeywords,
                           doc.illogicalFindings || [],
-                          (wrong, right, reason) => {
-                            setActiveFix({ type: 'spelling', target: wrong, suggestion: right, reason });
+                          (wrong, right, reason, prop) => {
+                            setActiveFix({ type: 'spelling', target: wrong, suggestion: right, reason, proposal: prop });
                           },
                           (blankStr) => {
                             setActiveFix({ type: 'blank', target: blankStr });
@@ -1359,24 +1414,46 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     <button
                       type="button"
                       onClick={() => {
-                        const formatted = formatBulletLines(noiNhanText).join('\n');
+                        const sanitized = cleanAndDeduplicateRecipients(noiNhanText.split('\n'), {
+                          quyenHanKy: doc.quyenHanKy,
+                          signerAuthority: doc.signerAuthority,
+                          signerTitle: doc.signerTitle,
+                          signerName: doc.signerName,
+                        });
+                        const formatted = sanitized.join('\n');
                         setNoiNhanText(formatted);
-                        updateDocField('recipients', formatted.split('\n'));
+                        updateDocField('recipients', sanitized);
+                        setFixNotice('✓ Đã chuẩn hóa Nơi nhận và loại bỏ hoàn toàn trùng lặp với khối chữ ký!');
+                        setTimeout(() => setFixNotice(null), 3000);
                       }}
-                      className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded hover:bg-emerald-100 cursor-pointer"
+                      className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded hover:bg-emerald-100 cursor-pointer font-bold flex items-center gap-1"
                     >
-                      Thêm (-) đầu dòng
+                      <Check className="w-3 h-3" />
+                      <span>Lọc trùng & thêm (-) chuẩn NĐ 30</span>
                     </button>
                   </div>
                 </div>
                 <textarea
-                  rows={6}
+                  rows={7}
                   value={noiNhanText}
                   onChange={(e) => {
                     const val = e.target.value.normalize('NFC');
                     setNoiNhanText(val);
                     const lines = val.split('\n');
                     updateDocField('recipients', lines);
+                  }}
+                  onBlur={() => {
+                    const sanitized = cleanAndDeduplicateRecipients(noiNhanText.split('\n'), {
+                      quyenHanKy: doc.quyenHanKy,
+                      signerAuthority: doc.signerAuthority,
+                      signerTitle: doc.signerTitle,
+                      signerName: doc.signerName,
+                    });
+                    const formatted = sanitized.join('\n');
+                    if (formatted !== noiNhanText) {
+                      setNoiNhanText(formatted);
+                      updateDocField('recipients', sanitized);
+                    }
                   }}
                   onPaste={(e) => {
                     const text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
@@ -1388,31 +1465,41 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     const end = target.selectionEnd ?? 0;
                     const val = target.value;
                     const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
-                    setNoiNhanText(next);
-                    updateDocField('recipients', next.split('\n'));
+                    const sanitized = cleanAndDeduplicateRecipients(next.split('\n'), {
+                      quyenHanKy: doc.quyenHanKy,
+                      signerAuthority: doc.signerAuthority,
+                      signerTitle: doc.signerTitle,
+                      signerName: doc.signerName,
+                    });
+                    const formatted = sanitized.join('\n');
+                    setNoiNhanText(formatted);
+                    updateDocField('recipients', sanitized);
                   }}
                   placeholder="- Như trên;&#10;- Chủ tịch, các PCT UBND;&#10;- Lưu: VT, VP."
                   className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
                 <span className="text-[11px] text-slate-500 italic mt-0.5 block">
-                  Trình bày chữ in thường cỡ 11, các dòng kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.).
+                  Trình bày chữ in thường cỡ 11, các dòng kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.). Tự động loại bỏ thành phần chữ ký khỏi nơi nhận.
                 </span>
               </div>
 
-              {/* Cột 2: Quyền hạn ký, chức vụ & chữ ký (YÊU CẦU 4: Quyền hạn ký TM., T/M, KT., Q. với tùy chọn KT. CHỦ TỊCH) */}
+              {/* Cột 2: Quyền hạn ký, chức vụ & chữ ký (TÁCH RÕ DÒNG 1 & DÒNG 2 CHUẨN NGHỊ ĐỊNH 30) */}
               <div className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700 block text-xs">
-                      Quyền hạn ký (TM., T/M, KT., Q., KT. CHỦ TỊCH):
+                
+                {/* DÒNG 1: QUYỀN HẠN KÝ & CHỨC VỤ NGƯỜI KÝ */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 block text-xs flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-black">1</span>
+                      <span>Dòng 1: Quyền hạn ký & Chức vụ người ký</span>
                     </label>
-                    <span className="text-[11px] text-emerald-700 font-semibold">
-                      Chuẩn NĐ 30 & HD 05
+                    <span className="text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded font-bold border border-rose-200">
+                      In hoa đậm (13pt)
                     </span>
                   </div>
 
                   {/* Nút chọn nhanh Quyền hạn ký */}
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                  <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -1443,7 +1530,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
                         doc.quyenHanKy === 'TM.'
                           ? 'bg-blue-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
                       }`}
                     >
                       TM. (Thay mặt)
@@ -1459,7 +1546,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
                         doc.quyenHanKy === 'T/M'
                           ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
                       }`}
                     >
                       T/M (Văn bản Đảng)
@@ -1474,7 +1561,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
                         doc.quyenHanKy === 'KT.'
                           ? 'bg-purple-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
                       }`}
                     >
                       KT. (Ký thay)
@@ -1489,7 +1576,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all ${
                         doc.quyenHanKy === 'Q.'
                           ? 'bg-teal-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
                       }`}
                     >
                       Q. (Quyền)
@@ -1504,90 +1591,116 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       className={`px-2 py-1 rounded-md text-xs cursor-pointer transition-all ${
                         !doc.quyenHanKy && !doc.signerAuthority
                           ? 'bg-slate-700 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
                       }`}
                     >
-                      Để trống
+                      Ký trực tiếp
                     </button>
                   </div>
 
-                  <input
-                    type="text"
-                    value={doc.quyenHanKy || doc.signerAuthority}
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase();
-                      updateDocField('quyenHanKy', val);
-                      updateDocField('signerAuthority', val);
-                    }}
-                    placeholder="Ví dụ: KT. CHỦ TỊCH hoặc TM. ỦY BAN NHÂN DÂN"
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 block mb-0.5">
+                        Quyền hạn ký:
+                      </label>
+                      <input
+                        type="text"
+                        value={doc.quyenHanKy || doc.signerAuthority}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase();
+                          updateDocField('quyenHanKy', val);
+                          updateDocField('signerAuthority', val);
+                        }}
+                        placeholder="Ví dụ: KT. CHỦ TỊCH hoặc TM."
+                        className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
+                    </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700 block text-xs">
-                      Chức vụ người ký (*):
-                    </label>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateDocField('signerTitle', 'CHỦ TỊCH');
-                          if (doc.quyenHanKy === 'KT. CHỦ TỊCH') {
-                            updateDocField('quyenHanKy', 'TM.');
-                            updateDocField('signerAuthority', doc.agencyName ? `TM. ${doc.agencyName}` : 'TM. ỦY BAN NHÂN DÂN');
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 block mb-0.5">
+                        Chức vụ người ký (*):
+                      </label>
+                      <input
+                        type="text"
+                        value={doc.signerTitle}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase();
+                          updateDocField('signerTitle', val);
+                          if (/PHÓ/i.test(val) && doc.quyenHanKy !== 'KT. CHỦ TỊCH') {
+                            updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
+                            updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
                           }
                         }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
-                          doc.signerTitle === 'CHỦ TỊCH' ? 'bg-blue-100 text-blue-800 border border-blue-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        CHỦ TỊCH
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
-                          updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
-                          updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
-                        }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer ${
-                          doc.signerTitle === 'PHÓ CHỦ TỊCH' ? 'bg-rose-100 text-rose-800 border border-rose-300 font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        PHÓ CHỦ TỊCH
-                      </button>
+                        placeholder="Ví dụ: PHÓ CHỦ TỊCH hoặc CHỦ TỊCH"
+                        className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                      />
                     </div>
                   </div>
-                  <input
-                    type="text"
-                    value={doc.signerTitle}
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase();
-                      updateDocField('signerTitle', val);
-                      if (/PHÓ/i.test(val) && doc.quyenHanKy !== 'KT. CHỦ TỊCH') {
-                        updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
-                        updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
-                      }
-                    }}
-                    placeholder="Ví dụ: CHỦ TỊCH hoặc PHÓ CHỦ TỊCH"
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
                 </div>
 
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1 text-xs">
-                    Họ và tên người ký (*):
-                  </label>
+                {/* DÒNG 2: HỌ VÀ TÊN NGƯỜI KÝ & KHOẢNG TRỐNG KÝ TÊN */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 block text-xs flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-black">2</span>
+                      <span>Dòng 2: Họ và tên người ký (Cỡ 14pt in đậm)</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
+                      Khoảng trống ký: 55-60pt
+                    </span>
+                  </div>
+
                   <input
                     type="text"
                     value={doc.signerName}
                     onChange={(e) => updateDocField('signerName', e.target.value)}
-                    placeholder="Ví dụ: Họ và tên người ký trong văn bản"
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    placeholder="Ví dụ: Nguyễn Văn A (hoặc để trống nếu ký tay)"
+                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                   />
+
+                  {/* Trực quan hóa bố cục chữ ký xuất ra */}
+                  <div className="p-2.5 bg-white rounded-lg border border-dashed border-slate-300 text-center text-xs font-serif space-y-1">
+                    <div className="text-[10px] text-slate-400 uppercase font-sans tracking-wider font-bold">
+                      Bản xem trước bố cục chữ ký sẽ xuất:
+                    </div>
+                    <div className="font-bold text-slate-900 text-xs">
+                      {(() => {
+                        const auth = (doc.signerAuthority || doc.quyenHanKy || '').trim().toUpperCase();
+                        const title = (doc.signerTitle || '').trim().toUpperCase();
+                        if (auth === 'KT. CHỦ TỊCH' || doc.quyenHanKy === 'KT. CHỦ TỊCH') {
+                          return (
+                            <div>
+                              <div>KT. CHỦ TỊCH</div>
+                              <div className="mt-0.5">{title || 'PHÓ CHỦ TỊCH'}</div>
+                            </div>
+                          );
+                        }
+                        if (doc.quyenHanKy === 'Q.' || auth.startsWith('Q.')) {
+                          return <div>{auth || 'Q. CHỦ TỊCH'}</div>;
+                        }
+                        if (auth && title && auth === title) {
+                          return <div>{title}</div>;
+                        }
+                        if (auth && title) {
+                          return (
+                            <div>
+                              <div>{auth}</div>
+                              <div className="mt-0.5">{title}</div>
+                            </div>
+                          );
+                        }
+                        return <div>{auth || title || 'CHỦ TỊCH'}</div>;
+                      })()}
+                    </div>
+                    <div className="py-2 text-[10px] text-slate-400 italic font-sans border-y border-slate-100 my-1">
+                      [Khoảng trống ký tay hoặc ký số chứng thư số]
+                    </div>
+                    <div className="font-bold text-slate-900 text-sm">
+                      {doc.signerName || '(Họ và tên người ký)'}
+                    </div>
+                  </div>
                 </div>
+
               </div>
             </div>
           </div>
@@ -1802,32 +1915,83 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
  */
 function renderParagraphWithHighlights(
   text: string,
+  activeProposals: SpellingProposal[] | undefined,
   keywords: Array<{ pattern: RegExp; wrong: string; right: string; reason?: string }>,
   illogicalFindings: IllogicalSegment[],
-  onSpellingClick: (wrong: string, right: string, reason?: string) => void,
+  onSpellingClick: (wrong: string, right: string, reason?: string, proposal?: SpellingProposal) => void,
   onBlankClick: (blank: string) => void,
   onIllogicalClick: (segment: IllogicalSegment) => void
 ) {
-  // Lọc các illogical findings xuất hiện trong đoạn văn này
-  const matchedIllogicals = illogicalFindings.filter(f => f.target && text.includes(f.target));
+  // 1. Nếu có activeProposals (dù rỗng), ưu tiên quét theo activeProposals
+  if (activeProposals !== undefined) {
+    const matchedProps = activeProposals.filter(p => p.wrong && text.includes(p.wrong));
 
-  // Lọc các từ chính tả thực sự xuất hiện trong đoạn văn này để tối ưu tốc độ
+    const regexTokens: string[] = [];
+    matchedProps.forEach(p => {
+      regexTokens.push(escapeRegex(p.wrong));
+    });
+
+    // Blanks
+    regexTokens.push('…{2,}');
+    regexTokens.push('\\.{3,}');
+    regexTokens.push('_{3,}');
+    regexTokens.push('\\[\\s*\\.{3,}\\s*\\]');
+
+    if (regexTokens.length === 0) return text;
+
+    const sortedTokens = [...regexTokens].sort((a, b) => b.length - a.length);
+    const combinedRegex = new RegExp(`(${sortedTokens.join('|')})`, 'gi');
+    const parts = text.split(combinedRegex);
+
+    return parts.map((part, i) => {
+      if (!part) return null;
+
+      // A. Kiểm tra proposal
+      const propMatch = matchedProps.find(p => p.wrong.toLowerCase() === part.trim().toLowerCase());
+      if (propMatch) {
+        return (
+          <span
+            key={`prop_${i}`}
+            onClick={() => onSpellingClick(part, propMatch.right, propMatch.reason, propMatch)}
+            title={`Đề xuất sửa: Bấm để chọn [Đồng ý sửa] thành "${propMatch.right}" hoặc [Bỏ qua] (${propMatch.reason || ''})`}
+            className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1.5 py-0.5 rounded border border-yellow-400 font-bold cursor-pointer transition-colors inline-flex items-center gap-0.5 mx-0.5 shadow-2xs"
+          >
+            <span className="text-[10px] text-yellow-800">⚠️</span>
+            <span>{part}</span>
+          </span>
+        );
+      }
+
+      // B. Kiểm tra chỗ trống
+      if (/^(\.{3,}|…{2,}|_{3,}|\[\s*\.{3,}\s*\])/.test(part)) {
+        return (
+          <span
+            key={`blank_${i}`}
+            onClick={() => onBlankClick(part)}
+            title="Bấm vào để điền thông tin vào chỗ trống này"
+            className="bg-amber-200 hover:bg-amber-300 text-amber-950 px-1.5 py-0.5 rounded border border-amber-400 font-bold cursor-pointer transition-colors animate-pulse inline-flex items-center gap-0.5 mx-0.5"
+          >
+            {part}
+            <span className="text-[10px] text-amber-800">✏️</span>
+          </span>
+        );
+      }
+
+      return part;
+    });
+  }
+
+  // 2. Chế độ fallback nếu activeProposals không được truyền vào
+  const matchedIllogicals = illogicalFindings.filter(f => f.target && text.includes(f.target));
   const activeKeywords = keywords.filter(k => k.pattern.test(text));
 
-  // Tạo mảng regex tổng hợp an toàn với tiếng Việt (không dùng \\b ASCII)
   const regexTokens: string[] = [];
-
-  // 1. Illogical snippets
   matchedIllogicals.forEach(f => {
     regexTokens.push(escapeRegex(f.target));
   });
-
-  // 2. Spelling mistakes
   activeKeywords.forEach(k => {
     regexTokens.push(escapeRegex(k.wrong));
   });
-
-  // 3. Blanks
   regexTokens.push('…{2,}');
   regexTokens.push('\\.{3,}');
   regexTokens.push('_{3,}');
@@ -1835,7 +1999,6 @@ function renderParagraphWithHighlights(
 
   if (regexTokens.length === 0) return text;
 
-  // Sắp xếp các token theo độ dài giảm dần để ưu tiên cụm từ dài nhất trước
   const sortedTokens = [...regexTokens].sort((a, b) => b.length - a.length);
   const combinedRegex = new RegExp(`(${sortedTokens.join('|')})`, 'gi');
   const parts = text.split(combinedRegex);
