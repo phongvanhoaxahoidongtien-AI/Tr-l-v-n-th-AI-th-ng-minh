@@ -388,8 +388,17 @@ export const autoFixVietnameseSpelling = fixAllVietnameseSpelling;
  */
 export function fixSingleSpellingMatch(text: string, wrongWord: string, rightWord: string): string {
   if (!text) return '';
+  // Nếu rightWord là một câu chỉ dẫn xóa bỏ (vd: "Xóa bỏ tiêu đề quốc ngữ thừa này", "Xóa bỏ đoạn thừa", v.v.) thì thay thế bằng ''
+  let actualRight = rightWord;
+  if (/^(?:Xóa bỏ|Gỡ bỏ|Loại bỏ)\b/i.test(actualRight.trim()) || actualRight === 'Xóa bỏ đoạn thừa') {
+    actualRight = '';
+  }
   const regex = createVnWordRegex(wrongWord, 'gi');
-  return text.replace(regex, rightWord);
+  let result = text.replace(regex, actualRight);
+  if (!actualRight) {
+    result = result.replace(/\n\s*\n\s*\n/g, '\n\n');
+  }
+  return result;
 }
 
 /**
@@ -503,12 +512,14 @@ export function detectAllDocumentProposals(
         right = matchQuotes[1];
       } else if (right.startsWith('Sửa thành: ')) {
         right = right.replace(/^Sửa thành:\s*/i, '');
+      } else if (/^(?:Xóa bỏ|Gỡ bỏ|Loại bỏ)\b/i.test(right.trim())) {
+        right = '';
       }
 
       proposals.push({
         id: ill.id || `ill_${proposals.length + 1}_${idx}`,
         wrong: ill.target,
-        right: right || 'Xóa bỏ đoạn thừa',
+        right: right,
         reason: ill.reason || 'Đoạn văn thiếu tính logic hoặc không phù hợp thể thức',
         category: 'logic',
         snippet: ill.target,

@@ -231,40 +231,153 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
         </div>
       </div>
 
-      {/* Upload Dropzone */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`mt-5 p-6 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center ${
-          isDragOver
-            ? 'border-rose-500 bg-rose-50/60 scale-[1.01]'
-            : 'border-slate-300 hover:border-rose-400 bg-slate-50/70 hover:bg-slate-50'
-        }`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".docx,.doc,.txt"
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files && e.target.files[0]) {
-              handleFileUpload(e.target.files[0]);
-            }
-          }}
-        />
+      {/* 1. KHỐI SAO CHÉP NỘI DUNG DÁN VÀO (Ở TRÊN) */}
+      <div className="mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <label className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-serif">
+            <FileText className="w-4 h-4 text-rose-600" />
+            <span>Sao chép & dán nội dung văn bản vào đây (font Times New Roman, Unicode TCVN 6909:2001):</span>
+          </label>
 
-        <div className="w-12 h-12 mx-auto rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mb-3">
-          <UploadCloud className="w-6 h-6" />
+          {/* Smart AI Clean Controls */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoCleanOnPaste}
+                onChange={(e) => setAutoCleanOnPaste(e.target.checked)}
+                className="w-3.5 h-3.5 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+              />
+              <span className="font-medium">Tự động làm sạch khi dán (Paste)</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={handleManualClean}
+              disabled={!inputText.trim()}
+              title="Chuyển bảng mã Unicode, font Times New Roman, gỡ tiêu đề quốc ngữ thừa và căn chỉnh bảng biểu"
+              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Chuyển Unicode & Chuẩn hóa NĐ 30</span>
+            </button>
+
+            {/* Word & Char counter */}
+            <div className="text-xs text-slate-500 flex items-center gap-2 pl-1 border-l border-slate-200">
+              <span>{wordCount} từ</span>
+              <span>•</span>
+              <span>{charCount} ký tự</span>
+              {inputText && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputText('');
+                    setLastRawText(null);
+                  }}
+                  className="text-red-600 hover:text-red-800 font-medium underline ml-1 cursor-pointer"
+                >
+                  Xóa trắng
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        <h4 className="font-bold text-slate-800 text-sm md:text-base">
-          Kéo thả tệp Word (.docx, .doc) vào đây hoặc <span className="text-rose-700 underline">bấm để chọn tệp</span>
-        </h4>
-        <p className="text-xs text-slate-500 mt-1">
-          Hỗ trợ đọc trích xuất bảng biểu nguyên vẹn, chuyển tự động về Times New Roman & Unicode (TCVN 6909:2001).
-        </p>
+        <textarea
+          rows={12}
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onPaste={handlePaste}
+          style={{ fontFamily: "'Times New Roman', Times, 'Tinos', serif" }}
+          placeholder={`Dán toàn bộ nội dung văn bản ${selectedType.name} vào đây. Tiểu Bảo Bối sẽ tự động gỡ bỏ Markdown, icon thừa, chuyển mã về Unicode, căn chỉnh bảng biểu vừa khổ A4...`}
+          className="w-full p-4 rounded-xl border border-slate-300 text-[15px] leading-relaxed text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 shadow-inner"
+        />
+
+        {/* Sample Quick-Test Documents */}
+        <div className="mt-3 p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 font-sans">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+              Thử nghiệm nhanh với văn bản thực tế có lỗi (nhấn để nạp):
+            </span>
+
+            <button
+              type="button"
+              onClick={handleLoadDefaultTemplate}
+              className="text-xs font-semibold text-blue-700 hover:text-blue-900 bg-white border border-blue-200 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+            >
+              + Nạp khung mẫu chuẩn của {selectedType.name}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {SAMPLE_DOCUMENTS.map((doc) => (
+              <button
+                key={doc.id}
+                type="button"
+                onClick={() => {
+                  setInputText(doc.content);
+                  setUploadStatus(`Đã nạp mẫu thử nghiệm: ${doc.title}`);
+                }}
+                className="p-2.5 rounded-lg bg-white border border-amber-200 hover:border-amber-400 text-left transition-all hover:shadow-xs cursor-pointer group"
+              >
+                <div className="text-xs font-bold text-slate-800 group-hover:text-rose-700 truncate font-serif">
+                  {doc.title}
+                </div>
+                <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                  {doc.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. KHỐI TẢI LÊN PHẦN VĂN BẢN (Ở BÊN DƯỚI) */}
+      <div className="mt-5 pt-5 border-t border-slate-200">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 font-serif">
+            <UploadCloud className="w-4 h-4 text-slate-500" />
+            <span>Hoặc tải lên tệp văn bản Word (.docx, .doc, .txt):</span>
+          </label>
+          <span className="text-xs text-slate-500">Giữ nguyên cấu trúc bảng biểu, ô gộp</span>
+        </div>
+
+        {/* Upload Dropzone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`p-6 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center ${
+            isDragOver
+              ? 'border-rose-500 bg-rose-50/60 scale-[1.01]'
+              : 'border-slate-300 hover:border-rose-400 bg-slate-50/70 hover:bg-slate-50'
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".docx,.doc,.txt"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                handleFileUpload(e.target.files[0]);
+              }
+            }}
+          />
+
+          <div className="w-11 h-11 mx-auto rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mb-2.5">
+            <FileUp className="w-5 h-5" />
+          </div>
+
+          <h4 className="font-bold text-slate-800 text-sm md:text-base">
+            Kéo thả tệp Word (.docx, .doc) vào đây hoặc <span className="text-rose-700 underline">bấm để chọn tệp</span>
+          </h4>
+          <p className="text-xs text-slate-500 mt-1">
+            Hỗ trợ đọc trích xuất bảng biểu nguyên vẹn, chuyển tự động về Times New Roman & Unicode (TCVN 6909:2001).
+          </p>
+        </div>
       </div>
 
       {/* CẢNH BÁO SAI LỆCH CƠ QUAN BAN HÀNH (YÊU CẦU 2) */}
@@ -317,7 +430,7 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
         </span>
         <span className="px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-800 font-semibold flex items-center gap-1">
           <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-          Tự động tách tiêu đề quốc ngữ (không lặp lại)
+          Tiêu đề chuẩn 16cm (Cột trái 6,2cm - Cột phải 9,8cm)
         </span>
         {hasTable && (
           <span className="px-2.5 py-1 rounded-md bg-amber-50 border border-amber-300 text-amber-900 font-bold flex items-center gap-1 animate-pulse">
@@ -345,103 +458,6 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
           )}
         </div>
       )}
-
-      {/* Sample Quick-Test Documents */}
-      <div className="mt-5 p-4 rounded-xl bg-amber-50/60 border border-amber-200">
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-          <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            Thử nghiệm nhanh với văn bản thực tế có lỗi (nhấn để nạp):
-          </span>
-
-          <button
-            onClick={handleLoadDefaultTemplate}
-            className="text-xs font-semibold text-blue-700 hover:text-blue-900 bg-white border border-blue-200 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
-          >
-            + Nạp khung mẫu chuẩn của {selectedType.name}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {SAMPLE_DOCUMENTS.map((doc) => (
-            <button
-              key={doc.id}
-              onClick={() => {
-                setInputText(doc.content);
-                setUploadStatus(`Đã nạp mẫu thử nghiệm: ${doc.title}`);
-              }}
-              className="p-2.5 rounded-lg bg-white border border-amber-200 hover:border-amber-400 text-left transition-all hover:shadow-xs cursor-pointer group"
-            >
-              <div className="text-xs font-bold text-slate-800 group-hover:text-rose-700 truncate font-serif">
-                {doc.title}
-              </div>
-              <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
-                {doc.description}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Text Area Toolbar */}
-      <div className="mt-5">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <label className="text-sm font-bold text-slate-700 flex items-center gap-1.5 font-serif">
-            <FileText className="w-4 h-4 text-slate-500" />
-            Nội dung văn bản (font Times New Roman, Unicode TCVN 6909:2001):
-          </label>
-
-          {/* Smart AI Clean Controls */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-200 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={autoCleanOnPaste}
-                onChange={(e) => setAutoCleanOnPaste(e.target.checked)}
-                className="w-3.5 h-3.5 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
-              />
-              <span className="font-medium">Tự động làm sạch khi dán (Paste)</span>
-            </label>
-
-            <button
-              onClick={handleManualClean}
-              disabled={!inputText.trim()}
-              title="Chuyển bảng mã Unicode, font Times New Roman, gỡ tiêu đề quốc ngữ thừa và căn chỉnh bảng biểu"
-              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-            >
-              <Wand2 className="w-3.5 h-3.5 text-rose-600" />
-              <span>Chuyển Unicode & Chuẩn hóa NĐ 30</span>
-            </button>
-
-            {/* Word & Char counter */}
-            <div className="text-xs text-slate-500 flex items-center gap-2 pl-1 border-l border-slate-200">
-              <span>{wordCount} từ</span>
-              <span>•</span>
-              <span>{charCount} ký tự</span>
-              {inputText && (
-                <button
-                  onClick={() => {
-                    setInputText('');
-                    setLastRawText(null);
-                  }}
-                  className="text-red-600 hover:text-red-800 font-medium underline ml-1 cursor-pointer"
-                >
-                  Xóa trắng
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <textarea
-          rows={14}
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onPaste={handlePaste}
-          style={{ fontFamily: "'Times New Roman', Times, 'Tinos', serif" }}
-          placeholder={`Dán toàn bộ nội dung văn bản ${selectedType.name} vào đây. Tiểu Bảo Bối sẽ tự động gỡ bỏ Markdown, icon, chuyển mã về Unicode, căn chỉnh bảng biểu vừa khổ A4...`}
-          className="w-full p-4 rounded-xl border border-slate-300 text-[15px] leading-relaxed text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 shadow-inner"
-        />
 
         {/* Live Document Inspection & Analysis Card (chuẩn trolyvanthu.isavn.edu.vn) */}
         {liveAnalysis && (
@@ -514,7 +530,6 @@ export const Step2UploadDocument: React.FC<Step2UploadDocumentProps> = ({
             )}
           </div>
         )}
-      </div>
 
       {/* Buttons */}
       <div className="mt-6 pt-5 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">

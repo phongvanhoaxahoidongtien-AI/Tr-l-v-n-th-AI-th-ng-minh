@@ -29,7 +29,7 @@ export function wrapWordHtmlDocument(innerHtml: string, title: string = 'VanBan_
   <style>
     @page Section1 {
       size: 21.0cm 29.7cm; /* Khổ A4 */
-      margin: 2.0cm 1.5cm 2.0cm 3.0cm; /* Lề chuẩn NĐ 30: Trên 2cm, Phải 1.5cm, Dưới 2cm, Trái 3cm */
+      margin: 2.0cm 2.0cm 2.0cm 3.0cm; /* Lề chuẩn NĐ 30: Trên 2cm, Phải 2cm, Dưới 2cm, Trái 3cm (chiều rộng văn bản đúng 16.0cm) */
       mso-header-margin: 36.0pt;
       mso-footer-margin: 36.0pt;
       mso-header: h1;

@@ -1,5 +1,6 @@
 import { AgencySettings, DocumentAnalysisReport, DetectedElements, ReviewIssue, AutoFixItem, PassedItem } from '../types';
 import { checkVietnameseSpelling } from '../utils/vietnameseSpellingChecker';
+import { formatDecree30TitleCase } from './decree30Formatter';
 
 /**
  * Đọc và phân tích toàn diện văn bản đầu vào theo đúng chuẩn của trolyvanthu.isavn.edu.vn:
@@ -53,9 +54,10 @@ export function analyzeDocumentText(
   for (let i = 0; i < Math.min(15, lines.length); i++) {
     const l = lines[i];
 
-    // Số ký hiệu
-    if (/^Số:\s*[\d\w\-\/\.…]*/i.test(l)) {
-      docCode = l.replace(/^Số:\s*/i, '').trim();
+    // Số ký hiệu (chuẩn hóa cả dạng / và - của Đảng và hành chính)
+    const codeMatch = l.match(/(?:^|[\s\u00A0])(?:Số|SỐ|Số\s*:|Số\s*\.)\s*:?\.?\s*([0-9A-Za-z\-\.…\s]*[\/\-][A-Za-z0-9\-\.…]+(?:[\/\-][A-Za-z0-9\-\.…]+)*|[0-9]+)/i);
+    if (codeMatch) {
+      docCode = codeMatch[1].replace(/^(?:CỘNG|ĐỘC|ĐẢNG).*$/gi, '').trim();
       continue;
     }
 
@@ -86,18 +88,80 @@ export function analyzeDocumentText(
       continue;
     }
 
-    // Trích yếu (V/v...)
-    if (/^V\/v\s+/i.test(l)) {
-      subject = l;
+    // Trích yếu Công văn (V/v...)
+    if (/^V\/v\s+/i.test(l) || /^Về việc\s+/i.test(l)) {
+      subject = l.replace(/^Về việc\s+/i, 'V/v ');
       if (!docTypeName) docTypeName = 'CÔNG VĂN';
       continue;
     }
 
-    // Tên loại văn bản
-    const typeMatch = l.match(/^(QUYẾT ĐỊNH|TỜ TRÌNH|NGHỊ QUYẾT|THÔNG BÁO|KẾ HOẠCH|BÁO CÁO|GIẤY MỜI|GIẤY GIỚI THIỆU|BIÊN BẢN|HỢP ĐỒNG|CHỈ THỊ|QUY CHẾ|QUY ĐỊNH|HƯỚNG DẪN|CHƯƠNG TRÌNH|PHƯƠNG ÁN|ĐỀ ÁN|DỰ ÁN|BẢN GHI NHỚ|GIẤY ỦY QUYỀN|PHIẾU CHUYỂN|PHIẾU BÁO|THƯ CÔNG)$/i);
-    if (typeMatch && !docTypeName) {
-      docTypeName = typeMatch[1].toUpperCase();
-      continue;
+    // Nâng cấp nhận diện 100% chính xác 29 loại văn bản hành chính (NĐ 30) và 15 loại văn bản Đảng (HD 05)
+    if (!docTypeName) {
+      const reportM = l.match(/^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s*(?:NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ|ĐÁNH\s+GIÁ|KẾT\s+QUẢ|TÌNH\s+HÌNH|CÔNG\s+TÁC|TỰ\s+KIỂM\s+TRA|RÀ\s+SOÁT))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const decM = l.match(/^(?:QUYẾT\s+ĐỊNH|Quyết\s+định)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const planM = l.match(/^(?:KẾ\s+HOẠCH|Kế\s+hoạch)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const subM = l.match(/^(?:TỜ\s+TRÌNH|Tờ\s+trình)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const notM = l.match(/^(?:THÔNG\s+BÁO|Thông\s+báo)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const resM = l.match(/^(?:NGHỊ\s+QUYẾT|Nghị\s+quyết)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const conM = l.match(/^(?:KẾT\s+LUẬN|Kết\s+luận)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const dirM = l.match(/^(?:CHỈ\s+THỊ|Chỉ\s+thị)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const genM = l.match(/^(QUYẾT ĐỊNH|TỜ TRÌNH|NGHỊ QUYẾT|THÔNG BÁO|KẾ HOẠCH|BÁO CÁO|KẾT LUẬN|GIẤY MỜI|GIẤY GIỚI THIỆU|BIÊN BẢN|HỢP ĐỒNG|CHỈ THỊ|QUY CHẾ|QUY ĐỊNH|HƯỚNG DẪN|CHƯƠNG TRÌNH|PHƯƠNG ÁN|ĐỀ ÁN|DỰ ÁN|BẢN GHI NHỚ|BẢN THỎA THUẬN|GIẤY ỦY QUYỀN|GIẤY NGHỈ PHÉP|PHIẾU GỬI|PHIẾU CHUYỂN|PHIẾU BÁO|THƯ CÔNG|THÔNG CÁO|CÔNG ĐIỆN)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+
+      let matchedType: string | null = null;
+      let inlineTitle: string = '';
+
+      if (reportM) {
+        matchedType = 'BÁO CÁO';
+        inlineTitle = reportM[1] || '';
+      } else if (decM) {
+        matchedType = 'QUYẾT ĐỊNH';
+        inlineTitle = decM[1] || '';
+      } else if (planM) {
+        matchedType = 'KẾ HOẠCH';
+        inlineTitle = planM[1] || '';
+      } else if (subM) {
+        matchedType = 'TỜ TRÌNH';
+        inlineTitle = subM[1] || '';
+      } else if (notM) {
+        matchedType = 'THÔNG BÁO';
+        inlineTitle = notM[1] || '';
+      } else if (resM) {
+        matchedType = 'NGHỊ QUYẾT';
+        inlineTitle = resM[1] || '';
+      } else if (conM) {
+        matchedType = 'KẾT LUẬN';
+        inlineTitle = conM[1] || '';
+      } else if (dirM) {
+        matchedType = 'CHỈ THỊ';
+        inlineTitle = dirM[1] || '';
+      } else if (genM) {
+        matchedType = genM[1].toUpperCase();
+        inlineTitle = genM[2] || '';
+      }
+
+      if (matchedType) {
+        docTypeName = matchedType;
+        let titleParts: string[] = [];
+        if (inlineTitle && inlineTitle.trim()) {
+          titleParts.push(inlineTitle.trim());
+        }
+
+        // Kiểm tra dòng kế tiếp trong lines xem có phải là trích yếu tiêu đề nhiều dòng không
+        if (i + 1 < lines.length) {
+          const nextL = lines[i + 1];
+          if (nextL && !/^Kính|^Căn cứ|^Điều\s+\d+|^Số:/i.test(nextL) && (
+            /^(?:Về việc|Về|Ban hành|Phê duyệt|Quy định|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Thực hiện|Triển khai)/i.test(nextL) ||
+            (titleParts.length > 0 && nextL.length < 150 && !nextL.endsWith('.'))
+          )) {
+            titleParts.push(nextL.trim());
+          }
+        }
+
+        if (titleParts.length > 0) {
+          subject = formatDecree30TitleCase(titleParts.join(' '));
+        }
+        continue;
+      }
     }
 
     // Cơ quan cấp trên & cơ quan ban hành

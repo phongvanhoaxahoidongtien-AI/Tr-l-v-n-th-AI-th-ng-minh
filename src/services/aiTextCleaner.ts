@@ -1,3 +1,5 @@
+import { isWarningOrInstructionLine } from '../utils/cleanAIText';
+
 export interface CleanChangeItem {
   id: string;
   category: 'markdown' | 'emoji' | 'ai_chatter' | 'whitespace' | 'bullet' | 'date' | 'punctuation' | 'fabrication_warning';
@@ -192,12 +194,17 @@ export class AITextCleaner {
       }
     }
 
-    // 9. Chuẩn hóa phân cấp Bullet: gạch đầu dòng '- ', dấu cộng '+ ', khoản '1. ', điểm 'a) '
+    // 9. Chuẩn hóa phân cấp Bullet & Loại bỏ các dòng cảnh báo/hướng dẫn thừa
     const cleanedLines: string[] = [];
     for (const l of lines) {
       let trimmed = l.trim();
       if (!trimmed) {
         cleanedLines.push('');
+        continue;
+      }
+
+      // Tự động loại bỏ các câu cảnh báo như "Xóa bỏ tiêu đề quốc ngữ thừa này"
+      if (isWarningOrInstructionLine(trimmed)) {
         continue;
       }
 

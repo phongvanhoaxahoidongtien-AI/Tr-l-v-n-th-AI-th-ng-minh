@@ -74,6 +74,12 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     return formatBulletLines(raw).join('\n');
   });
 
+  // Trạng thái đã chốt kết thúc Kính gửi (dấu ".") và khóa chống trùng lặp vào văn bản chính (Yêu cầu 4)
+  const [isKinhGuiFinalized, setIsKinhGuiFinalized] = useState(() => {
+    const raw = externalDoc?.recipientsHeader ?? doc.recipientsHeader ?? '';
+    return Boolean(raw && (raw.trim().endsWith('.') || raw.trim().endsWith('.;')));
+  });
+
   const isInternalUpdateRef = useRef(false);
 
   // Sync with externalDoc if provided from parent Step4Export
@@ -107,6 +113,69 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   const [openSection2, setOpenSection2] = useState(true); // Nội dung văn bản
   const [openSection3, setOpenSection3] = useState(true); // Nơi nhận & Chữ ký
   const [openSection4, setOpenSection4] = useState(true); // Phụ lục văn bản (sau Nơi nhận & Chữ ký)
+
+  // Chế độ soạn thảo tách biệt cho từng phần (Yêu cầu 3: Đầu, Thân, Cuối văn bản)
+  const [section1Mode, setSection1Mode] = useState<'form' | 'free'>('form');
+  const [section3Mode, setSection3Mode] = useState<'form' | 'free'>('form');
+  const [section1FreeText, setSection1FreeText] = useState('');
+  const [section3FreeText, setSection3FreeText] = useState('');
+
+  const generateSection1FreeText = (d: StructuredDoc) => {
+    const lines: string[] = [];
+    if (d.parentAgency) lines.push(d.parentAgency);
+    if (d.agencyName) lines.push(d.agencyName);
+    if (d.docCode) lines.push(d.docCode);
+    if (d.docSubjectShort) lines.push(d.docSubjectShort);
+    if (!d.isPartyDoc) {
+      lines.push(d.countryHeader || 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM');
+      lines.push(d.motto || 'Độc lập - Tự do - Hạnh phúc');
+    } else {
+      lines.push(d.motto || 'ĐẢNG CỘNG SẢN VIỆT NAM');
+    }
+    if (d.locationDate) lines.push(d.locationDate);
+    if (d.docTypeName && d.docTypeName !== 'CÔNG VĂN') {
+      lines.push(d.docTypeName);
+      if (d.docTitle) lines.push(d.docTitle);
+    }
+    if (d.recipientsHeader) {
+      lines.push('Kính gửi:');
+      lines.push(d.recipientsHeader);
+    }
+    return lines.join('\n');
+  };
+
+  const handleSwitchSection1Mode = (mode: 'form' | 'free') => {
+    if (mode === 'free') {
+      setSection1FreeText(generateSection1FreeText(doc));
+    }
+    setSection1Mode(mode);
+  };
+
+  const generateSection3FreeText = (d: StructuredDoc) => {
+    const lines: string[] = [];
+    if (d.recipients && d.recipients.length > 0) {
+      lines.push('Nơi nhận:');
+      d.recipients.forEach(r => lines.push(r.startsWith('-') ? r : `- ${r}`));
+    }
+    const auth = (d.signerAuthority || d.quyenHanKy || '').trim();
+    const title = (d.signerTitle || '').trim();
+    if (auth && title && auth === title) {
+      lines.push(title);
+    } else {
+      if (auth) lines.push(auth);
+      if (title) lines.push(title);
+    }
+    lines.push(''); // Cách thêm 1 dòng đối với chức danh
+    if (d.signerName) lines.push(d.signerName);
+    return lines.join('\n');
+  };
+
+  const handleSwitchSection3Mode = (mode: 'form' | 'free') => {
+    if (mode === 'free') {
+      setSection3FreeText(generateSection3FreeText(doc));
+    }
+    setSection3Mode(mode);
+  };
 
   // Tự động chèn bảng biểu chuẩn Nghị định 30 vào thân văn bản
   const handleInsertStandardTable = () => {
@@ -317,6 +386,96 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     }
   };
 
+  // Xử lý soạn thảo tự do Cuối văn bản (Nơi nhận & Chữ ký)
+  const handleSection3FreeTextChange = (val: string) => {
+    const rawLines = val.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (rawLines.length === 0) {
+      commitDocChanges({
+        ...doc,
+        recipients: [],
+        signerName: '',
+      });
+      return;
+    }
+
+    const recs: string[] = [];
+    const sigLines: string[] = [];
+    let inRecipients = false;
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      if (/^Nơi nhận:?/i.test(line)) {
+        inRecipients = true;
+        continue;
+      }
+
+      const lineClean = line.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+      const isSigKeyword = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i.test(lineClean);
+      const isLeaderPersonName = (/^[A-ZĐÀ-Ỹ][a-zđà-ỹ]+(?:\s+[A-ZĐÀ-Ỹ][a-zđà-ỹ]+){1,4}$/.test(lineClean) || /^[A-ZĐÀ-Ỹ\s]{3,35}$/.test(lineClean)) &&
+        !/^(?:Như|Lưu|Phòng|Ban|Sở|Bộ|UBND|HĐND|Ủy\s*ban|Thường\s*trực|Chi\s*bộ|Đảng\s*ủy|Đảng\s*bộ|Hội\s*đồng|Công\s*an|Quân\s*sự|Y\s*tế|Đoàn|Hội|Tổ|Đồng\s*chí|Đ\/c|Các)\b/i.test(lineClean);
+
+      if (isSigKeyword || isLeaderPersonName) {
+        inRecipients = false;
+        sigLines.push(lineClean);
+      } else if (inRecipients || (line.startsWith('-') && sigLines.length === 0)) {
+        recs.push(line);
+      } else {
+        sigLines.push(lineClean);
+      }
+    }
+
+    let parsedQuyenHan = doc.quyenHanKy || '';
+    let parsedAuth = doc.signerAuthority || '';
+    let parsedTitle = doc.signerTitle || '';
+    let parsedName = doc.signerName || '';
+
+    if (sigLines.length === 1) {
+      if (/^[A-ZĐÀ-Ỹ][a-zđà-ỹ]+(?:\s+[A-ZĐÀ-Ỹ][a-zđà-ỹ]+){1,5}$/.test(sigLines[0])) {
+        parsedName = sigLines[0];
+      } else {
+        parsedTitle = sigLines[0];
+      }
+    } else if (sigLines.length >= 2) {
+      parsedName = sigLines[sigLines.length - 1];
+      const titles = sigLines.slice(0, sigLines.length - 1);
+
+      if (titles.length === 1) {
+        parsedTitle = titles[0];
+        if (/^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ)/i.test(titles[0])) {
+          parsedQuyenHan = titles[0].split(/\s+/)[0];
+          parsedAuth = titles[0];
+        }
+      } else if (titles.length >= 2) {
+        parsedAuth = titles[0];
+        parsedTitle = titles.slice(1).join(' ');
+        if (/^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ)/i.test(titles[0])) {
+          parsedQuyenHan = titles[0].split(/\s+/)[0];
+        }
+      }
+    }
+
+    const sanitizedRecs = cleanAndDeduplicateRecipients(recs, {
+      signerName: parsedName,
+      signerTitle: parsedTitle,
+      signerAuthority: parsedAuth,
+      quyenHanKy: parsedQuyenHan
+    });
+
+    const updated: StructuredDoc = {
+      ...doc,
+      recipients: sanitizedRecs.length > 0 ? sanitizedRecs : doc.recipients,
+      quyenHanKy: parsedQuyenHan || doc.quyenHanKy,
+      signerAuthority: parsedAuth || doc.signerAuthority,
+      signerTitle: parsedTitle || doc.signerTitle,
+      signerName: parsedName,
+    };
+
+    if (recs.length > 0) {
+      setNoiNhanText(recs.join('\n'));
+    }
+    commitDocChanges(updated);
+  };
+
   // Sửa lỗi chính tả từ chỗ tô vàng (dùng ranh giới từ tiếng Việt an toàn)
   const handleApplySpellingFix = (wrong: string, right: string) => {
     const newText = fixSingleSpellingMatch(normalizedText, wrong, right);
@@ -508,151 +667,237 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
         {openSection1 && (
           <div className="p-4 md:p-6 space-y-4 bg-white animate-fade-in text-xs">
             
-            {/* CẢNH BÁO SAI LỆCH CƠ QUAN BAN HÀNH (YÊU CẦU 2) */}
-            {agencySettings.agencyName && doc.agencyName && !doc.agencyName.toLowerCase().includes(agencySettings.agencyName.toLowerCase()) && !agencySettings.agencyName.toLowerCase().includes(doc.agencyName.toLowerCase()) && (
-              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 font-sans shadow-xs">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>
-                    Cơ quan trong văn bản: <strong className="text-rose-800">"{doc.agencyName}"</strong> khác với Cài đặt người dùng: <strong className="text-blue-800">"{agencySettings.agencyName}"</strong>
-                  </span>
-                </div>
+            {/* Chuyển đổi Form chi tiết vs Soạn thảo tự do Đầu văn bản (Yêu cầu 3) */}
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-200">
+              <div className="flex items-center gap-1.5 text-xs text-slate-700 font-bold">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <span>Chế độ chỉnh sửa Đầu văn bản (Tổng 16cm: Cột trái 6,2cm, Cột phải 9,8cm):</span>
+              </div>
+              <div className="bg-slate-100 p-1 rounded-lg border border-slate-200 flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    const updated = {
-                      ...doc,
-                      agencyName: agencySettings.agencyName || doc.agencyName,
-                      parentAgency: agencySettings.parentAgency || doc.parentAgency,
-                      locationDate: agencySettings.shortLocation && doc.locationDate.includes(',') 
-                        ? `${agencySettings.shortLocation}${doc.locationDate.substring(doc.locationDate.indexOf(','))}` 
-                        : doc.locationDate
-                    };
-                    commitDocChanges(updated);
-                    setFixNotice(`Đã đồng bộ cơ quan theo Cài đặt: "${agencySettings.agencyName}"!`);
-                    setTimeout(() => setFixNotice(null), 2500);
-                  }}
-                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold shrink-0 cursor-pointer transition-colors shadow-xs"
+                  onClick={() => handleSwitchSection1Mode('form')}
+                  className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
+                    section1Mode === 'form'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
                 >
-                  Đồng bộ theo Cài đặt
+                  Form chi tiết (16cm)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchSection1Mode('free')}
+                  className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                    section1Mode === 'free'
+                      ? 'bg-rose-700 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Soạn thảo tự do</span>
                 </button>
               </div>
-            )}
+            </div>
 
-            {/* BỘ CHỌN NHANH VAI TRÒ CƠ QUAN / PHÒNG BAN BAN HÀNH (ĐỒNG BỘ TIÊU ĐỀ QUỐC NGỮ) */}
-            <div className="p-3.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5 font-sans">
-                  <Building className="w-3.5 h-3.5 text-blue-700" />
-                  <span>Chọn vai trò cơ quan / phòng ban ban hành (Tự động chọn Tiêu đề Quốc ngữ):</span>
-                </label>
-                <span className="text-[10px] text-blue-800 bg-blue-100 px-2 py-0.5 rounded font-semibold font-sans">
-                  Đồng bộ chuẩn 100%
-                </span>
-              </div>
-              <select
-                onChange={(e) => {
-                  const presetId = e.target.value;
-                  if (!presetId) return;
-                  const preset = AGENCY_PRESETS.find(p => p.id === presetId);
-                  if (preset) {
-                    const isParty = preset.roleBlock === 'dang';
+            {section1Mode === 'free' ? (
+              /* SOẠN THẢO TỰ DO ĐẦU VĂN BẢN */
+              <div className="space-y-3 p-3 bg-slate-50/80 rounded-xl border border-slate-200 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs font-serif">
+                    Soạn thảo tự do phần Đầu văn bản (Cơ quan, Số hiệu, Quốc hiệu, Tiêu ngữ, Địa danh, Trích yếu, Kính gửi):
+                  </span>
+                  <span className="text-[10px] text-blue-700 italic">
+                    Tự động đồng bộ sang Live Preview A4 và file Word
+                  </span>
+                </div>
+                <textarea
+                  rows={8}
+                  value={section1FreeText}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSection1FreeText(val);
+                    const parsedHeader = parseDocumentStructure(val, agencySettings, selectedType.category, selectedType.name);
                     const updated = {
                       ...doc,
-                      agencyName: preset.agencyName,
-                      parentAgency: '', // Tuyệt đối không tự ý thêm cấp trên
-                      isPartyDoc: isParty,
-                      countryHeader: preset.countryHeader,
-                      motto: preset.motto
+                      agencyName: parsedHeader.agencyName || doc.agencyName,
+                      parentAgency: parsedHeader.parentAgency !== undefined ? parsedHeader.parentAgency : doc.parentAgency,
+                      docCode: parsedHeader.docCode || doc.docCode,
+                      locationDate: parsedHeader.locationDate || doc.locationDate,
+                      docTypeName: parsedHeader.docTypeName || doc.docTypeName,
+                      docTitle: parsedHeader.docTitle || doc.docTitle,
+                      docSubjectShort: parsedHeader.docSubjectShort || doc.docSubjectShort,
+                      recipientsHeader: parsedHeader.recipientsHeader || doc.recipientsHeader,
                     };
                     commitDocChanges(updated);
-                    setFixNotice(`Đã chọn ban hành với vai trò: "${preset.name}"!`);
-                    setTimeout(() => setFixNotice(null), 2500);
-                  }
-                }}
-                defaultValue=""
-                className="w-full p-2.5 bg-white rounded-lg border border-blue-300 text-xs font-sans text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-              >
-                <option value="" disabled>-- Bấm để chọn cơ quan / phòng ban ban hành văn bản --</option>
-                <optgroup label="🏛️ Khối UBND & Bộ phận chuyên môn (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM)">
-                  {AGENCY_PRESETS.filter(p => p.group === 'ubnd').map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.icon} {p.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="☭ Khối Đảng ủy (Tiêu đề Đảng: ĐẢNG CỘNG SẢN VIỆT NAM)">
-                  {AGENCY_PRESETS.filter(p => p.group === 'dang').map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.icon} {p.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="🤝 Khối MTTQ & Đoàn thể (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM)">
-                  {AGENCY_PRESETS.filter(p => p.group === 'mttq_doanthe').map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.icon} {p.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              <p className="text-[10px] text-slate-500 italic">
-                Khi chọn cơ quan ban hành, hệ thống sẽ tự động gán Tiêu đề Quốc ngữ tương ứng và để trống cơ quan cấp trên (người dùng tự nhập nếu có).
-              </p>
-            </div>
-
-            {/* Hiển thị Tiêu đề Quốc ngữ / Tiêu đề Đảng cố định theo Cài đặt khối cơ quan */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="font-bold text-slate-800 text-xs font-serif flex items-center gap-1.5">
-                  <span>Tiêu đề Quốc ngữ / Thể thức (Cố định theo Cài đặt mặc định):</span>
-                </label>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                  {agencySettings.roleBlock === 'dang' 
-                    ? 'Khối Đảng ủy (HD 05)' 
-                    : agencySettings.roleBlock === 'mttq_doanthe' 
-                    ? 'Khối MTTQ & Đoàn thể (NĐ 30)' 
-                    : 'Khối UBND / Chính quyền (NĐ 30)'}
-                </span>
+                  }}
+                  style={{ fontFamily: "'Times New Roman', Times, 'Tinos', serif" }}
+                  placeholder="Dán hoặc gõ nội dung đầu văn bản tự do..."
+                  className="w-full p-3 rounded-xl border border-slate-300 text-[13px] leading-relaxed text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                />
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Mỗi thành phần cách nhau bởi dấu xuống dòng (Enter).</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSection1FreeText(generateSection1FreeText(doc));
+                      setFixNotice('Đã đồng bộ lại nội dung Đầu văn bản!');
+                      setTimeout(() => setFixNotice(null), 2000);
+                    }}
+                    className="text-blue-700 hover:text-blue-900 underline font-semibold cursor-pointer"
+                  >
+                    Nạp lại từ cấu trúc hiện tại
+                  </button>
+                </div>
               </div>
+            ) : (
+              /* FORM NHẬP LIỆU CHI TIẾT ĐẦU VĂN BẢN */
+              <>
+                {/* CẢNH BÁO SAI LỆCH CƠ QUAN BAN HÀNH (YÊU CẦU 2) */}
+                {agencySettings.agencyName && doc.agencyName && !doc.agencyName.toLowerCase().includes(agencySettings.agencyName.toLowerCase()) && !agencySettings.agencyName.toLowerCase().includes(doc.agencyName.toLowerCase()) && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 font-sans shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Cơ quan trong văn bản: <strong className="text-rose-800">"{doc.agencyName}"</strong> khác với Cài đặt người dùng: <strong className="text-blue-800">"{agencySettings.agencyName}"</strong>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = {
+                          ...doc,
+                          agencyName: agencySettings.agencyName || doc.agencyName,
+                          parentAgency: agencySettings.parentAgency || doc.parentAgency,
+                          locationDate: agencySettings.shortLocation && doc.locationDate.includes(',') 
+                            ? `${agencySettings.shortLocation}${doc.locationDate.substring(doc.locationDate.indexOf(','))}` 
+                            : doc.locationDate
+                        };
+                        commitDocChanges(updated);
+                        setFixNotice(`Đã đồng bộ cơ quan theo Cài đặt: "${agencySettings.agencyName}"!`);
+                        setTimeout(() => setFixNotice(null), 2500);
+                      }}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold shrink-0 cursor-pointer transition-colors shadow-xs"
+                    >
+                      Đồng bộ theo Cài đặt
+                    </button>
+                  </div>
+                )}
 
-              {agencySettings.roleBlock === 'dang' ? (
-                <div className="p-3 rounded-lg border border-amber-300 bg-amber-50/70 text-amber-950 flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-sm text-amber-900 tracking-wide font-serif">
-                      <span className="inline-block border-b-[1.2px] border-amber-900 pb-0.5">
-                        ĐẢNG CỘNG SẢN VIỆT NAM
+                {/* BỘ CHỌN NHANH VAI TRÒ CƠ QUAN / PHÒNG BAN BAN HÀNH (ĐỒNG BỘ TIÊU ĐỀ QUỐC NGỮ) */}
+                <div className="p-3.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5 font-sans">
+                      <Building className="w-3.5 h-3.5 text-blue-700" />
+                      <span>Chọn vai trò cơ quan / phòng ban ban hành (Tự động chọn Tiêu đề Quốc ngữ):</span>
+                    </label>
+                    <span className="text-[10px] text-blue-800 bg-blue-100 px-2 py-0.5 rounded font-semibold font-sans">
+                      Đồng bộ chuẩn 100%
+                    </span>
+                  </div>
+                  <select
+                    onChange={(e) => {
+                      const presetId = e.target.value;
+                      if (!presetId) return;
+                      const preset = AGENCY_PRESETS.find(p => p.id === presetId);
+                      if (preset) {
+                        const isParty = preset.roleBlock === 'dang';
+                        const updated = {
+                          ...doc,
+                          agencyName: preset.agencyName,
+                          parentAgency: '', // Tuyệt đối không tự ý thêm cấp trên
+                          isPartyDoc: isParty,
+                          countryHeader: preset.countryHeader,
+                          motto: preset.motto
+                        };
+                        commitDocChanges(updated);
+                        setFixNotice(`Đã chọn ban hành với vai trò: "${preset.name}"!`);
+                        setTimeout(() => setFixNotice(null), 2500);
+                      }
+                    }}
+                    defaultValue=""
+                    className="w-full p-2.5 bg-white rounded-lg border border-blue-300 text-xs font-sans text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                  >
+                    <option value="" disabled>-- Bấm để chọn cơ quan / phòng ban ban hành văn bản --</option>
+                    <optgroup label="🏛️ Khối UBND & Bộ phận chuyên môn (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM)">
+                      {AGENCY_PRESETS.filter(p => p.group === 'ubnd').map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.icon} {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="☭ Khối Đảng ủy (Tiêu đề Đảng: ĐẢNG CỘNG SẢN VIỆT NAM)">
+                      {AGENCY_PRESETS.filter(p => p.group === 'dang').map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.icon} {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="🤝 Khối MTTQ & Đoàn thể (Quốc hiệu: CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM)">
+                      {AGENCY_PRESETS.filter(p => p.group === 'mttq_doanthe').map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.icon} {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <p className="text-[10px] text-slate-500 italic">
+                    Khi chọn cơ quan ban hành, hệ thống sẽ tự động gán Tiêu đề Quốc ngữ tương ứng và để trống cơ quan cấp trên (người dùng tự nhập nếu có).
+                  </p>
+                </div>
+
+                {/* Hiển thị Tiêu đề Quốc ngữ / Tiêu đề Đảng (Tổng 16cm: Cột trái 6,2cm - Cột phải 9,8cm) */}
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-xs font-serif flex items-center gap-1.5">
+                      <span>Bố cục Tiêu đề chuẩn quốc tế 16cm (Cột trái 6,2cm - Cột phải 9,8cm):</span>
+                    </label>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                      {agencySettings.roleBlock === 'dang' 
+                        ? 'Khối Đảng ủy (HD 05)' 
+                        : agencySettings.roleBlock === 'mttq_doanthe' 
+                        ? 'Khối MTTQ & Đoàn thể (NĐ 30)' 
+                        : 'Khối UBND / Chính quyền (NĐ 30)'}
+                    </span>
+                  </div>
+
+                  {agencySettings.roleBlock === 'dang' ? (
+                    <div className="p-3 rounded-lg border border-amber-300 bg-amber-50/70 text-amber-950 flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-sm text-amber-900 tracking-wide font-serif">
+                          <span className="inline-block border-b-[1.2px] border-amber-900 pb-0.5">
+                            ĐẢNG CỘNG SẢN VIỆT NAM
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-amber-700 mt-0.5">
+                          ✓ Chuẩn Hướng dẫn 05-HD/VPTW • Tiêu đề Đảng (gạch chân nét liền 1/3 - 1/2 độ dài)
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md border border-amber-300">
+                        Mặc định theo Cài đặt
                       </span>
                     </div>
-                    <div className="text-[11px] text-amber-700 mt-0.5">
-                      ✓ Chuẩn Hướng dẫn 05-HD/VPTW • Tiêu đề Đảng (gạch chân nét liền 1/3 - 1/2 độ dài)
-                    </div>
-                  </div>
-                  <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md border border-amber-300">
-                    Mặc định theo Cài đặt
-                  </span>
-                </div>
-              ) : (
-                <div className="p-3 rounded-lg border border-blue-300 bg-blue-50/70 text-blue-950 flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-xs uppercase text-blue-950 font-serif">
-                      CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
-                    </div>
-                    <div className="font-bold text-xs text-blue-900 mt-1 font-serif">
-                      <span className="inline-block border-b-[1.2px] border-blue-900 pb-0.5">
-                        Độc lập - Tự do - Hạnh phúc
+                  ) : (
+                    <div className="p-3 rounded-lg border border-blue-300 bg-blue-50/70 text-blue-950 flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-xs uppercase text-blue-950 font-serif">
+                          CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM (Cỡ 12-13pt, in hoa, đậm, căn giữa, 1 dòng)
+                        </div>
+                        <div className="font-bold text-xs text-blue-900 mt-1 font-serif">
+                          <span className="inline-block border-b-[1.2px] border-blue-900 pb-0.5">
+                            Độc lập - Tự do - Hạnh phúc (Cỡ 13-14pt, đậm, căn giữa, 1 dòng)
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-blue-700 mt-1">
+                          ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Tổng 16cm (Cột trái 6,2cm - Cột phải 9,8cm) • Đường kẻ dưới tiêu ngữ dài bằng đúng 100% dòng tiêu ngữ, căn giữa
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300">
+                        Cột phải 9,8cm
                       </span>
                     </div>
-                    <div className="text-[11px] text-blue-700 mt-1">
-                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Gạch chân bằng đúng 100% độ dài dòng chữ Tiêu ngữ
-                    </div>
-                  </div>
-                  <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300">
-                    Mặc định theo Cài đặt
-                  </span>
+                  )}
                 </div>
-              )}
-            </div>
 
             {/* Grid 2 cột cho Cơ quan và Địa danh / Số ký hiệu */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -752,23 +997,40 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    {doc.docTypeName === 'BÁO CÁO' ? 'Tiêu đề Báo cáo (Chuẩn NĐ 30):' : 'Trích yếu nội dung (V/v hoặc Về việc):'}
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700 block text-xs">
+                      {isCongVan ? 'Trích yếu công văn (ô số 5b - bắt đầu bằng V/v):' : doc.docTypeName === 'BÁO CÁO' ? 'Tiêu đề Báo cáo (Chuẩn NĐ 30):' : 'Trích yếu nội dung (V/v hoặc Về việc):'}
+                    </label>
+                    {isCongVan && (
+                      <span className="text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded font-bold border border-rose-200">
+                        Cỡ 12–13, chữ đứng, không in đậm
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={doc.docSubjectShort || doc.docTitle}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      if (isCongVan || val.startsWith('V/v')) {
+                      let val = e.target.value;
+                      if (isCongVan) {
+                        if (/^Về việc\s+/i.test(val)) {
+                          val = val.replace(/^Về việc\s+/i, 'V/v ');
+                        }
+                        updateDocField('docSubjectShort', val);
+                      } else if (val.startsWith('V/v')) {
                         updateDocField('docSubjectShort', val);
                       } else {
                         updateDocField('docTitle', val);
                       }
                     }}
-                    placeholder={doc.docTypeName === 'BÁO CÁO' ? 'Ví dụ: Kết quả thực hiện nhiệm vụ công tác năm 2026...' : 'Ví dụ: V/v tăng cường an toàn PCCC hoặc Về việc ban hành...'}
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder={isCongVan ? 'Ví dụ: V/v tăng cường an toàn PCCC và CNCH' : doc.docTypeName === 'BÁO CÁO' ? 'Ví dụ: Kết quả thực hiện nhiệm vụ công tác năm 2026...' : 'Ví dụ: V/v tăng cường an toàn PCCC hoặc Về việc ban hành...'}
+                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                  {isCongVan && (
+                    <p className="text-[10px] text-blue-700 mt-1 italic">
+                      ✓ Quy định cho trích yếu công văn: Vị trí ngay dưới dòng “Số, ký hiệu” (ô số 3), thuộc khối bên trái (6,2cm), canh giữa. Bắt đầu bằng “V/v” rồi đến câu rút gọn hoặc cụm từ nêu nội dung chính. Chữ thường, kích thước 12–13, kiểu chữ đứng, không in đậm, kết thúc không có dấu gạch ngang.
+                    </p>
+                  )}
                   {(doc.docTypeName === 'BÁO CÁO' || selectedType.name === 'Báo cáo') && (
                     <div className="mt-2 p-2.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-1.5 font-sans">
                       <div className="flex items-center justify-between">
@@ -804,16 +1066,26 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
             </div>
 
-            {/* Ô nhập Kính gửi (HỖ TRỢ NHIỀU DÒNG VỚI \n, THẺ TEXTAREA) */}
-            <div className="pt-2 border-t border-slate-100">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
-                <label className="font-bold text-slate-700 text-xs">
-                  Kính gửi (hỗ trợ nhiều dòng, xuống dòng bằng phím Enter):
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-blue-700 font-medium">
-                    (Mặc định đã có nhãn "Kính gửi:")
-                  </span>
+            {/* Ô nhập Kính gửi (HỖ TRỢ NHIỀU DÒNG VỚI \n, THẺ TEXTAREA & NÚT KẾT THÚC CHỐNG TRÙNG LẶP - YÊU CẦU 4) */}
+            <div className="pt-3 border-t border-slate-200 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <label className="font-bold text-slate-800 text-xs">
+                    Kính gửi (hỗ trợ nhiều dòng, kết thúc bằng dấu "."):
+                  </label>
+                  {isKinhGuiFinalized ? (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>Đã kết thúc bằng dấu "." & khóa chống trùng lặp</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
+                      Chưa chốt kết thúc
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -821,19 +1093,147 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       setKinhGuiText(formatted);
                       updateDocField('recipientsHeader', formatted);
                     }}
-                    className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 cursor-pointer"
+                    className="text-[11px] bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-1 rounded hover:bg-slate-200 cursor-pointer font-medium"
                   >
                     Thêm (-) đầu dòng
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 1. Chuẩn hóa kinhGuiText
+                      const lines = kinhGuiText
+                        .split('\n')
+                        .map(l => l.trim())
+                        .filter(Boolean);
+
+                      if (lines.length === 0) {
+                        setIsKinhGuiFinalized(true);
+                        setFixNotice('Đã xác nhận văn bản không có phần Kính gửi!');
+                        setTimeout(() => setFixNotice(null), 2500);
+                        return;
+                      }
+
+                      // Làm sạch từng dòng: loại bỏ dấu câu ở cuối, tách riêng chức danh lãnh đạo
+                      const rawCleaned = lines.map(line => {
+                        let clean = line.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
+                        clean = clean.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+                        clean = clean.replace(/[;\.]+$/, '').trim();
+                        return clean;
+                      }).filter(Boolean);
+
+                      if (rawCleaned.length === 0) return;
+
+                      // Tách chức danh thẩm quyền ký hoặc tên lãnh đạo ra khỏi Kính gửi (Yêu cầu 1 & 5)
+                      const sigKeywordRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
+                      let newAuth = doc.signerAuthority || doc.quyenHanKy || '';
+                      let newTitle = doc.signerTitle || '';
+                      let newName = doc.signerName || '';
+                      let hasSeparatedSigner = false;
+
+                      const cleanedItems: string[] = [];
+                      for (const item of rawCleaned) {
+                        if (sigKeywordRegex.test(item)) {
+                          hasSeparatedSigner = true;
+                          if (/^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH)/i.test(item)) {
+                            newAuth = item.toUpperCase();
+                          } else {
+                            newTitle = item.toUpperCase();
+                          }
+                          continue;
+                        }
+                        if (/^[A-ZÀ-Ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){1,4}$/.test(item) && !/^(?:Đồng chí|Kính gửi|Các|Toàn thể|Ban|Phòng|Sở|Ủy ban|UBND|Công ty)/i.test(item)) {
+                          hasSeparatedSigner = true;
+                          if (!newName) newName = item;
+                          continue;
+                        }
+                        cleanedItems.push(item);
+                      }
+
+                      let formattedLines: string[] = [];
+                      if (cleanedItems.length === 1) {
+                        // 1 nơi nhận: kết thúc bằng dấu chấm (.)
+                        formattedLines = [`- ${cleanedItems[0]}.`];
+                      } else if (cleanedItems.length > 1) {
+                        // Nhiều nơi nhận: các dòng trước dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
+                        formattedLines = cleanedItems.map((item, idx) => {
+                          const isLast = idx === cleanedItems.length - 1;
+                          return `- ${item}${isLast ? '.' : ';'}`;
+                        });
+                      }
+
+                      const finalKinhGuiStr = formattedLines.join('\n');
+                      setKinhGuiText(finalKinhGuiStr);
+
+                      // 2. Lọc sạch triệt để các dòng Kính gửi và chức danh lãnh đạo khỏi bodyParagraphs để chống trùng lặp 100%
+                      const currentParas = [...doc.bodyParagraphs];
+                      const filteredParas = currentParas.filter(p => {
+                        const pTrim = p.trim();
+                        if (!pTrim) return false;
+                        if (/^Kính\s*(?:gửi|trình):?/i.test(pTrim)) return false;
+                        if (sigKeywordRegex.test(pTrim)) return false;
+                        for (const item of rawCleaned) {
+                          if (pTrim === item || pTrim === `- ${item}` || pTrim === `- ${item};` || pTrim === `- ${item}.`) {
+                            return false;
+                          }
+                          const pNoDash = pTrim.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+                          if (pNoDash && pNoDash.toLowerCase() === item.toLowerCase()) {
+                            return false;
+                          }
+                        }
+                        return true;
+                      });
+
+                      const updatedDoc: StructuredDoc = {
+                        ...doc,
+                        recipientsHeader: finalKinhGuiStr,
+                        signerAuthority: newAuth,
+                        quyenHanKy: newAuth,
+                        signerTitle: newTitle,
+                        signerName: newName,
+                        bodyParagraphs: filteredParas
+                      };
+
+                      commitDocChanges(updatedDoc);
+                      setIsKinhGuiFinalized(true);
+                      const noticeMsg = hasSeparatedSigner
+                        ? '✓ Đã chốt Kính gửi kết thúc dấu ".", tự động tách chức danh/lãnh đạo sang phần Chữ ký và khóa chống trùng lặp!'
+                        : '✓ Đã chốt hoàn tất phần Kính gửi kết thúc bằng dấu "." và khóa ngăn chặn trùng lặp với văn bản chính!';
+                      setFixNotice(noticeMsg);
+                      setTimeout(() => setFixNotice(null), 3500);
+                    }}
+                    className={`text-[11px] px-3 py-1 rounded font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all ${
+                      isKinhGuiFinalized
+                        ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                        : 'bg-rose-600 hover:bg-rose-700 text-white ring-2 ring-rose-300'
+                    }`}
+                    title="Hoàn tất và kết thúc phần Kính gửi bằng dấu chấm (.), tự động khóa chặn không cho trùng lặp nội dung văn bản chính"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isKinhGuiFinalized ? '✓ Đã hoàn tất Kính gửi (Bấm để chốt lại)' : 'Kết thúc & Khóa Kính gửi (dấu .)'}</span>
+                  </button>
+
+                  {isKinhGuiFinalized && (
+                    <button
+                      type="button"
+                      onClick={() => setIsKinhGuiFinalized(false)}
+                      className="text-[10px] text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                    >
+                      Mở sửa lại
+                    </button>
+                  )}
                 </div>
               </div>
+
               <textarea
                 rows={3}
                 value={kinhGuiText}
+                readOnly={isKinhGuiFinalized}
                 onChange={(e) => {
                   const val = e.target.value.normalize('NFC');
                   setKinhGuiText(val);
                   updateDocField('recipientsHeader', val);
+                  if (isKinhGuiFinalized) setIsKinhGuiFinalized(false);
                 }}
                 onPaste={(e) => {
                   const text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
@@ -847,18 +1247,30 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
                   setKinhGuiText(next);
                   updateDocField('recipientsHeader', next);
+                  if (isKinhGuiFinalized) setIsKinhGuiFinalized(false);
                 }}
                 placeholder="- Các ban ngành, đoàn thể phường;&#10;- Ban cán sự các tổ dân phố trên địa bàn."
-                className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className={`w-full p-2.5 rounded-lg border font-serif text-xs text-slate-900 focus:outline-none transition-colors ${
+                  isKinhGuiFinalized 
+                    ? 'bg-emerald-50/40 border-emerald-300' 
+                    : 'bg-white border-slate-300 focus:ring-2 focus:ring-blue-500'
+                }`}
               />
-              <span className="text-[11px] text-slate-500 italic mt-0.5 block">
-                Cho phép xuống dòng tùy ý bằng \n. Áp dụng cho Công văn, Tờ trình, Báo cáo, Giấy mời.
-              </span>
-            </div>
 
-          </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-500 italic">
+                <span>
+                  ✓ Quy định NĐ 30: Gửi 1 nơi kết thúc bằng dấu <strong>"."</strong>; gửi nhiều nơi các dòng trước kết thúc bằng <strong>";"</strong>, dòng cuối kết thúc bằng <strong>"."</strong>.
+                </span>
+                <span className="text-emerald-700 font-semibold not-italic">
+                  Nút [Kết thúc & Khóa Kính gửi] đảm bảo 100% không trùng lặp vào thân bài
+                </span>
+              </div>
+            </div>
+          </>
         )}
       </div>
+    )}
+  </div>
 
       {/* =========================================================================
           HẠNG MỤC 2: NỘI DUNG VĂN BẢN & CHỖ TÔ VÀNG SỬA NGAY (Chuẩn trolyvanthu)
@@ -1399,7 +1811,81 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
         {openSection3 && (
           <div className="p-4 md:p-6 space-y-4 bg-white animate-fade-in text-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            {/* Chuyển đổi Form chi tiết vs Soạn thảo tự do Cuối văn bản (Yêu cầu 3) */}
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-200">
+              <div className="flex items-center gap-1.5 text-xs text-slate-700 font-bold">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>Chế độ chỉnh sửa Cuối văn bản (Nơi nhận & Chữ ký):</span>
+              </div>
+              <div className="bg-slate-100 p-1 rounded-lg border border-slate-200 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchSection3Mode('form')}
+                  className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
+                    section3Mode === 'form'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Form chi tiết (2 cột)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchSection3Mode('free')}
+                  className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                    section3Mode === 'free'
+                      ? 'bg-rose-700 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Soạn thảo tự do</span>
+                </button>
+              </div>
+            </div>
+
+            {section3Mode === 'free' ? (
+              /* SOẠN THẢO TỰ DO CUỐI VĂN BẢN */
+              <div className="space-y-3 p-3 bg-slate-50/80 rounded-xl border border-slate-200 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs font-serif">
+                    Soạn thảo tự do phần Cuối văn bản (Nơi nhận, Thẩm quyền ký, Chức vụ và Họ tên người ký):
+                  </span>
+                  <span className="text-[10px] text-emerald-700 italic">
+                    Tự động đồng bộ sang Live Preview A4 và file Word
+                  </span>
+                </div>
+                <textarea
+                  rows={8}
+                  value={section3FreeText}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSection3FreeText(val);
+                    handleSection3FreeTextChange(val);
+                  }}
+                  style={{ fontFamily: "'Times New Roman', Times, 'Tinos', serif" }}
+                  placeholder="Dán hoặc gõ nội dung cuối văn bản tự do (Nơi nhận, TM/KT, Chức vụ, Họ tên)..."
+                  className="w-full p-3 rounded-xl border border-slate-300 text-[13px] leading-relaxed text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
+                />
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Mỗi thành phần cách nhau bởi dấu xuống dòng (Enter). Cách thêm 1 dòng đối với chức danh.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSection3FreeText(generateSection3FreeText(doc));
+                      setFixNotice('Đã đồng bộ lại nội dung Cuối văn bản!');
+                      setTimeout(() => setFixNotice(null), 2000);
+                    }}
+                    className="text-emerald-700 hover:text-emerald-900 underline font-semibold cursor-pointer"
+                  >
+                    Nạp lại từ cấu trúc hiện tại
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* FORM NHẬP LIỆU CHI TIẾT CUỐI VĂN BẢN */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
               {/* Cột 1: Nơi nhận (HỖ TRỢ NHIỀU DÒNG VỚI \n, THẺ TEXTAREA) */}
               <div>
@@ -1646,7 +2132,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       <span>Dòng 2: Họ và tên người ký (Cỡ 14pt in đậm)</span>
                     </label>
                     <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                      Khoảng trống ký: 55-60pt
+                      Khoảng trống ký: 75–85pt (720 dxa)
                     </span>
                   </div>
 
@@ -1692,9 +2178,23 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         return <div>{auth || title || 'CHỦ TỊCH'}</div>;
                       })()}
                     </div>
-                    <div className="py-2 text-[10px] text-slate-400 italic font-sans border-y border-slate-100 my-1">
-                      [Khoảng trống ký tay hoặc ký số chứng thư số]
+
+                    {/* Thêm khoảng trống 1 dòng giãn cách tiêu chuẩn ngay dưới chức năng/quyền ký hiệu */}
+                    <div className="h-4 text-[10px] text-slate-400 italic select-none my-0.5">
+                      (1 dòng giãn cách tiêu chuẩn)
                     </div>
+                    {/* Thêm 1 dòng giãn cách bổ sung theo yêu cầu tăng khoảng cách tên người ký và chức danh */}
+                    <div className="h-4 text-[10px] text-emerald-600 font-semibold italic select-none my-0.5">
+                      (+ thêm 1 dòng khoảng cách giữa chức danh và người ký)
+                    </div>
+
+                    {/* Mở rộng không gian ký tên (khoảng trống 85–95pt trong HTML và 840 dxa trong tệp Word Word) */}
+                    <div style={{ height: '85pt' }} className="flex items-center justify-center border-y border-dashed border-slate-200 my-1 bg-slate-50/50 rounded">
+                      <span className="text-[11px] text-slate-500 italic font-sans">
+                        [Khoảng trống ký rộng rãi 85–95pt (840 dxa) cho chữ ký tươi và ký số điện tử]
+                      </span>
+                    </div>
+
                     <div className="font-bold text-slate-900 text-sm">
                       {doc.signerName || '(Họ và tên người ký)'}
                     </div>
@@ -1703,9 +2203,10 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
+    </div>
 
       {/* =========================================================================
           HẠNG MỤC 4: PHỤ LỤC VĂN BẢN (Phân tách trang A4 độc lập sau Nơi nhận & Chữ ký)

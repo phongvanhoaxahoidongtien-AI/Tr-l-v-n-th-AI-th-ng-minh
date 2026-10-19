@@ -386,6 +386,40 @@ export function unpackLayoutTable(tableHtml: string): string {
 }
 
 /**
+ * Kiểm tra xem một dòng văn bản có phải là dòng cảnh báo, gợi ý rà soát hoặc ghi chú thừa không:
+ * - "Xóa bỏ tiêu đề quốc ngữ thừa này", "Xóa bỏ tiêu ngữ thừa này", "Xóa bỏ tiêu đề Đảng thừa này"
+ * - "Xóa căn cứ...", "Xóa bỏ căn cứ..."
+ * - Các dòng bắt đầu bằng cảnh báo, lưu ý, nhắc nhở hoặc icon ⚠️
+ * Tự động loại bỏ hoàn toàn, không bao giờ đưa vào nội dung văn bản.
+ */
+export function isWarningOrInstructionLine(line: string): boolean {
+  if (!line) return false;
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+
+  // 1. Các câu cảnh báo xóa tiêu đề/tiêu ngữ cụ thể
+  if (/Xóa\s*bỏ\s*tiêu\s*đề\s*quốc\s*ngữ\s*thừa\s*này/i.test(trimmed)) return true;
+  if (/Xóa\s*bỏ\s*tiêu\s*ngữ\s*thừa\s*này/i.test(trimmed)) return true;
+  if (/Xóa\s*bỏ\s*tiêu\s*đề\s*Đảng\s*thừa\s*này/i.test(trimmed)) return true;
+  if (/Xóa\s*(?:bỏ\s*)?căn\s*cứ.*?(?:này)?$/i.test(trimmed)) return true;
+  if (/Xóa\s*bỏ\s*dòng\s*này/i.test(trimmed)) return true;
+  if (/Xóa\s*bỏ\s*đoạn\s*(?:văn\s*bản\s*)?này/i.test(trimmed)) return true;
+
+  // 2. Các thông báo cảnh báo lỗi nhận diện
+  if (/Tiêu\s*đề\s*Quốc\s*hiệu\s*bị\s*trùng\s*lặp/i.test(trimmed)) return true;
+  if (/Tiêu\s*ngữ\s*.*?bị\s*lọt\s*vào/i.test(trimmed)) return true;
+  if (/Tiêu\s*đề\s*.*?bị\s*lọt\s*vào/i.test(trimmed)) return true;
+  if (/^⚠️/i.test(trimmed)) return true;
+
+  // 3. Các dạng nhãn cảnh báo trong ngoặc hoặc tiền tố
+  if (/^(?:\[|\()?⚠️?\s*(?:Cảnh\s*báo|Lưu\s*ý|Ghi\s*chú|Nhắc\s*nhở|Đề\s*xuất|Gợi\s*ý|Xóa\s*bỏ|Cần\s*xác\s*nhận|Hướng\s*dẫn|Khuyến\s*nghị)[\s:\.\-–—].*(?:\]|\))?$/i.test(trimmed)) return true;
+  if (/^\[CẦN\s*XÁC\s*NHẬN.*?\]$/i.test(trimmed)) return true;
+  if (/^(?:Xóa\s*bỏ|Gỡ\s*bỏ|Loại\s*bỏ)\s+(?:tiêu\s*đề|tiêu\s*ngữ|quốc\s*hiệu|căn\s*cứ|dòng|đoạn|thừa).*$/i.test(trimmed)) return true;
+
+  return false;
+}
+
+/**
  * Xóa bỏ Tiêu đề Quốc ngữ (khi người dùng chủ động yêu cầu gỡ bỏ)
  */
 export function stripImportedNationalHeaders(text: string): { cleanedText: string; strippedFound: boolean } {
@@ -601,6 +635,10 @@ export function cleanAIText(
 
     if (!line.trim()) {
       cleanedLines.push('');
+      continue;
+    }
+
+    if (isWarningOrInstructionLine(line)) {
       continue;
     }
 

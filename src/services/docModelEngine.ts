@@ -1,8 +1,10 @@
 import { 
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
-  WidthType, AlignmentType, BorderStyle 
+  WidthType, AlignmentType, BorderStyle, UnderlineType 
 } from 'docx';
 import { RuleLoader, DocumentRuleConfig } from './ruleLoader';
+import { isWarningOrInstructionLine } from '../utils/cleanAIText';
+import { formatDecree30TitleCase } from './decree30Formatter';
 
 export interface DocModel {
   heThong: 'hanh_chinh' | 'dang' | 'academic';
@@ -62,16 +64,19 @@ export class DocModelEngine {
     let hoTen = '';
     const noiNhan: string[] = [];
 
-    // Lọc bỏ Quốc hiệu / Tiêu đề Đảng khỏi danh sách các dòng xử lý
+    // Lọc bỏ Quốc hiệu / Tiêu đề Đảng và các dòng cảnh báo/hướng dẫn khỏi danh sách các dòng xử lý
     const remainingLines: string[] = [];
     for (const l of lines) {
+      if (isWarningOrInstructionLine(l)) {
+        continue;
+      }
       const stripped = l
         .replace(/CỘNG\s+H[ÒO]A\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM/gi, '')
         .replace(/Độc\s+lập\s*[-–—]\s*Tự\s+do\s*[-–—]\s*Hạnh\s+phúc[\.:]?/gi, '')
         .replace(/ĐẢNG\s+CỘNG\s+SẢN\s+VIỆT\s+NAM/gi, '')
         .replace(/^[*\-–—_]{3,}$/, '')
         .trim();
-      if (stripped) {
+      if (stripped && !isWarningOrInstructionLine(stripped)) {
         remainingLines.push(stripped);
       }
     }
@@ -90,8 +95,8 @@ export class DocModelEngine {
       uncertainPoints.push('Chưa xác định được địa danh và ngày tháng ban hành văn bản');
     }
 
-    // 2. Tìm số và ký hiệu
-    const codeRegex = /^Số:\s*([0-9A-Za-z\-\/\.…\s]+)/i;
+    // 2. Tìm số và ký hiệu (hỗ trợ cả / và - của Đảng và NĐ 30)
+    const codeRegex = /(?:^|[\s\u00A0])(?:Số|SỐ|Số\s*:|Số\s*\.)\s*:?\.?\s*([0-9A-Za-z\-\.…\s]*[\/\-][A-Za-z0-9\-\.…]+(?:[\/\-][A-Za-z0-9\-\.…]+)*|[0-9]+)/i;
     const codeIdx = remainingLines.findIndex((l, idx) => idx < 10 && codeRegex.test(l));
     if (codeIdx !== -1) {
       soKyHieu = remainingLines[codeIdx];
@@ -109,17 +114,68 @@ export class DocModelEngine {
       remainingLines.splice(vvIdx, 1);
     }
 
-    // 4. Tìm tên loại văn bản (QUYẾT ĐỊNH, BÁO CÁO...)
+    // 4. Tìm tên loại văn bản & trích yếu (BÁO CÁO, QUYẾT ĐỊNH, KẾ HOẠCH, TỜ TRÌNH, NGHỊ QUYẾT, KẾT LUẬN...)
     if (!tenLoai) {
-      const typeKeywords = /^(QUYẾT ĐỊNH|TỜ TRÌNH|NGHỊ QUYẾT|THÔNG BÁO|KẾ HOẠCH|BÁO CÁO|GIẤY MỜI|GIẤY GIỚI THIỆU|BIÊN BẢN|HỢP ĐỒNG|CHỈ THỊ|QUY CHẾ|QUY ĐỊNH|HƯỚNG DẪN|CHƯƠNG TRÌNH|PHƯƠNG ÁN|ĐỀ ÁN|KẾT LUẬN)/i;
-      const tIdx = remainingLines.findIndex((l, idx) => idx < 8 && typeKeywords.test(l));
-      if (tIdx !== -1) {
-        tenLoai = remainingLines[tIdx].toUpperCase();
-        remainingLines.splice(tIdx, 1);
+      const typePatterns = [
+        { type: 'BÁO CÁO', pattern: /^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s*(?:NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ|ĐÁNH\s+GIÁ|KẾT\s+QUẢ|TÌNH\s+HÌNH|CÔNG\s+TÁC))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'QUYẾT ĐỊNH', pattern: /^(?:QUYẾT\s+ĐỊNH|Quyết\s+định)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'KẾ HOẠCH', pattern: /^(?:KẾ\s+HOẠCH|Kế\s+hoạch)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'TỜ TRÌNH', pattern: /^(?:TỜ\s+TRÌNH|Tờ\s+trình)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'THÔNG BÁO', pattern: /^(?:THÔNG\s+BÁO|Thông\s+báo)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'NGHỊ QUYẾT', pattern: /^(?:NGHỊ\s+QUYẾT|Nghị\s+quyết)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'KẾT LUẬN', pattern: /^(?:KẾT\s+LUẬN|Kết\s+luận)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+        { type: 'CHỈ THỊ', pattern: /^(?:CHỈ\s+THỊ|Chỉ\s+thị)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i },
+      ];
 
-        if (tIdx < remainingLines.length && /^(Về việc|Ban hành|Phê duyệt|Quy định)/i.test(remainingLines[tIdx])) {
-          trichYeu = remainingLines[tIdx];
-          remainingLines.splice(tIdx, 1);
+      for (let i = 0; i < Math.min(10, remainingLines.length); i++) {
+        const line = remainingLines[i];
+        if (/^Kính\s+gửi:|^Kính\s+trình:|^Căn\s+cứ/i.test(line)) break;
+
+        let matched = false;
+        for (const item of typePatterns) {
+          const m = line.match(item.pattern);
+          if (m) {
+            tenLoai = item.type;
+            const inlineRest = (m[1] || '').trim();
+            remainingLines.splice(i, 1);
+            matched = true;
+
+            let titleParts: string[] = [];
+            if (inlineRest) titleParts.push(inlineRest);
+
+            // Kiểm tra dòng kế tiếp xem có phải là phần trích yếu tiêu đề không
+            if (i < remainingLines.length) {
+              const nextL = remainingLines[i];
+              if (nextL && !/^Kính|^Căn cứ|^Điều\s+\d+/i.test(nextL) && (
+                /^(?:Về việc|Ban hành|Phê duyệt|Quy định|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Thực hiện|Triển khai)/i.test(nextL) ||
+                (titleParts.length > 0 && nextL.length < 150 && !nextL.endsWith('.'))
+              )) {
+                titleParts.push(nextL.trim());
+                remainingLines.splice(i, 1);
+              }
+            }
+
+            if (titleParts.length > 0) {
+              trichYeu = formatDecree30TitleCase(titleParts.join(' '));
+            }
+            break;
+          }
+        }
+        if (matched) break;
+
+        // Tổng quát các loại văn bản còn lại
+        const generalMatch = line.match(/^(QUY CHẾ|QUY ĐỊNH|HƯỚNG DẪN|CHƯƠNG TRÌNH|PHƯƠNG ÁN|ĐỀ ÁN|DỰ ÁN|BIÊN BẢN|HỢP ĐỒNG|GIẤY MỜI|GIẤY GIỚI THIỆU|GIẤY ỦY QUYỀN|GIẤY NGHỈ PHÉP|BẢN GHI NHỚ|BẢN THỎA THUẬN|PHIẾU GỬI|PHIẾU CHUYỂN|PHIẾU BÁO|CÔNG ĐIỆN|THƯ CÔNG|THÔNG CÁO)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+        if (generalMatch) {
+          tenLoai = generalMatch[1].toUpperCase();
+          const inlineRest = (generalMatch[2] || '').trim();
+          remainingLines.splice(i, 1);
+          if (inlineRest) {
+            trichYeu = formatDecree30TitleCase(inlineRest);
+          } else if (i < remainingLines.length && !/^Kính|^Căn cứ/i.test(remainingLines[i])) {
+            trichYeu = formatDecree30TitleCase(remainingLines[i]);
+            remainingLines.splice(i, 1);
+          }
+          break;
         }
       }
     }
@@ -151,11 +207,23 @@ export class DocModelEngine {
       uncertainPoints.push('Chưa xác định được cơ quan ban hành');
     }
 
-    // 6. Kính gửi hoặc Kính trình
-    const kgIdx = remainingLines.findIndex(l => /^Kính gửi:|^Kính trình:/i.test(l));
+    // 6. Kính gửi hoặc Kính trình (bóc tách toàn bộ các dòng đến khi gặp dấu ".")
+    const kgIdx = remainingLines.findIndex(l => /^Kính\s*(?:gửi|trình):/i.test(l));
     if (kgIdx !== -1) {
-      kinhGuiHoacKinhTrinh = remainingLines[kgIdx];
+      const kgLines: string[] = [remainingLines[kgIdx]];
       remainingLines.splice(kgIdx, 1);
+      while (kgIdx < remainingLines.length) {
+        const nextL = remainingLines[kgIdx].trim();
+        if (/^(?:Căn\s+cứ|Thực\s+hiện|Nhằm|Theo|Xét|Điều|I\.|1\.|KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|Nơi\s*nhận)/i.test(nextL)) break;
+        if (/^[-\u2013\u2014\*\+•●○■◆]\s+/.test(nextL) || nextL.endsWith(';') || nextL.endsWith('.')) {
+          kgLines.push(nextL);
+          remainingLines.splice(kgIdx, 1);
+          if (nextL.endsWith('.')) break;
+        } else {
+          break;
+        }
+      }
+      kinhGuiHoacKinhTrinh = kgLines.join('\n');
     }
 
     // 7. Bóc tách Nơi nhận và Chữ ký ở cuối văn bản
@@ -171,19 +239,26 @@ export class DocModelEngine {
           continue;
         }
 
-        if (/^(KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|CHỦ TỊCH|BÍ THƯ|PHÓ BÍ THƯ|PHÓ CHỦ TỊCH|GIÁM ĐỐC|TRƯỞNG PHÒNG)/i.test(l)) {
+        const cleanL = l.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+        if (!cleanL) continue;
+
+        const isSig = /^(?:KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i.test(cleanL);
+        const isPerson = (/^[A-ZĐÀ-Ỹ][a-zđà-ỹ]+(?:\s+[A-ZĐÀ-Ỹ][a-zđà-ỹ]+){1,4}$/.test(cleanL) || /^[A-ZĐÀ-Ỹ\s]{3,35}$/.test(cleanL)) &&
+          !/^(?:Như|Lưu|Phòng|Ban|Sở|Bộ|UBND|HĐND|Ủy\s*ban|Thường\s*trực|Chi\s*bộ|Đảng\s*ủy|Đảng\s*bộ|Hội\s*đồng|Công\s*an|Quân\s*sự|Y\s*tế|Đoàn|Hội|Tổ|Đồng\s*chí|Đ\/c|Các)\b/i.test(cleanL);
+
+        if (isSig || isPerson) {
           inSig = true;
         }
 
         if (!inSig) {
-          if (l.trim()) noiNhan.push(l);
+          noiNhan.push(cleanL.startsWith('-') ? cleanL : `- ${cleanL}`);
         } else {
-          if (/^(KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.)/i.test(l)) {
-            quyenHan = l.toUpperCase();
-          } else if (/^(CHỦ TỊCH|BÍ THƯ|PHÓ BÍ THƯ|PHÓ CHỦ TỊCH|GIÁM ĐỐC|TRƯỞNG PHÒNG|HIỆU TRƯỞNG)/i.test(l)) {
-            chucVu = l.toUpperCase();
-          } else if (/^[A-ZÀ-Ỹ][a-zà-ỹ]+(\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){1,4}$/.test(l) && !l.includes('Ký')) {
-            hoTen = l;
+          if (/^(?:KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ)/i.test(cleanL)) {
+            quyenHan = cleanL.toUpperCase();
+          } else if (/^(?:CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)/i.test(cleanL)) {
+            chucVu = cleanL.toUpperCase();
+          } else if (isPerson && !cleanL.includes('Ký') && !cleanL.includes('Họ tên')) {
+            hoTen = cleanL;
           }
         }
       }
@@ -262,11 +337,12 @@ export class DocModelEngine {
       })
     );
 
+    // Đường kẻ ngang dưới tên cơ quan: Dùng ký tự '─' font size 18, độ đậm bằng tiêu ngữ, cùng ngang 1 hàng
     leftHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 60, line: 240 },
-        children: [new TextRun({ text: '————————', font: 'Times New Roman', size: 20 })]
+        spacing: { before: 20, after: 60, line: 160 },
+        children: [new TextRun({ text: '─────────', font: 'Times New Roman', size: 18 })]
       })
     );
 
@@ -274,73 +350,96 @@ export class DocModelEngine {
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: doc.trichYeu && doc.tenLoai === 'CÔNG VĂN' ? 40 : 100, line: 240 },
-        children: [new TextRun({ text: doc.soKyHieu || 'Số: …/…', font: 'Times New Roman', size: 26 })]
+        children: [new TextRun({ text: doc.soKyHieu || 'Số:          /…', font: 'Times New Roman', size: 26 })]
       })
     );
 
     if (doc.tenLoai === 'CÔNG VĂN' && doc.trichYeu) {
+      let formattedSub = doc.trichYeu.trim();
+      if (/^Về việc\s+/i.test(formattedSub)) {
+        formattedSub = formattedSub.replace(/^Về việc\s+/i, 'V/v ');
+      } else if (!/^V\/v\s+/i.test(formattedSub)) {
+        formattedSub = `V/v ${formattedSub.replace(/^V\/v:?\s*/i, '')}`;
+      }
+
+      // Ô 5b: Trích yếu công văn - bắt đầu bằng V/v, chữ thường 12-13pt, kiểu chữ đứng, không in đậm, canh giữa. Kết thúc KHÔNG có dấu gạch ngang
       leftHeaderParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 100, line: 240 },
-          children: [new TextRun({ text: doc.trichYeu, font: 'Times New Roman', size: 24, italics: true })]
+          spacing: { before: 30, after: 60, line: 240 },
+          children: [new TextRun({ text: formattedSub, font: 'Times New Roman', size: 25, bold: false, italics: false })]
         })
       );
     }
 
-    // 2. Cột phải Header
+    // 2. Cột phải Header (9.8 cm): Quốc hiệu, Tiêu ngữ, Địa danh ngày tháng
     const rightHeaderParagraphs: Paragraph[] = [];
     if (!isParty) {
       rightHeaderParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 40, line: 240 },
-          children: [new TextRun({ text: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', font: 'Times New Roman', size: 24, bold: true })]
+          spacing: { after: 30, line: 240 },
+          children: [new TextRun({ text: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', font: 'Times New Roman', size: 26, bold: true })]
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 40, line: 240 },
-          children: [new TextRun({ text: 'Độc lập - Tự do - Hạnh phúc', font: 'Times New Roman', size: 26, bold: true })]
+          spacing: { after: 30, line: 240 },
+          children: [
+            new TextRun({ 
+              text: 'Độc lập - Tự do - Hạnh phúc', 
+              font: 'Times New Roman', 
+              size: 28, 
+              bold: true
+            })
+          ]
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 60, line: 240 },
-          children: [new TextRun({ text: '————————————', font: 'Times New Roman', size: 20, bold: true })]
+          spacing: { before: 20, after: 60, line: 160 },
+          children: [
+            new TextRun({
+              text: '──────────────────',
+              font: 'Times New Roman',
+              size: 18,
+            }),
+          ],
         })
       );
     } else {
       rightHeaderParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 40, line: 240 },
-          children: [new TextRun({ text: 'ĐẢNG CỘNG SẢN VIỆT NAM', font: 'Times New Roman', size: 30, bold: true })]
+          spacing: { after: 20, line: 240 },
+          children: [new TextRun({ text: 'ĐẢNG CỘNG SẢN VIỆT NAM', font: 'Times New Roman', size: 28, bold: true })]
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 60, line: 240 },
-          children: [new TextRun({ text: '—————', font: 'Times New Roman', size: 20, bold: true })]
+          spacing: { before: 20, after: 60, line: 160 },
+          children: [new TextRun({ text: '─────────', font: 'Times New Roman', size: 18 })]
         })
       );
     }
 
-    const locDateStr = doc.diaDanh && doc.ngayThang ? `${doc.diaDanh}, ${doc.ngayThang}` : (doc.diaDanh || doc.ngayThang || '……, ngày … tháng … năm …');
+    const locDateStr = doc.diaDanh && doc.ngayThang 
+      ? `${doc.diaDanh}, ${doc.ngayThang}` 
+      : `${doc.diaDanh || 'Đông Tiến'}, ngày\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0tháng\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0năm ${new Date().getFullYear()}`;
     rightHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 100, line: 240 },
-        children: [new TextRun({ text: locDateStr, font: 'Times New Roman', size: 26, italics: true })]
+        spacing: { after: 80, line: 240 },
+        children: [new TextRun({ text: locDateStr, font: 'Times New Roman', size: 27, italics: true })]
       })
     );
 
-    // Bảng Header 2 cột ẩn viền
+    // Bảng Header 2 cột tổng 16cm: Cột trái 6.2cm (3515 dxa), Cột phải 9.8cm (5556 dxa)
     const headerTable = new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
+      width: { size: 9071, type: WidthType.DXA },
       borders: hiddenBorders,
       rows: [
         new TableRow({
           children: [
-            new TableCell({ width: { size: 45, type: WidthType.PERCENTAGE }, borders: hiddenBorders, children: leftHeaderParagraphs }),
-            new TableCell({ width: { size: 55, type: WidthType.PERCENTAGE }, borders: hiddenBorders, children: rightHeaderParagraphs })
+            new TableCell({ width: { size: 3515, type: WidthType.DXA }, borders: hiddenBorders, children: leftHeaderParagraphs }),
+            new TableCell({ width: { size: 5556, type: WidthType.DXA }, borders: hiddenBorders, children: rightHeaderParagraphs })
           ]
         })
       ]
@@ -395,7 +494,7 @@ export class DocModelEngine {
 
     // Thân bài
     for (const b of doc.noiDungBlocks) {
-      if (!b.text) continue;
+      if (!b.text || isWarningOrInstructionLine(b.text)) continue;
       bodyParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,
@@ -453,11 +552,20 @@ export class DocModelEngine {
         );
       }
 
-      // Khoảng cách ký tên
+      // Cách thêm 1 dòng đối với chức danh theo yêu cầu thể thức
       rightFooterParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 500, after: 40, line: 240 },
+          spacing: { before: 120, after: 120, line: 240 },
+          children: [new TextRun({ text: '', font: 'Times New Roman', size: 26 })]
+        })
+      );
+
+      // Khoảng cách ký tên & họ tên
+      rightFooterParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 600, after: 40, line: 240 },
           children: [new TextRun({ text: doc.hoTen || '(Chưa điền họ tên)', font: 'Times New Roman', size: 28, bold: true })]
         })
       );
@@ -485,9 +593,9 @@ export class DocModelEngine {
             page: {
               margin: {
                 top: 1134, // 20mm
-                bottom: 1134,
+                bottom: 1134, // 20mm
                 left: 1701, // 30mm
-                right: 850 // 15mm
+                right: 1134 // 20mm (Chiều rộng văn bản chuẩn 16cm)
               }
             }
           },

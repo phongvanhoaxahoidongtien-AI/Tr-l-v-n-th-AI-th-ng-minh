@@ -1,6 +1,71 @@
 import { AgencySettings, IllogicalSegment, DocumentAppendix } from '../types';
-import { convertMarkdownTableToHtml, formatHtmlTableToFitA4 } from '../utils/cleanAIText';
+import { convertMarkdownTableToHtml, formatHtmlTableToFitA4, isWarningOrInstructionLine } from '../utils/cleanAIText';
 import { detectIllogicalAdministrativeText } from '../utils/illogicalTextDetector';
+
+/**
+ * Chuẩn hóa kiểu chữ trích yếu / tiêu đề văn bản theo Nghị định 30/2020/NĐ-CP:
+ * - Trích yếu văn bản: Viết chữ in thường, in đậm, căn giữa.
+ * - Chữ cái đầu tiên viết hoa, các chữ sau viết thường theo quy tắc chính tả tiếng Việt.
+ * - Giữ nguyên viết hoa cho các từ viết tắt và danh từ riêng/địa danh:
+ *   UBND, HĐND, BCH, BTV, MTTQ, TƯ, TW, VN, TP, TNHH, BT, CP, Đông Tiến, Việt Nam, Hà Nội, v.v.
+ * - Loại bỏ các dấu thừa ở cuối như dấu hai chấm (:), dấu chấm (.), dấu chấm phẩy (;).
+ */
+export function formatDecree30TitleCase(title: string): string {
+  if (!title) return '';
+  let clean = title
+    .replace(/(?:CỘNG\s*H[ÒOòo][AÀàa]\s*XÃ\s*HỘI\s*CHỦ\s*NGHĨA\s*VIỆT\s*NAM|Độc\s*lập\s*[-–—_]\s*Tự\s*do\s*[-–—_]\s*Hạnh\s*phúc)/gi, '')
+    .replace(/^[\s:\.\-–—]+/, '')
+    .replace(/[\s:\.\-–—;]+$/, '')
+    .trim();
+
+  if (!clean) return '';
+
+  // Nếu tiêu đề bị viết hoa toàn bộ (ALL CAPS): chuyển thành chữ in thường chuẩn NĐ 30, chữ cái đầu viết hoa
+  const isAllCaps = clean.length > 5 && clean === clean.toUpperCase() && /[A-ZÀ-Ỹ]/.test(clean);
+  if (isAllCaps) {
+    let lower = clean.toLowerCase();
+    // Viết hoa chữ cái đầu tiên
+    clean = lower.charAt(0).toUpperCase() + lower.slice(1);
+    
+    // Khôi phục các từ viết tắt và danh từ riêng phổ biến
+    const properWords: Record<string, string> = {
+      'ubnd': 'UBND',
+      'hđnd': 'HĐND',
+      'mttq': 'MTTQ',
+      'tw': 'TW',
+      'tư': 'TƯ',
+      'vn': 'VN',
+      'tp': 'TP',
+      'tnhh': 'TNHH',
+      'bch': 'BCH',
+      'btv': 'BTV',
+      'đcs': 'ĐCS',
+      'tncs': 'TNCS',
+      'việt nam': 'Việt Nam',
+      'đông tiến': 'Đông Tiến',
+      'hà nội': 'Hà Nội',
+      'hồ chí minh': 'Hồ Chí Minh',
+      'đà nẵng': 'Đà Nẵng',
+      'thanh hóa': 'Thanh Hóa',
+      'nghệ an': 'Nghệ An',
+      'nghị định 30': 'Nghị định 30',
+      'nghị định': 'Nghị định',
+      'quyết định': 'Quyết định',
+      'luật': 'Luật',
+      'bộ luật': 'Bộ luật',
+      'chính phủ': 'Chính phủ',
+      'quốc hội': 'Quốc hội'
+    };
+
+    for (const [key, replacement] of Object.entries(properWords)) {
+      const rx = new RegExp(`\\b${key}\\b`, 'gi');
+      clean = clean.replace(rx, replacement);
+    }
+  }
+
+  // Đảm bảo chữ cái đầu luôn viết hoa
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
 
 export interface StructuredDoc {
   isPartyDoc: boolean;
@@ -146,6 +211,49 @@ export function boldBulletHeadings(text: string): { text: string; count: number 
 }
 
 /**
+ * Nhận diện Khoản / Điều có tiêu đề hay không có tiêu đề theo chuẩn Nghị định 30/2020/NĐ-CP:
+ * - Có tiêu đề: Ví dụ: "1. Phạm vi và đối tượng áp dụng" hoặc "1. Phạm vi điều chỉnh: ..." -> In đậm 13-14pt Đứng
+ * - Không có tiêu đề: Ví dụ: "1. Quyết định này có hiệu lực thi hành kể từ ngày…" -> In thường 13-14pt Đứng (KHÔNG ĐẬM)
+ */
+export function detectNumberedHeading(rest: string): {
+  hasTitle: boolean;
+  title: string;
+  content: string;
+} {
+  const cleanRest = (rest || '').trim();
+  if (!cleanRest) return { hasTitle: false, title: '', content: '' };
+
+  // 1. Tiêu đề kết thúc bằng dấu hai chấm (vd: "Phạm vi và đối tượng áp dụng: Áp dụng cho...")
+  const colonMatch = cleanRest.match(/^([^:]{2,55}:)\s*(.*)$/);
+  if (colonMatch) {
+    return { hasTitle: true, title: colonMatch[1], content: colonMatch[2] };
+  }
+
+  // 2. Tiêu đề kết thúc bằng dấu chấm và theo sau là câu nội dung bắt đầu bằng chữ hoa
+  // Vd: "Phạm vi điều chỉnh. Nghị định này quy định..."
+  const dotTitleMatch = cleanRest.match(/^([A-ZÀ-Ỹa-zà-ỹ\s]{2,50}\.)\s+([A-ZÀ-Ỹ].*)$/);
+  if (dotTitleMatch) {
+    const p1 = dotTitleMatch[1];
+    const isSentence = /\b(có hiệu lực|thi hành|kể từ ngày|chịu trách nhiệm|giao cho|tổ chức|thực hiện|quy định này|ban hành)\b/i.test(p1);
+    if (!isSentence) {
+      return { hasTitle: true, title: dotTitleMatch[1], content: dotTitleMatch[2] };
+    }
+  }
+
+  // 3. Tiêu đề đứng độc lập trên 1 dòng (dài <= 55 ký tự, không có dấu chấm ở giữa, không phải là câu văn xuôi)
+  // Vd: "Phạm vi và đối tượng áp dụng", "Mục đích, yêu cầu", "Nguyên tắc thực hiện", "Nhiệm vụ trọng tâm"
+  const isNarrativeSentence = /\b(có hiệu lực|thi hành|kể từ ngày|chịu trách nhiệm|giao cho|căn cứ vào|các cơ quan|được áp dụng|phối hợp với|ban hành kèm|trực tiếp chỉ đạo|đồng chí|UBND|kể từ)\b/i.test(cleanRest);
+  const endsWithPunct = /[\.\?!]$/.test(cleanRest) && cleanRest.length > 25;
+  const standaloneTitle = cleanRest.length > 0 && cleanRest.length <= 55 && !/[\.\?!]\s+\w+/.test(cleanRest) && !isNarrativeSentence && !endsWithPunct && !/^(Quyết định|Thông tư|Nghị định|Luật|Ủy ban|Bộ|Ban|UBND)\b/i.test(cleanRest);
+
+  if (standaloneTitle) {
+    return { hasTitle: true, title: cleanRest, content: '' };
+  }
+
+  return { hasTitle: false, title: '', content: cleanRest };
+}
+
+/**
  * Tiện ích bỏ tô đậm các đầu dòng Bullet nếu người dùng muốn hoàn tác về dạng chữ thường.
  */
 export function unboldBulletHeadings(text: string): { text: string; count: number } {
@@ -281,14 +389,12 @@ export function renderAgencyHeaderHtml(parentAgency: string, agencyName: string)
   const parts = getStandardAgencyHeaderParts(parentAgency, agencyName);
 
   return `
-    <div style="font-size: 12pt; text-transform: uppercase; font-weight: ${parts.line1Bold ? 'bold' : 'normal'}; margin-bottom: 2pt; letter-spacing: -0.1px; font-family: 'Times New Roman', serif;">
+    <div style="font-size: 12pt; text-transform: uppercase; font-weight: ${parts.line1Bold ? 'bold' : 'normal'}; margin-bottom: 2pt; letter-spacing: -0.1px; font-family: 'Times New Roman', serif; line-height: 1.25;">
       ${parts.line1}
     </div>
-    ${parts.hasLine2 ? `
-      <div style="font-size: 12pt; text-transform: uppercase; font-weight: ${parts.line2Bold ? 'bold' : 'normal'}; letter-spacing: -0.2px; font-family: 'Times New Roman', serif;">
-        ${parts.line2}
-      </div>
-    ` : ''}
+    <div style="font-size: 12pt; text-transform: uppercase; font-weight: ${parts.line2Bold ? 'bold' : 'normal'}; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25;">
+      ${parts.hasLine2 ? parts.line2 : '&nbsp;'}
+    </div>
   `;
 }
 
@@ -504,7 +610,8 @@ export function parseAppendicesFromLines(lines: string[]): {
 
 /**
  * Rà soát và loại bỏ triệt để trùng lặp giữa Nơi nhận và Khối chữ ký theo chuẩn Nghị định 30:
- * - Không để các thành phần của chữ ký (Quyền hạn ký, chức vụ, họ tên người ký, ghi chú ký) lẫn vào Nơi nhận
+ * - Tự động ngăn chặn và loại bỏ hoàn toàn các dòng chức danh, thẩm quyền ký (KT. CHỦ TỊCH, PHÓ CHỦ TỊCH, CHỦ TỊCH, TM., BÍ THƯ, GIÁM ĐỐC...)
+ * - Loại bỏ hoàn toàn họ tên riêng của lãnh đạo khỏi phần Nơi nhận
  * - Loại bỏ các mục trùng lặp, chuẩn hóa dấu gạch ngang đầu dòng (-)
  * - Bảo đảm mục "Lưu: VT, ..." luôn được đặt ở dòng cuối cùng của Nơi nhận
  */
@@ -523,13 +630,8 @@ export function cleanAndDeduplicateRecipients(
   const signerTitleUpper = (signerInfo?.signerTitle || '').trim().toUpperCase();
   const signerAuthUpper = (signerInfo?.signerAuthority || signerInfo?.quyenHanKy || '').trim().toUpperCase();
 
-  const signatureKeywords = [
-    /^(?:KT\.\s*CHỦ\s*TỊCH|KT\.|TM\.|T\/M|Q\.|TL\.|TUQ\.)(?:\s+.*)?$/i,
-    /^(?:CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)$/i,
-    /^\(?(?:Ký|Ký tên|Ký số|Ký,?\s*ghi\s*rõ\s*họ\s*tên|Ký,?\s*đóng\s*dấu|Đã ký|Chữ ký số|Chứng thư số)\)?$/i,
-    /^(?:KT\.\s*CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|BÍ\s*THƯ)\s*[\-–—\.]\s*[A-ZÀ-Ỹ\s]+$/i,
-    /^[A-ZÀ-Ỹ\s]{3,35}$/
-  ];
+  // Danh mục đầy đủ các từ khóa chức danh, thẩm quyền ký không bao giờ được xuất hiện trong Nơi nhận
+  const sigKeywordRegex = /^(?:KT\.\s*CHỦ\s*TỊCH|KT\.|TM\.|T\/M|Q\.|TL\.|TUQ\.|T\.UQ|CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
 
   const cleanedItems: string[] = [];
   const seenUpper = new Set<string>();
@@ -544,44 +646,49 @@ export function cleanAndDeduplicateRecipients(
     if (!line) continue;
 
     const lineNoDash = line.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
-    const upper = lineNoDash.toUpperCase();
+    const cleanForCheck = lineNoDash.replace(/[;\.:,\(\)]+$/, '').trim();
+    const upper = cleanForCheck.toUpperCase();
+    if (!cleanForCheck) continue;
 
-    // 1. Kiểm tra nếu là dòng chỉ thị ký hoặc ghi chú ký
-    if (signatureKeywords.slice(0, 4).some(rx => rx.test(lineNoDash))) {
+    // 1. Ngăn chặn và loại bỏ tuyệt đối các dòng chức danh, thẩm quyền ký độc lập
+    if (sigKeywordRegex.test(cleanForCheck)) {
       continue;
     }
 
-    // 2. Kiểm tra nếu trùng họ tên người ký
-    if (signerNameUpper && (upper === signerNameUpper || (lineNoDash.length >= 4 && upper.includes(signerNameUpper)))) {
+    // 2. Loại bỏ các dòng ghi chú chỉ thị ký: (Đã ký), (Ký, ghi rõ họ tên)...
+    if (/^\(?(?:Ký|Ký tên|Ký số|Ký,?\s*ghi\s*rõ\s*họ\s*tên|Ký,?\s*đóng\s*dấu|Đã ký|Chữ ký số|Chứng thư số)\)?$/i.test(cleanForCheck)) {
       continue;
     }
 
-    // 3. Kiểm tra nếu trùng chức vụ người ký đứng một mình
-    if (signerTitleUpper && upper === signerTitleUpper) {
+    // 3. Kiểm tra nếu trùng họ tên người ký đã biết
+    if (signerNameUpper && (upper === signerNameUpper || (cleanForCheck.length >= 4 && upper.includes(signerNameUpper)))) {
       continue;
     }
 
-    // 4. Kiểm tra nếu trùng quyền hạn ký
-    if (signerAuthUpper && upper === signerAuthUpper) {
+    // 4. Kiểm tra nếu trùng chức danh/thẩm quyền ký đã biết
+    if ((signerTitleUpper && upper === signerTitleUpper) || (signerAuthUpper && upper === signerAuthUpper)) {
       continue;
     }
 
-    // 4.1. Nếu dòng chỉ gồm họ tên người ký viết hoa đứng một mình (thường là tên người ký bị dính vào nơi nhận)
-    if (upper.length >= 4 && upper.length <= 35 && !/[;,\.:]/.test(lineNoDash) && !/^(?:NHƯ TRÊN|LƯU|CÁC PHÒNG|BAN|UBND|HĐND|THƯỜNG TRỰC)/i.test(upper)) {
-      if (/^[A-ZÀ-Ỹ\s]+$/.test(upper) && signerNameUpper && (signerNameUpper.includes(upper) || upper.includes(signerNameUpper))) {
-        continue;
-      }
+    // 5. Ngăn chặn và loại bỏ họ tên riêng của lãnh đạo ở phần Nơi nhận:
+    // Tên người gồm 2-5 từ viết hoa chữ cái đầu hoặc viết hoa toàn bộ, không chứa từ chỉ cơ quan/đơn vị/tổ chức
+    const isPersonName = /^[A-ZĐÀ-Ỹ][a-zđà-ỹ]+(?:\s+[A-ZĐÀ-Ỹ][a-zđà-ỹ]+){1,4}$/.test(cleanForCheck) ||
+      (/^[A-ZĐÀ-Ỹ\s]{3,35}$/.test(upper) && upper.split(/\s+/).length >= 2 && upper.split(/\s+/).length <= 5);
+    const hasRecipientOrgKeywords = /^(?:Như|Lưu|Phòng|Ban|Sở|Bộ|UBND|HĐND|Ủy\s*ban|Thường\s*trực|Chi\s*bộ|Đảng\s*ủy|Đảng\s*bộ|Hội\s*đồng|Công\s*an|Quân\s*sự|Y\s*tế|Đoàn|Hội|Tổ|Đồng\s*chí|Đ\/c|Các)\b/i.test(cleanForCheck);
+
+    if (isPersonName && !hasRecipientOrgKeywords) {
+      continue; // Tuyệt đối loại bỏ họ tên riêng của lãnh đạo khỏi nơi nhận
     }
 
-    // 5. Tách dòng "Lưu: ..." để đặt ở cuối
-    if (/^Lưu\s*:\s*/i.test(lineNoDash)) {
-      luuItem = `- ${lineNoDash.replace(/^Lưu\s*:\s*/i, 'Lưu: ')}`;
+    // 6. Tách dòng "Lưu: ..." để bảo đảm luôn đặt ở dòng cuối cùng của Nơi nhận
+    if (/^Lưu\s*:\s*/i.test(cleanForCheck)) {
+      luuItem = `- ${cleanForCheck.replace(/^Lưu\s*:\s*/i, 'Lưu: ')}`;
       continue;
     }
 
-    // 6. Định dạng chuẩn với dấu "-" ở đầu dòng và chuẩn hóa kết thúc bằng dấu chấm phẩy (;)
-    const formatted = `- ${lineNoDash}`;
-    const dedupeKey = lineNoDash.replace(/[;\.]+$/, '').toUpperCase();
+    // 7. Định dạng chuẩn với dấu "-" ở đầu dòng và chuẩn hóa dấu chấm phẩy
+    const formatted = `- ${cleanForCheck}`;
+    const dedupeKey = cleanForCheck.replace(/[;\.]+$/, '').toUpperCase();
 
     if (!seenUpper.has(dedupeKey)) {
       seenUpper.add(dedupeKey);
@@ -674,7 +781,7 @@ export function parseDocumentStructure(
   let locationDate = '';
   let docTypeName = docTypeNameHint ? docTypeNameHint.toUpperCase() : '';
   let docTitle = '';
-  const recipientsHeaderLines: string[] = [];
+  let recipientsHeaderLines: string[] = [];
   const legalBases: string[] = [];
   const bodyParagraphs: string[] = [];
   const recipients: string[] = [];
@@ -695,12 +802,16 @@ export function parseDocumentStructure(
       remainingLines.push(line);
       continue;
     }
+    // Tự động loại bỏ triệt để các câu cảnh báo như "Xóa bỏ tiêu đề quốc ngữ thừa này"
+    if (isWarningOrInstructionLine(line)) {
+      continue;
+    }
     const strippedLine = line
       .replace(ALL_NATIONAL_REGEX, '')
       .replace(DECORATIVE_LINE_REGEX, '')
       .trim();
 
-    if (strippedLine && !DECORATIVE_LINE_REGEX.test(strippedLine)) {
+    if (strippedLine && !DECORATIVE_LINE_REGEX.test(strippedLine) && !isWarningOrInstructionLine(strippedLine)) {
       remainingLines.push(strippedLine);
     }
   }
@@ -759,9 +870,18 @@ export function parseDocumentStructure(
   }
 
   // 4. Tìm Trích yếu nội dung của Công văn: V/v ... hoặc Về việc ...
-  const subjectIndex = remainingLines.findIndex((l, idx) => idx < 12 && /^V\/v\s+/i.test(l));
+  const subjectIndex = remainingLines.findIndex((l, idx) => idx < 12 && /^(?:V\/v|Về việc|Trích yếu:?\s*V\/v|Trích yếu:?\s*Về việc)\s+/i.test(l));
   if (subjectIndex !== -1) {
-    docSubjectShort = remainingLines[subjectIndex].replace(ALL_NATIONAL_REGEX, '').trim();
+    let rawSub = remainingLines[subjectIndex].replace(ALL_NATIONAL_REGEX, '').trim();
+    if (/^Trích yếu:?\s*/i.test(rawSub)) {
+      rawSub = rawSub.replace(/^Trích yếu:?\s*/i, '');
+    }
+    if (/^Về việc\s+/i.test(rawSub)) {
+      rawSub = rawSub.replace(/^Về việc\s+/i, 'V/v ');
+    } else if (!/^V\/v\s+/i.test(rawSub)) {
+      rawSub = `V/v ${rawSub.replace(/^V\/v:?\s*/i, '')}`;
+    }
+    docSubjectShort = rawSub;
     remainingLines.splice(subjectIndex, 1);
     if (!docTypeName) {
       docTypeName = 'CÔNG VĂN';
@@ -850,54 +970,307 @@ export function parseDocumentStructure(
     parentAgency = '';
   }
 
-  // 5. Tìm Tên loại văn bản & Trích yếu tiêu đề (BÁO CÁO, QUYẾT ĐỊNH, KẾ HOẠCH, THÔNG BÁO...)
-  // 5.1. ƯU TIÊN ĐẶC BIỆT: Nhận dạng BÁO CÁO cực kỳ chuẩn xác (hỗ trợ cả dòng ghép lẫn nhiều dòng)
-  let foundReportIndex = -1;
-  const reportPrefixRegex = /^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s*(?:NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  // 5. NÂNG CẤP KHẢ NĂNG NHẬN DIỆN 100% CHÍNH XÁC 29 LOẠI VĂN BẢN HÀNH CHÍNH (NĐ 30) VÀ 15 LOẠI VĂN BẢN ĐẢNG (HD 05)
+  // Tuân thủ 100% Nghị định 30/2020/NĐ-CP và Hướng dẫn 05-HD/VPTW:
+  // - Tên loại văn bản: In hoa toàn bộ, in đậm, căn giữa (cỡ 14-15pt)
+  // - Trích yếu văn bản: In thường, in đậm, căn giữa (cỡ 13-14pt), chữ cái đầu viết hoa, đặt ngay dưới tên loại
+  // - Đối với Công văn: không có tên loại ở giữa; trích yếu được đặt ở Cột trái (Ô 5b), bắt đầu bằng "V/v", chữ thường đứng không đậm
 
-  for (let idx = 0; idx < Math.min(12, remainingLines.length); idx++) {
+  let foundTypeIndex = -1;
+  let detectedType = '';
+  let inlineTitle = '';
+
+  // Danh mục đầy đủ 29 loại hành chính + 15 loại Đảng
+  const reportPattern = /^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s*(?:NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ|ĐÁNH\s+GIÁ|KẾT\s+QUẢ|TÌNH\s+HÌNH|CÔNG\s+TÁC|TỰ\s+KIỂM\s+TRA|RÀ\s+SOÁT))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const decisionPattern = /^(?:QUYẾT\s+ĐỊNH|Quyết\s+định)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const planPattern = /^(?:KẾ\s+HOẠCH|Kế\s+hoạch)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const submissionPattern = /^(?:TỜ\s+TRÌNH|Tờ\s+trình)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const noticePattern = /^(?:THÔNG\s+BÁO|Thông\s+báo)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const resolutionPattern = /^(?:NGHỊ\s+QUYẾT|Nghị\s+quyết)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const directivePattern = /^(?:CHỈ\s+THỊ|Chỉ\s+thị)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const conclusionPattern = /^(?:KẾT\s+LUẬN|Kết\s+luận)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const regulationPattern = /^(?:QUY\s+ĐỊNH|Quy\s+định)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const statutePattern = /^(?:QUY\s+CHẾ|Quy\s+chế)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const guidelinePattern = /^(?:HƯỚNG\s+DẪN|Hướng\s+dẫn)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const programPattern = /^(?:CHƯƠNG\s+TRÌNH|Chương\s+trình)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const schemePattern = /^(?:PHƯƠNG\s+ÁN|Phương\s+án)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const projectPattern = /^(?:ĐỀ\s+ÁN|Đề\s+án|DỰ\s+ÁN|Dự\s+án)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const minutesPattern = /^(?:BIÊN\s+BẢN|Biên\s+bản)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const contractPattern = /^(?:HỢP\s+ĐỒNG|Hợp\s+đồng)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const invitationPattern = /^(?:GIẤY\s+MỜI|Giấy\s+mời)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const introPattern = /^(?:GIẤY\s+GIỚI\s+THIỆU|Giấy\s+giới\s+thiệu)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const authLetterPattern = /^(?:GIẤY\s+ỦY\s+QUYỀN|Giấy\s+ủy\s+quyền)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const leavePattern = /^(?:GIẤY\s+NGHỈ\s+PHÉP|Giấy\s+nghỉ\s+phép)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const telegramPattern = /^(?:CÔNG\s+ĐIỆN|Công\s+điện)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const slipPattern = /^(?:PHIẾU\s+GỬI|Phiếu\s+gửi|PHIẾU\s+CHUYỂN|Phiếu\s+chuyển|PHIẾU\s+BÁO|Phiếu\s+báo)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const memoPattern = /^(?:BẢN\s+GHI\s+NHỚ|Bản\s+ghi\s+nhớ|BẢN\s+THỎA\s+THUẬN|Bản\s+thỏa\s+thuận)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+  const communiquePattern = /^(?:THÔNG\s+CÁO|Thông\s+cáo|THƯ\s+CÔNG|Thư\s+công)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+
+  const generalTypePattern = /^(QUYẾT ĐỊNH|BÁO CÁO|KẾ HOẠCH|TỜ TRÌNH|THÔNG BÁO|NGHỊ QUYẾT|CHỈ THỊ|KẾT LUẬN|QUY CHẾ|QUY ĐỊNH|HƯỚNG DẪN|CHƯƠNG TRÌNH|PHƯƠNG ÁN|ĐỀ ÁN|DỰ ÁN|BIÊN BẢN|HỢP ĐỒNG|GIẤY MỜI|GIẤY GIỚI THIỆU|GIẤY ỦY QUYỀN|GIẤY NGHỈ PHÉP|BẢN GHI NHỚ|BẢN THỎA THUẬN|PHIẾU GỬI|PHIẾU CHUYỂN|PHIẾU BÁO|CÔNG ĐIỆN|THƯ CÔNG|THÔNG CÁO)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
+
+  // Quét 15 dòng đầu để tìm tên loại văn bản
+  for (let idx = 0; idx < Math.min(15, remainingLines.length); idx++) {
     const l = remainingLines[idx].trim();
-    if (/^Kính gửi:|^Căn cứ|^Thực hiện|^Xét/i.test(l)) break;
-    if (reportPrefixRegex.test(l)) {
-      foundReportIndex = idx;
+    if (/^Kính\s*(?:gửi|trình):|^Căn\s+cứ|^Thực\s+hiện\s+ý\s+kiến|^Xét\s+đề\s+nghị|^Điều\s+\d+/i.test(l)) break;
+
+    // A. Báo cáo
+    const repM = l.match(reportPattern);
+    if (repM) {
+      foundTypeIndex = idx;
+      detectedType = 'BÁO CÁO';
+      inlineTitle = repM[1] || '';
+      break;
+    }
+
+    // B. Quyết định
+    const decM = l.match(decisionPattern);
+    if (decM) {
+      foundTypeIndex = idx;
+      detectedType = 'QUYẾT ĐỊNH';
+      inlineTitle = decM[1] || '';
+      break;
+    }
+
+    // C. Kế hoạch
+    const planM = l.match(planPattern);
+    if (planM) {
+      foundTypeIndex = idx;
+      detectedType = 'KẾ HOẠCH';
+      inlineTitle = planM[1] || '';
+      break;
+    }
+
+    // D. Tờ trình
+    const subM = l.match(submissionPattern);
+    if (subM) {
+      foundTypeIndex = idx;
+      detectedType = 'TỜ TRÌNH';
+      inlineTitle = subM[1] || '';
+      break;
+    }
+
+    // E. Thông báo
+    const notM = l.match(noticePattern);
+    if (notM) {
+      foundTypeIndex = idx;
+      detectedType = 'THÔNG BÁO';
+      inlineTitle = notM[1] || '';
+      break;
+    }
+
+    // F. Nghị quyết
+    const resM = l.match(resolutionPattern);
+    if (resM) {
+      foundTypeIndex = idx;
+      detectedType = 'NGHỊ QUYẾT';
+      inlineTitle = resM[1] || '';
+      break;
+    }
+
+    // G. Kết luận (Văn bản Đảng HD 05)
+    const conM = l.match(conclusionPattern);
+    if (conM) {
+      foundTypeIndex = idx;
+      detectedType = 'KẾT LUẬN';
+      inlineTitle = conM[1] || '';
+      break;
+    }
+
+    // H. Chỉ thị
+    const dirM = l.match(directivePattern);
+    if (dirM) {
+      foundTypeIndex = idx;
+      detectedType = 'CHỈ THỊ';
+      inlineTitle = dirM[1] || '';
+      break;
+    }
+
+    // I. Quy định
+    const regM = l.match(regulationPattern);
+    if (regM) {
+      foundTypeIndex = idx;
+      detectedType = 'QUY ĐỊNH';
+      inlineTitle = regM[1] || '';
+      break;
+    }
+
+    // J. Quy chế
+    const staM = l.match(statutePattern);
+    if (staM) {
+      foundTypeIndex = idx;
+      detectedType = 'QUY CHẾ';
+      inlineTitle = staM[1] || '';
+      break;
+    }
+
+    // K. Hướng dẫn
+    const guiM = l.match(guidelinePattern);
+    if (guiM) {
+      foundTypeIndex = idx;
+      detectedType = 'HƯỚNG DẪN';
+      inlineTitle = guiM[1] || '';
+      break;
+    }
+
+    // L. Chương trình
+    const proM = l.match(programPattern);
+    if (proM) {
+      foundTypeIndex = idx;
+      detectedType = 'CHƯƠNG TRÌNH';
+      inlineTitle = proM[1] || '';
+      break;
+    }
+
+    // M. Phương án
+    const schM = l.match(schemePattern);
+    if (schM) {
+      foundTypeIndex = idx;
+      detectedType = 'PHƯƠNG ÁN';
+      inlineTitle = schM[1] || '';
+      break;
+    }
+
+    // N. Đề án / Dự án
+    const prjM = l.match(projectPattern);
+    if (prjM) {
+      foundTypeIndex = idx;
+      detectedType = /^DỰ\s+ÁN/i.test(l) ? 'DỰ ÁN' : 'ĐỀ ÁN';
+      inlineTitle = prjM[1] || '';
+      break;
+    }
+
+    // O. Biên bản
+    const minM = l.match(minutesPattern);
+    if (minM) {
+      foundTypeIndex = idx;
+      detectedType = 'BIÊN BẢN';
+      inlineTitle = minM[1] || '';
+      break;
+    }
+
+    // P. Giấy mời
+    const invM = l.match(invitationPattern);
+    if (invM) {
+      foundTypeIndex = idx;
+      detectedType = 'GIẤY MỜI';
+      inlineTitle = invM[1] || '';
+      break;
+    }
+
+    // Q. Giấy giới thiệu
+    const intM = l.match(introPattern);
+    if (intM) {
+      foundTypeIndex = idx;
+      detectedType = 'GIẤY GIỚI THIỆU';
+      inlineTitle = intM[1] || '';
+      break;
+    }
+
+    // R. Giấy ủy quyền
+    const autM = l.match(authLetterPattern);
+    if (autM) {
+      foundTypeIndex = idx;
+      detectedType = 'GIẤY ỦY QUYỀN';
+      inlineTitle = autM[1] || '';
+      break;
+    }
+
+    // S. Giấy nghỉ phép
+    const leaM = l.match(leavePattern);
+    if (leaM) {
+      foundTypeIndex = idx;
+      detectedType = 'GIẤY NGHỈ PHÉP';
+      inlineTitle = leaM[1] || '';
+      break;
+    }
+
+    // T. Công điện
+    const telM = l.match(telegramPattern);
+    if (telM) {
+      foundTypeIndex = idx;
+      detectedType = 'CÔNG ĐIỆN';
+      inlineTitle = telM[1] || '';
+      break;
+    }
+
+    // U. Phiếu gửi / chuyển / báo
+    const sliM = l.match(slipPattern);
+    if (sliM) {
+      foundTypeIndex = idx;
+      detectedType = /^PHIẾU\s+CHUYỂN/i.test(l) ? 'PHIẾU CHUYỂN' : /^PHIẾU\s+BÁO/i.test(l) ? 'PHIẾU BÁO' : 'PHIẾU GỬI';
+      inlineTitle = sliM[1] || '';
+      break;
+    }
+
+    // V. Bản ghi nhớ / thỏa thuận
+    const memM = l.match(memoPattern);
+    if (memM) {
+      foundTypeIndex = idx;
+      detectedType = /^BẢN\s+THỎA\s+THUẬN/i.test(l) ? 'BẢN THỎA THUẬN' : 'BẢN GHI NHỚ';
+      inlineTitle = memM[1] || '';
+      break;
+    }
+
+    // W. Hợp đồng
+    const conM2 = l.match(contractPattern);
+    if (conM2) {
+      foundTypeIndex = idx;
+      detectedType = 'HỢP ĐỒNG';
+      inlineTitle = conM2[1] || '';
+      break;
+    }
+
+    // X. Thông cáo / Thư công
+    const comM = l.match(communiquePattern);
+    if (comM) {
+      foundTypeIndex = idx;
+      detectedType = /^THƯ\s+CÔNG/i.test(l) ? 'THƯ CÔNG' : 'THÔNG CÁO';
+      inlineTitle = comM[1] || '';
+      break;
+    }
+
+    // Y. Quét tổng quát 29 loại NĐ 30 & 15 loại Đảng
+    const genM = l.match(generalTypePattern);
+    if (genM) {
+      foundTypeIndex = idx;
+      detectedType = genM[1].toUpperCase();
+      inlineTitle = genM[2] || '';
       break;
     }
   }
 
-  // Nếu người dùng chọn loại Báo cáo nhưng văn bản không có dòng "BÁO CÁO" riêng, quét tiêu đề báo cáo
-  const isReportHint = Boolean(docTypeNameHint && /Báo\s*cáo/i.test(docTypeNameHint));
-  if (foundReportIndex === -1 && isReportHint) {
+  // Trường hợp không có dòng tên loại rõ ràng nhưng người dùng chọn loại từ trước
+  if (foundTypeIndex === -1 && docTypeNameHint && docTypeNameHint !== 'CÔNG VĂN') {
+    const hintUpper = docTypeNameHint.toUpperCase();
     for (let idx = 0; idx < Math.min(8, remainingLines.length); idx++) {
       const l = remainingLines[idx].trim();
-      if (/^Kính gửi:|^Căn cứ|^Thực hiện|^Xét/i.test(l)) break;
-      if (/^(?:Về việc|Về|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Tiến độ|Công tác|Thực hiện|Kế hoạch)\b/i.test(l)) {
-        foundReportIndex = idx;
+      if (/^Kính\s+gửi:|^Kính\s+trình:|^Căn\s+cứ|^Thực\s+hiện|^Xét|^Điều\s+\d+/i.test(l)) break;
+      if (/^(?:Về việc|Về|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Tiến độ|Công tác|Thực hiện|Kế hoạch|Quy định|Ban hành)\b/i.test(l)) {
+        foundTypeIndex = idx;
+        detectedType = hintUpper;
+        inlineTitle = l;
         break;
       }
     }
   }
 
-  if (foundReportIndex !== -1) {
-    const reportLine = remainingLines[foundReportIndex].trim();
-    const repMatch = reportLine.match(reportPrefixRegex);
-    docTypeName = 'BÁO CÁO';
-    remainingLines.splice(foundReportIndex, 1);
+  if (foundTypeIndex !== -1 && detectedType) {
+    docTypeName = detectedType;
+    remainingLines.splice(foundTypeIndex, 1);
 
-    // Phần trích yếu trên cùng dòng nếu có (e.g. BÁO CÁO Kết quả thực hiện...)
-    if (repMatch && repMatch[1] && repMatch[1].trim()) {
-      docTitle = repMatch[1].trim();
-    } else if (!repMatch) {
-      docTitle = reportLine;
+    let collectedTitleParts: string[] = [];
+    if (inlineTitle && inlineTitle.trim()) {
+      collectedTitleParts.push(inlineTitle.trim());
     }
 
-    // Đọc tiếp các dòng tiếp theo là tiêu đề trích yếu của báo cáo (hỗ trợ tiêu đề nhiều dòng)
-    while (foundReportIndex < remainingLines.length) {
-      const nextL = remainingLines[foundReportIndex].trim();
-      if (!nextL || /^Kính gửi:|^Căn cứ|^Thực hiện|^Xét|^I\.|^1\.|^Phần\s+|^Điều\s+\d+/i.test(nextL)) {
+    // Đọc tiếp các dòng tiếp theo là trích yếu tiêu đề nhiều dòng
+    while (foundTypeIndex < remainingLines.length) {
+      const nextL = remainingLines[foundTypeIndex].trim();
+      if (!nextL || /^Kính\s+gửi:|^Kính\s+trình:|^Căn\s+cứ|^Thực\s+hiện\s+chỉ\s+đạo|^Xét\s+đề\s+nghị|^I\.|^1\.|^Phần\s+|^Điều\s+\d+/i.test(nextL)) {
         break;
       }
 
-      // TUYỆT ĐỐI NGĂN CHẶN: Dòng tiếp theo không được là tên cơ quan ban hành
+      // Không đọc dòng tên cơ quan ban hành vào tiêu đề
       const agencyInfo = extractCleanAgencyAndRemainingText(nextL);
       const isAgencyLine = (Boolean(agencyName) && nextL.toUpperCase().includes(agencyName.toUpperCase())) ||
         (Boolean(settings.agencyName) && nextL.toUpperCase().includes(settings.agencyName.toUpperCase())) ||
@@ -907,67 +1280,46 @@ export function parseDocumentStructure(
         if (!agencyName) {
           agencyName = agencyInfo.cleanAgency || nextL.trim();
         }
-        // Xóa ngay dòng tên cơ quan này khỏi remainingLines để tuyệt đối không bị lọt xuống sau tiêu đề báo cáo
-        remainingLines.splice(foundReportIndex, 1);
+        remainingLines.splice(foundTypeIndex, 1);
         break;
       }
 
-      // Các tiền tố mở đầu hoặc từ nối tiếp thường gặp trong tiêu đề báo cáo nhiều dòng
-      const isStartKeyword = /^(?:Về việc|Về|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Tiến độ|Thực hiện|Kế hoạch|Nhiệm vụ|Giải trình|Kiểm tra|Rà soát|Công tác|Tự kiểm tra|Tổng hợp|Đề xuất|Phục vụ|Đột xuất|Triển khai)\b/i.test(nextL);
-      const isContinuationWord = /^(?:và|về|giai đoạn|năm|quý|tháng|trên địa bàn|tại|của|thuộc|theo|phục vụ|trong công tác|thực hiện|triển khai|đối với|nhằm)\b/i.test(nextL);
-      const isGeneralTitleContinuation = Boolean(docTitle) && nextL.length < 180 && !nextL.endsWith('.') && !nextL.startsWith('-') && !/^\d+\./.test(nextL);
+      // Các từ khóa bắt đầu hoặc nối tiếp tiêu đề văn bản nhiều dòng
+      const isStartKeyword = /^(?:Về việc|Về|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Tiến độ|Thực hiện|Kế hoạch|Nhiệm vụ|Giải trình|Kiểm tra|Rà soát|Công tác|Tự kiểm tra|Tổng hợp|Đề xuất|Phục vụ|Đột xuất|Triển khai|Ban hành|Phê duyệt|Quy định|Kiện toàn|Thành lập|Tổ chức)\b/i.test(nextL);
+      const isContinuationWord = /^(?:và|về|giai đoạn|năm|quý|tháng|trên địa bàn|tại|của|thuộc|theo|phục vụ|trong công tác|thực hiện|triển khai|đối với|nhằm|phấn đấu|đến năm)\b/i.test(nextL);
+      const isShortTitleLine = collectedTitleParts.length > 0 && nextL.length < 160 && !nextL.endsWith('.') && !nextL.startsWith('-') && !/^\d+\./.test(nextL);
 
-      if (isStartKeyword || isContinuationWord || isGeneralTitleContinuation) {
-        if (!docTitle) {
-          docTitle = nextL;
-        } else {
-          docTitle = `${docTitle} ${nextL}`;
-        }
-        remainingLines.splice(foundReportIndex, 1);
+      if (isStartKeyword || isContinuationWord || isShortTitleLine) {
+        collectedTitleParts.push(nextL);
+        remainingLines.splice(foundTypeIndex, 1);
       } else {
         break;
       }
     }
 
-    // Làm sạch tiêu đề báo cáo: bỏ quốc hiệu, dấu hai chấm, dấu chấm ở cuối nếu có
-    if (docTitle) {
-      docTitle = docTitle.replace(ALL_NATIONAL_REGEX, '').replace(/[\:\.\;]+$/, '').trim();
-    }
-
-    cacMucDaChinh.push('Đã nhận diện chuẩn xác Tên loại và Tiêu đề Báo cáo theo Nghị định 30');
+    const rawCollected = collectedTitleParts.join(' ').trim();
+    docTitle = formatDecree30TitleCase(rawCollected);
+    cacMucDaChinh.push(`Đã nhận diện chuẩn xác Tên loại [${docTypeName}] và Tiêu đề theo Nghị định 30`);
   } else {
-    // 5.2. Các loại văn bản khác (QUYẾT ĐỊNH, TỜ TRÌNH, NGHỊ QUYẾT, THÔNG BÁO, KẾ HOẠCH...)
-    const otherTypeRegex = /^(QUYẾT ĐỊNH|TỜ TRÌNH|NGHỊ QUYẾT|THÔNG BÁO|KẾ HOẠCH|GIẤY MỜI|GIẤY GIỚI THIỆU|BIÊN BẢN|HỢP ĐỒNG|CHỈ THỊ|QUY CHẾ|QUY ĐỊNH|HƯỚNG DẪN|CHƯƠNG TRÌNH|PHƯƠNG ÁN|ĐỀ ÁN|DỰ ÁN|BẢN GHI NHỚ|GIẤY ỦY QUYỀN|PHIẾU CHUYỂN|PHIẾU BÁO|THƯ CÔNG|THÔNG CÁO)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
-    const typeIndex = remainingLines.findIndex((l, idx) => idx < 12 && otherTypeRegex.test(l.trim()));
-    if (typeIndex !== -1) {
-      const line = remainingLines[typeIndex].trim();
-      const m = line.match(otherTypeRegex);
-      if (m) {
-        docTypeName = m[1].toUpperCase();
-        if (m[2] && m[2].trim()) {
-          docTitle = m[2].replace(ALL_NATIONAL_REGEX, '').trim();
-        }
-      } else {
-        docTypeName = line.toUpperCase();
-      }
-      remainingLines.splice(typeIndex, 1);
-
-      // Dòng tiếp theo ngay dưới Tên loại nếu có 'Về việc...' hoặc 'Ban hành...' là Trích yếu docTitle
-      if (!docTitle && typeIndex < remainingLines.length) {
-        const nextL = remainingLines[typeIndex].trim();
-        const nextAgencyCheck = extractCleanAgencyAndRemainingText(nextL);
-        const isAgencyLine = (Boolean(agencyName) && nextL.toUpperCase().includes(agencyName.toUpperCase())) ||
-          nextAgencyCheck.cleanAgency !== '';
-        if (isAgencyLine) {
-          if (!agencyName) {
-            agencyName = nextAgencyCheck.cleanAgency || nextL.trim();
-          }
-          remainingLines.splice(typeIndex, 1);
-        } else if (/^(?:Về việc|Về|Ban hành|Phê duyệt|Quy định|Kế hoạch|Kết quả|Thực hiện)/i.test(nextL) || (nextL.length < 150 && !nextL.endsWith('.') && !nextL.startsWith('-') && !/^Kính gửi|^Căn cứ/i.test(nextL))) {
-          docTitle = nextL.replace(ALL_NATIONAL_REGEX, '').trim();
-          remainingLines.splice(typeIndex, 1);
+    // Nếu không tìm thấy tên loại văn bản nào khác nhưng có V/v hoặc Về việc -> Đây là CÔNG VĂN
+    if (docSubjectShort || !docTypeName) {
+      docTypeName = 'CÔNG VĂN';
+      if (!docSubjectShort) {
+        // Tìm dòng V/v hoặc Về việc còn sót lại
+        const vvIdx = remainingLines.findIndex(l => /^(?:V\/v|Về việc)\s+/i.test(l));
+        if (vvIdx !== -1) {
+          docSubjectShort = remainingLines[vvIdx].trim();
+          remainingLines.splice(vvIdx, 1);
         }
       }
+      if (docSubjectShort) {
+        if (/^Về việc\s+/i.test(docSubjectShort)) {
+          docSubjectShort = docSubjectShort.replace(/^Về việc\s+/i, 'V/v ');
+        } else if (!/^V\/v\s+/i.test(docSubjectShort)) {
+          docSubjectShort = `V/v ${docSubjectShort.replace(/^V\/v:?\s*/i, '')}`;
+        }
+      }
+      docTitle = ''; // Công văn không có tiêu đề ở giữa trang, trích yếu đặt ở Ô 5b cột trái
     }
   }
 
@@ -1004,29 +1356,104 @@ export function parseDocumentStructure(
     docTypeName = docSubjectShort ? 'CÔNG VĂN' : (docTypeNameHint ? docTypeNameHint.toUpperCase() : 'CÔNG VĂN');
   }
 
-  // 7. Tìm và bóc tách Kính gửi (hỗ trợ nhiều dòng với \n)
-  const kgIndex = remainingLines.findIndex(l => /^Kính gửi:?/i.test(l));
+  // 7. Tìm và bóc tách Kính gửi 100% chính xác (kết thúc bằng dấu ".", không bao giờ trùng lặp vào nội dung chính)
+  const kgIndex = remainingLines.findIndex(l => /^Kính\s*(?:gửi|trình):?/i.test(l));
+  const rawKinhGuiFoundLines: string[] = [];
   if (kgIndex !== -1) {
     const firstKg = remainingLines[kgIndex];
     remainingLines.splice(kgIndex, 1);
+    rawKinhGuiFoundLines.push(firstKg);
 
-    const strippedFirst = firstKg.replace(/^Kính gửi:?\s*/i, '').trim();
+    const strippedFirst = firstKg.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
     if (strippedFirst) {
-      const lineWithDash = strippedFirst.startsWith('-') ? strippedFirst : `- ${strippedFirst.replace(/^[-\u2013\u2014]\s*/, '')}`;
-      recipientsHeaderLines.push(lineWithDash);
+      // Có thể có nhiều nơi nhận phân tách bởi dấu chấm phẩy hoặc gạch đầu dòng trên cùng một dòng
+      if (strippedFirst.includes(';') && (strippedFirst.startsWith('-') || strippedFirst.includes('- '))) {
+        const parts = strippedFirst.split(';').map(p => p.trim()).filter(Boolean);
+        for (const p of parts) {
+          const cleanP = p.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+          if (cleanP) {
+            recipientsHeaderLines.push(`- ${cleanP}`);
+          }
+        }
+      } else {
+        const cleanSingle = strippedFirst.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        if (cleanSingle) {
+          recipientsHeaderLines.push(`- ${cleanSingle}`);
+        }
+      }
     }
 
-    // Lấy tiếp các dòng người nhận bên dưới (mặc định định dạng có dấu - ở đầu)
+    // Đọc tiếp các dòng người nhận bên dưới cho đến khi gặp dòng kết thúc bằng dấu "." hoặc gặp từ khóa nội dung văn bản
     while (kgIndex < remainingLines.length) {
-      const nextL = remainingLines[kgIndex];
-      if (/^[-\u2013\u2014]\s+/.test(nextL) || (nextL.endsWith(';') && !nextL.startsWith('Căn cứ') && !nextL.startsWith('Điều'))) {
-        const clean = nextL.trim();
-        const lineWithDash = clean.startsWith('-') ? clean : `- ${clean.replace(/^[-\u2013\u2014]\s*/, '')}`;
-        recipientsHeaderLines.push(lineWithDash);
+      const nextL = remainingLines[kgIndex].trim();
+      if (!nextL) {
         remainingLines.splice(kgIndex, 1);
+        continue;
+      }
+
+      // Nếu gặp ranh giới chuyển sang thân văn bản hoặc gặp từ khóa phần Chữ ký / Nơi nhận
+      if (/^(?:Căn\s+cứ|Thực\s+hiện|Nhằm|Theo\s+đề\s+nghị|Xét\s+đề\s+nghị|Để\s+|I\.|1\.|Điều\s+\d+|QUYẾT\s+ĐỊNH:|Nhân\s+dịp|Sau\s+khi|Hưởng\s+ứng|Thời\s+gian:|Địa\s+điểm:|KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|Nơi\s*nhận:?)/i.test(nextL)) {
+        break;
+      }
+
+      // Kiểm tra nếu dòng mô tả chức danh thẩm quyền ký độc lập: Tuyệt đối không đưa vào Kính gửi
+      const isSignerKeyword = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i.test(nextL.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim());
+      if (isSignerKeyword) {
+        break;
+      }
+
+      const hasBulletOrSemi = /^[-\u2013\u2014\*\+•●○■◆]\s+/.test(nextL) || nextL.endsWith(';') || nextL.endsWith('.');
+      const isRecipientLine = hasBulletOrSemi || (recipientsHeaderLines.length > 0 && nextL.length < 100 && !nextL.includes('quyết định') && !nextL.includes('yêu cầu các'));
+
+      if (isRecipientLine) {
+        rawKinhGuiFoundLines.push(nextL);
+        const clean = nextL.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        if (clean) {
+          recipientsHeaderLines.push(`- ${clean}`);
+        }
+        remainingLines.splice(kgIndex, 1);
+
+        // Nếu dòng này kết thúc bằng dấu chấm (.), đánh dấu kết thúc khối Kính gửi
+        if (nextL.endsWith('.')) {
+          break;
+        }
       } else {
         break;
       }
+    }
+  }
+
+  // Lọc sạch triệt để: Loại bỏ hoàn toàn các dòng KT. CHỦ TỊCH, PHÓ CHỦ TỊCH, CHỦ TỊCH, họ tên lãnh đạo khỏi Kính gửi
+  const sigKeywordFilterRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
+  recipientsHeaderLines = recipientsHeaderLines.filter(line => {
+    const clean = line.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+    if (sigKeywordFilterRegex.test(clean)) {
+      if (!signerAuthority && /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH)/i.test(clean)) {
+        signerAuthority = clean.toUpperCase();
+      } else if (!signerTitle && /^(?:CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG)/i.test(clean)) {
+        signerTitle = clean.toUpperCase();
+      }
+      return false;
+    }
+    // Kiểm tra nếu là tên riêng của lãnh đạo (không có từ chỉ cơ quan/đơn vị)
+    if (/^[A-ZÀ-Ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){1,4}$/.test(clean) && !/^(?:Đồng chí|Kính gửi|Các|Toàn thể|Ban|Phòng|Sở|Ủy ban)/i.test(clean)) {
+      if (!signerName) signerName = clean;
+      return false;
+    }
+    return true;
+  });
+
+  // Chuẩn hóa dấu kết thúc của phần Kính gửi:
+  // - Nếu 1 nơi nhận: kết thúc bằng dấu "."
+  // - Nếu nhiều nơi nhận: các dòng trước kết thúc bằng ";", dòng cuối cùng kết thúc bằng "."
+  if (recipientsHeaderLines.length === 1) {
+    const single = recipientsHeaderLines[0].replace(/[;\.]+$/, '').trim();
+    recipientsHeaderLines[0] = `${single}.`;
+  } else if (recipientsHeaderLines.length > 1) {
+    for (let idx = 0; idx < recipientsHeaderLines.length; idx++) {
+      const clean = recipientsHeaderLines[idx].replace(/[;\.]+$/, '').trim();
+      const isLast = idx === recipientsHeaderLines.length - 1;
+      recipientsHeaderLines[idx] = `${clean}${isLast ? '.' : ';'}`;
     }
   }
 
@@ -1045,39 +1472,48 @@ export function parseDocumentStructure(
     const linesAfterNoiNhan = remainingLines.splice(noiNhanIndex);
     let inSigner = false;
 
+    const sigKeywordRegex = /^(?:KT\.\s*CHỦ\s*TỊCH|KT\.|TM\.|T\/M|Q\.|TL\.|TUQ\.|T\.UQ|CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
+
     for (const l of linesAfterNoiNhan) {
       if (/^Nơi nhận:?/i.test(l)) {
         const stripped = l.replace(/^Nơi nhận:?\s*/i, '').trim();
         if (stripped) {
-          const lineWithDash = stripped.startsWith('-') ? stripped : `- ${stripped.replace(/^[-\u2013\u2014]\s*/, '')}`;
-          recipients.push(lineWithDash);
+          const strippedClean = stripped.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+          if (sigKeywordRegex.test(strippedClean)) {
+            inSigner = true;
+          } else {
+            recipients.push(`- ${strippedClean}`);
+          }
         }
         continue;
       }
 
-      // Nhận diện phần ký (TM., T/M, KT., Q., KT. CHỦ TỊCH, CHỦ TỊCH, BÍ THƯ...)
-      if (/^(KT\.\s*CHỦ\s*TỊCH|T\/M|TM\.|KT\.|Q\.|CHỦ TỊCH|BÍ THƯ|PHÓ BÍ THƯ|PHÓ CHỦ TỊCH|QUYỀN CHỦ TỊCH|GIÁM ĐỐC|TRƯỞNG PHÒNG|HIỆU TRƯỞNG)/i.test(l)) {
+      const cleanL = l.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+      if (!cleanL) continue;
+
+      // Nhận diện dòng chức danh, quyền hạn ký hoặc họ tên riêng của lãnh đạo
+      const isSigKeyword = sigKeywordRegex.test(cleanL);
+      const isLeaderPersonName = (/^[A-ZĐÀ-Ỹ][a-zđà-ỹ]+(?:\s+[A-ZĐÀ-Ỹ][a-zđà-ỹ]+){1,4}$/.test(cleanL) || /^[A-ZĐÀ-Ỹ\s]{3,35}$/.test(cleanL)) &&
+        !/^(?:Như|Lưu|Phòng|Ban|Sở|Bộ|UBND|HĐND|Ủy\s*ban|Thường\s*trực|Chi\s*bộ|Đảng\s*ủy|Đảng\s*bộ|Hội\s*đồng|Công\s*an|Quân\s*sự|Y\s*tế|Đoàn|Hội|Tổ|Đồng\s*chí|Đ\/c|Các)\b/i.test(cleanL);
+
+      if (isSigKeyword || isLeaderPersonName) {
         inSigner = true;
       }
 
       if (!inSigner) {
-        if (l.trim()) {
-          const clean = l.trim();
-          const lineWithDash = clean.startsWith('-') ? clean : `- ${clean.replace(/^[-\u2013\u2014]\s*/, '')}`;
-          recipients.push(lineWithDash);
-        }
+        recipients.push(`- ${cleanL}`);
       } else {
-        if (/^(KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.)/i.test(l)) {
-          const m = l.match(/^(KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.)/i);
+        if (/^(?:KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ)/i.test(cleanL)) {
+          const m = cleanL.match(/^(KT\.\s*CHỦ\s*TỊCH|TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ)/i);
           if (m) {
             quyenHanKy = m[1].toUpperCase().replace(/\s+/g, ' ');
           }
-          signerAuthority = l.toUpperCase();
-        } else if (/^(CHỦ TỊCH|BÍ THƯ|PHÓ BÍ THƯ|PHÓ CHỦ TỊCH|GIÁM ĐỐC|TRƯỞNG PHÒNG|HIỆU TRƯỞNG)/i.test(l)) {
-          signerTitle = l.toUpperCase();
-        } else if (/^[A-ZÀ-Ỹ][a-zà-ỹ]+(\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){1,4}$/.test(l) || /^[A-ZÀ-Ỹ\s]{3,30}$/.test(l)) {
-          if (!l.includes('Ký') && !l.includes('Họ tên')) {
-            signerName = l;
+          signerAuthority = cleanL.toUpperCase();
+        } else if (/^(?:CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|PHÓ\s*CHỦ\s*TỊCH|QUYỀN\s*CHỦ\s*TỊCH|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)/i.test(cleanL)) {
+          signerTitle = cleanL.toUpperCase();
+        } else if (isLeaderPersonName) {
+          if (!cleanL.includes('Ký') && !cleanL.includes('Họ tên') && !cleanL.includes('Số')) {
+            signerName = cleanL;
           }
         }
       }
@@ -1219,7 +1655,14 @@ export function parseDocumentStructure(
     const agencyCheck = extractCleanAgencyAndRemainingText(l);
     const isPureAgencyLeak = agencyCheck.cleanAgency !== '' && !agencyCheck.leftoverText && l.length <= 80 && !l.endsWith('.');
 
-    if (isAgencyLineLeak || isParentLeak || isSettingsLeak || isPureAgencyLeak) {
+    // Tuyệt đối không để Kính gửi hoặc các dòng nơi gửi đến lọt vào bodyParagraphs (ngăn trùng lặp 100%)
+    const isKinhGuiLeak = /^Kính\s*(?:gửi|trình):?/i.test(l) ||
+      recipientsHeaderLines.some(rh => {
+        const cleanRh = rh.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim().toLowerCase();
+        const cleanL = l.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim().toLowerCase();
+        return cleanRh && cleanRh.length >= 3 && (cleanRh === cleanL || cleanL.startsWith(cleanRh));
+      });
+    if (isKinhGuiLeak) {
       continue;
     }
 
@@ -1414,7 +1857,7 @@ export function generateDecree30A4Html(
     : [];
 
   const rawHtml = `
-    <div class="a4-document-page font-times text-slate-950 bg-white" style="font-family: 'Times New Roman', Times, 'Tinos', serif; font-size: 14pt; line-height: 1.5; color: #000; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; border-radius: 4px; padding: 20mm 15mm 20mm 30mm; min-height: 297mm; box-sizing: border-box; background-color: #ffffff;">
+    <div class="a4-document-page font-times text-slate-950 bg-white" style="font-family: 'Times New Roman', Times, 'Tinos', serif; font-size: 14pt; line-height: 1.5; color: #000; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; border-radius: 4px; padding: 20mm 20mm 20mm 30mm; min-height: 297mm; box-sizing: border-box; background-color: #ffffff;">
       
       <!-- SỐ TRANG VĂN BẢN CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP & HD 05 (ĐẶT Ở GIỮA LỀ TRÊN, CỠ 13-14PT ĐỨNG, TỰ ĐỘNG TỪ TRANG 2) -->
       <div class="page-number-rule-banner print:hidden text-center text-[11px] text-slate-400 select-none pb-2 mb-3 border-b border-dashed border-slate-200 flex items-center justify-center gap-1.5 font-sans" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
@@ -1422,55 +1865,116 @@ export function generateDecree30A4Html(
         <span>Số trang văn bản (NĐ 30 & HD 05): Tự động đặt ở giữa theo chiều ngang lề trên, cỡ 13-14pt chữ đứng, đánh số từ trang thứ 2 (trang 1 không ghi)</span>
       </div>
 
-      <!-- BẢNG BỐ CỤC ĐẦU VĂN BẢN (2 CỘT ẨN VIỀN CHUẨN NĐ 30 & HD 05) -->
-      <table style="width: 100%; border-collapse: collapse; border: none; margin-bottom: 14pt; font-family: 'Times New Roman', Times, serif;">
-        <tr>
-          <!-- Cột 1: Cơ quan ban hành & Số ký hiệu -->
-          <td style="width: 45%; vertical-align: top; text-align: center; padding: 0 8pt 0 0; border: none;">
-            ${renderAgencyHeaderHtml(doc.parentAgency, doc.agencyName)}
-            
-            <!-- Đường kẻ ngang dưới tên cơ quan (1/3 đến 1/2 độ dài) chuẩn NĐ 30 -->
-            <div style="width: 40%; margin: 2.5pt auto 4pt auto; border-bottom: 1.2pt solid #000;"></div>
-            
-            <div style="font-size: 13pt; margin-top: 5pt; font-weight: normal; font-family: 'Times New Roman', serif;">
-              ${formatDocCodeForDisplay(doc.docCode, true)}
-            </div>
+      <!-- BẢNG BỐ CỤC ĐẦU VĂN BẢN (TỔNG CHIỀU DÀI 16CM, CỘT TRÁI 6,2CM, CỘT PHẢI 9,8CM, ẨN VIỀN, NỘI DUNG CANH GIỮA TRONG TỪNG CỘT) -->
+      ${(() => {
+        const agencyParts = getStandardAgencyHeaderParts(doc.parentAgency, doc.agencyName);
+        const agencyNameText = agencyParts.hasLine2 ? agencyParts.line2 : agencyParts.line1;
+        // Kích cỡ tên cơ quan ban hành: bình thường để 13pt, chỉ những đơn vị dài mới để xuống 12pt
+        const isLongAgency = agencyNameText.length > 28;
+        const agencyFontSize = isLongAgency ? '12pt' : '13pt';
+        const parentAgencyText = agencyParts.hasLine2 ? agencyParts.line1 : '';
 
-            ${doc.docSubjectShort ? `
-              <div style="font-size: 12pt; font-style: italic; margin-top: 4pt; line-height: 1.3; font-family: 'Times New Roman', serif;">
-                ${doc.docSubjectShort}
-              </div>
+        return `
+          <table style="width: 16cm; max-width: 100%; border-collapse: collapse; border: none; margin: 0 auto 14pt auto; font-family: 'Times New Roman', Times, serif;">
+            <!-- HÀNG 1: TÊN CƠ QUAN CẤP TRÊN (NẾU CÓ) BẰNG TRÊN 1 DÒNG VỚI QUỐC NGỮ -->
+            <tr style="vertical-align: top;">
+              <!-- Bên trái: Tên cơ quan cấp trên nếu có (cỡ 12.5pt, in hoa, đứng) -->
+              <td style="width: 6.2cm; max-width: 6.2cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
+                ${parentAgencyText ? `
+                  <div style="font-size: 12.5pt; text-transform: uppercase; font-weight: normal; letter-spacing: -0.1px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt;">
+                    ${parentAgencyText}
+                  </div>
+                ` : `
+                  <div style="font-size: 12.5pt; line-height: 1.25; margin-bottom: 2pt;">&nbsp;</div>
+                `}
+              </td>
+
+              <!-- Cột phải: Quốc hiệu (cỡ 13pt, in hoa, đậm, căn giữa, chỉ 1 dòng) -->
+              <td style="width: 9.8cm; max-width: 9.8cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
+                ${!doc.isPartyDoc ? `
+                  <div style="font-size: 13pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt; white-space: nowrap; text-align: center;">
+                    CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+                  </div>
+                ` : `
+                  <div style="font-size: 13.5pt; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt; white-space: nowrap; text-align: center;">
+                    ĐẢNG CỘNG SẢN VIỆT NAM
+                  </div>
+                `}
+              </td>
+            </tr>
+
+            <!-- HÀNG 2: TÊN CƠ QUAN BAN HÀNH BẰNG TRÊN 1 DÒNG VỚI TIÊU NGỮ -->
+            <tr style="vertical-align: top;">
+              <!-- Bên trái: Tên cơ quan ban hành (bình thường cỡ 13pt, đơn vị dài mới để 12pt, in hoa, đậm) -->
+              <td style="width: 6.2cm; max-width: 6.2cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
+                <div style="font-size: ${agencyFontSize}; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt;">
+                  ${agencyNameText}
+                </div>
+              </td>
+
+              <!-- Cột phải: Tiêu ngữ Độc lập - Tự do - Hạnh phúc (Cỡ 13.5-14pt, đậm, căn giữa, chỉ 1 dòng) -->
+              <td style="width: 9.8cm; max-width: 9.8cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
+                ${!doc.isPartyDoc ? `
+                  <div style="font-size: 13.5pt; font-weight: bold; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt; white-space: nowrap; text-align: center;">
+                    Độc lập - Tự do - Hạnh phúc
+                  </div>
+                ` : `
+                  <div style="font-size: 12pt; margin-bottom: 2pt; line-height: 1.25;">&nbsp;</div>
+                `}
+              </td>
+            </tr>
+
+            <!-- HÀNG 3: 2 GẠCH CỦA 2 BÊN NẰM TRÊN 1 DÒNG, ĐỘ ĐẬM BẰNG NHAU (1.5pt solid #000) -->
+            <tr style="vertical-align: top;">
+              <!-- Bên trái: Đường kẻ ngang dưới tên cơ quan (ngắn bằng 1/3 đến 1/2 độ dài dòng chữ): độ đậm 1.5pt, căn giữa -->
+              <td style="width: 6.2cm; max-width: 6.2cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
+                <div style="text-align: center; line-height: 0; padding: 2pt 0 4pt 0;">
+                  <div style="display: inline-block; width: 75px; border-bottom: 1.5pt solid #000;"></div>
+                </div>
+              </td>
+
+              <!-- Cột phải: Đường kẻ ngang dưới tiêu ngữ: nét liền, độ đậm 1.5pt, dài bằng đúng độ dài dòng chữ (170px), căn giữa -->
+              <td style="width: 9.8cm; max-width: 9.8cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
+                <div style="text-align: center; line-height: 0; padding: 2pt 0 4pt 0;">
+                  <div style="display: inline-block; width: ${doc.isPartyDoc ? '75px' : '170px'}; border-bottom: 1.5pt solid #000;"></div>
+                </div>
+              </td>
+            </tr>
+
+            <!-- HÀNG 4: Ô SỐ 3 (SỐ CÔNG VĂN) CÙNG 1 DÒNG VỚI Ô SỐ 4 (ĐỊA DANH, NGÀY THÁNG NĂM) -->
+            <tr style="vertical-align: top;">
+              <td style="width: 6.2cm; max-width: 6.2cm; vertical-align: top; text-align: center; padding: 4pt 4pt 0 0; border: none;">
+                <!-- Ô số 3: Số, ký hiệu -->
+                <div style="font-size: 13pt; font-weight: normal; font-family: 'Times New Roman', serif; text-align: center;">
+                  ${formatDocCodeForDisplay(doc.docCode, true)}
+                </div>
+              </td>
+              <td style="width: 9.8cm; max-width: 9.8cm; vertical-align: top; text-align: center; padding: 4pt 0 0 4pt; border: none;">
+                <!-- Ô số 4: Địa danh, ngày tháng năm (Cỡ 13,5pt, nghiêng, căn giữa). Cùng 1 dòng với Số công văn -->
+                <div style="font-size: 13.5pt; font-style: italic; font-family: 'Times New Roman', serif; text-align: center;">
+                  ${(doc.locationDate || `${settings.shortLocation || 'Đông Tiến'}, ngày      tháng      năm ${settings.issuingYear || new Date().getFullYear()}`)
+                    .replace(/ {2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')
+                    .replace(/[\.…]{2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')}
+                </div>
+              </td>
+            </tr>
+
+            <!-- HÀNG 5: TRÍCH YẾU CÔNG VĂN (Ô SỐ 5b NẾU CÓ) - KẾT THÚC KHÔNG CÓ DẤU GẠCH NGANG -->
+            ${(isCongVan || doc.docSubjectShort) ? `
+              <tr style="vertical-align: top;">
+                <td style="width: 6.2cm; max-width: 6.2cm; vertical-align: top; text-align: center; padding: 4pt 4pt 0 0; border: none;">
+                  ${doc.docSubjectShort ? `
+                    <div style="font-size: 12.5pt; font-style: normal; font-weight: normal; line-height: 1.3; font-family: 'Times New Roman', serif; text-align: center;">
+                      ${doc.docSubjectShort.startsWith('V/v') ? doc.docSubjectShort : `V/v ${doc.docSubjectShort.replace(/^(?:Về việc|Trích yếu|Nội dung)[\s:\.]*/i, '')}`}
+                    </div>
+                  ` : ''}
+                </td>
+                <td style="width: 9.8cm; max-width: 9.8cm; vertical-align: top; border: none;"></td>
+              </tr>
             ` : ''}
-          </td>
-
-          <!-- Cột 2: Quốc hiệu & Tiêu ngữ HOẶC Tiêu đề Đảng -->
-          <td style="width: 55%; vertical-align: top; text-align: center; padding: 0 0 0 8pt; border: none;">
-            ${!doc.isPartyDoc ? `
-              <div style="font-size: 12.5pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25;">
-                CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
-              </div>
-              <!-- Tiêu ngữ: Gạch chân chuẩn NĐ 30 bằng đúng 100% độ dài của dòng chữ, khoảng cách khít thanh thoát -->
-              <div style="font-size: 13.5pt; font-weight: bold; margin-top: 2pt; font-family: 'Times New Roman', serif; text-align: center; line-height: 1.2;">
-                <span style="display: inline-block; border-bottom: 1.2pt solid #000; padding-bottom: 2pt;">
-                  Độc lập - Tự do - Hạnh phúc
-                </span>
-              </div>
-            ` : `
-              <div style="font-size: 13.5pt; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; font-family: 'Times New Roman', serif; line-height: 1.25;">
-                ĐẢNG CỘNG SẢN VIỆT NAM
-              </div>
-              <!-- Nét gạch nhỏ dưới tiêu đề Đảng theo HD 05 (1/3 đến 1/2 độ dài dòng chữ) -->
-              <div style="width: 38%; margin: 2.5pt auto 4pt auto; border-bottom: 1.2pt solid #000;"></div>
-            `}
-
-            <div style="font-size: 13.5pt; font-style: italic; margin-top: 5pt; font-family: 'Times New Roman', serif;">
-              ${(doc.locationDate || `${settings.shortLocation || 'Đông Tiến'}, ngày      tháng      năm ${settings.issuingYear || new Date().getFullYear()}`)
-                .replace(/ {2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')
-                .replace(/[\.…]{2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')}
-            </div>
-          </td>
-        </tr>
-      </table>
+          </table>
+        `;
+      })()}
 
       <!-- TÊN LOẠI VĂN BẢN VÀ TRÍCH YẾU (KHÔNG DÙNG CHO CÔNG VĂN THÔNG THƯỜNG) -->
       ${!isCongVan && doc.docTypeName ? `
@@ -1486,22 +1990,47 @@ export function generateDecree30A4Html(
         </div>
       ` : ''}
 
-      <!-- KÍNH GỬI (MẶC ĐỊNH CÁC DÒNG CÓ DẤU - Ở ĐẦU) -->
-      ${recipientHeaderItems.length > 0 ? `
-        <div style="margin: 12pt 0 10pt 0; font-family: 'Times New Roman', serif;">
-          <div style="text-indent: 1cm; font-size: 14pt; text-align: left; font-weight: bold; margin-bottom: 3pt;">
-            Kính gửi:
-          </div>
-          ${recipientHeaderItems.map(item => {
-            const withDash = item.startsWith('-') ? item : `- ${item.replace(/^[-\u2013\u2014]\s*/, '')}`;
-            return `
-              <div style="text-indent: 1.5cm; font-size: 14pt; text-align: left; margin-bottom: 2pt;">
-                ${withDash}
-              </div>
-            `;
-          }).join('')}
-        </div>
-      ` : ''}
+      <!-- KÍNH GỬI CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP -->
+      <!-- Nằm ngay dưới dòng trích yếu “V/v …”, trước phần nội dung. Bắt đầu từ ở giữa của cột trái (~3.1cm) -->
+      <!-- Cỡ chữ thống nhất 14pt, in thường (chữ cái đầu viết hoa như tên riêng), kiểu chữ đứng, không đậm -->
+      ${(() => {
+        if (recipientHeaderItems.length === 0) return '';
+        
+        if (recipientHeaderItems.length === 1 && !recipientHeaderItems[0].startsWith('-')) {
+          // Gửi một nơi: Ghi trên cùng một dòng, ví dụ: Kính gửi: Bộ Nội vụ.
+          const singleRec = recipientHeaderItems[0].replace(/^Kính gửi:?\s*/i, '').replace(/[;\.]+$/, '').trim();
+          return `
+            <div style="margin: 14pt 0 14pt 3.1cm; font-family: 'Times New Roman', serif; font-size: 14pt; font-weight: normal; font-style: normal; line-height: 1.45;">
+              Kính gửi: ${singleRec}.
+            </div>
+          `;
+        }
+
+        // Khi gửi nhiều nơi: Mỗi nơi nhận một dòng, bắt đầu từ cuối của từ kính gửi, đầu dòng có gạch đầu dòng,
+        // các dòng nơi nhận canh thẳng hàng với nhau, xếp thành một khối ở giữa trang.
+        // Cuối dòng có dấu chấm phẩy, dòng cuối có dấu chấm.
+        const cleanedItems = recipientHeaderItems.map(item => {
+          let cleaned = item.replace(/^Kính gửi:?\s*/i, '').trim();
+          cleaned = cleaned.replace(/^[\-\+\*•●○]\s*/, '').replace(/[;\.]+$/, '').trim();
+          return cleaned;
+        }).filter(Boolean);
+
+        return `
+          <table style="border: none; border-collapse: collapse; margin: 14pt 0 14pt 3.1cm; font-family: 'Times New Roman', serif; font-size: 14pt; line-height: 1.45;">
+            <tr style="vertical-align: top;">
+              <td style="vertical-align: top; border: none; padding: 0 4pt 0 0; white-space: nowrap; font-size: 14pt; font-weight: normal; font-style: normal;">
+                Kính gửi:
+              </td>
+              <td style="vertical-align: top; border: none; padding: 0; font-size: 14pt; font-weight: normal; font-style: normal;">
+                ${cleanedItems.map((item, idx) => {
+                  const isLast = idx === cleanedItems.length - 1;
+                  return `<div style="margin-bottom: 2pt;">- ${item}${isLast ? '.' : ';'}</div>`;
+                }).join('')}
+              </td>
+            </tr>
+          </table>
+        `;
+      })()}
 
       <!-- CĂN CỨ PHÁP LÝ (NẾU CÓ) -->
       ${doc.legalBases.length > 0 ? `
@@ -1518,6 +2047,7 @@ export function generateDecree30A4Html(
       <div style="line-height: 1.55; margin-bottom: 18pt; font-family: 'Times New Roman', serif;">
         ${doc.bodyParagraphs.map(p => {
           const cleanP = p.replace(/[\*_~`#]/g, '').trim();
+          if (!cleanP || isWarningOrInstructionLine(cleanP)) return '';
 
           // 0. BẢNG BIỂU (HTML TABLE HOẶC MARKDOWN TABLE) - ĐỊNH DẠNG VỪA VẶN TRANG A4
           if (cleanP.includes('<table') || cleanP.includes('___TABLE_BLOCK_') || /^\|[^\n]+\|/.test(cleanP)) {
@@ -1544,6 +2074,25 @@ export function generateDecree30A4Html(
             `;
           }
 
+          // 1.1. Tiêu đề Phần (Ví dụ: "Phần I", "Phần thứ nhất")
+          // Từ “Phần” và số thứ tự: In thường 13 - 14 Đứng, đậm: Ví dụ: Phần I
+          // Tiêu đề của phần: In hoa 13 - 14 Đứng, đậm: Ví dụ: TÌNH HÌNH THỰC HIỆN NHIỆM VỤ ...
+          const partMatch = cleanP.match(/^(Phần\s+(?:[IVXLCDM\d]+|thứ\s+[a-zA-ZÀ-ỹ\d]+))[\.:]?\s*(.*)$/i);
+          if (partMatch) {
+            const partLabel = partMatch[1];
+            const partTitle = partMatch[2]?.trim();
+            return `
+              <p align="center" style="text-align: center; font-weight: bold; font-size: 14pt; margin: 16pt 0 3pt 0; text-indent: 0pt; font-family: 'Times New Roman', serif;">
+                ${partLabel}
+              </p>
+              ${partTitle ? `
+                <p align="center" style="text-align: center; font-weight: bold; font-size: 14pt; margin: 0 0 10pt 0; text-indent: 0pt; text-transform: uppercase; font-family: 'Times New Roman', serif;">
+                  ${partTitle.toUpperCase()}
+                </p>
+              ` : ''}
+            `;
+          }
+
           // 2. Tiêu đề Chương (CHƯƠNG I, CHƯƠNG II...) -> Căn giữa in hoa đậm
           const chapterMatch = cleanP.match(/^(Chương\s+[IVXLCDM\d]+)[\.:]?\s*(.*)$/i);
           if (chapterMatch) {
@@ -1561,11 +2110,14 @@ export function generateDecree30A4Html(
             `;
           }
 
-          // 3. Tiêu đề Mục (Mục 1, Mục 2...) -> Căn giữa in hoa đậm
-          if (/^(Mục\s+\d+)[\.:]?\s*/i.test(cleanP)) {
+          // 3. Số thứ tự và tiêu đề của mục: In hoa 13 - 14 Đứng, đậm Ví dụ: I. NHỮNG KẾT QUẢ... hoặc Mục I...
+          const romanMatch = cleanP.match(/^([IVXLCDM]+\.)(?:\s+(.*))?$/);
+          const mucWordMatch = cleanP.match(/^(Mục\s+[IVXLCDM\d]+)[\.:]?\s*(.*)$/i);
+          if (romanMatch || mucWordMatch) {
+            const fullMucText = cleanP.toUpperCase();
             return `
-              <p align="center" style="text-align: center; font-weight: bold; font-size: 13pt; margin: 10pt 0 4pt 0; text-indent: 0pt; text-transform: uppercase; font-family: 'Times New Roman', serif;">
-                ${cleanP}
+              <p style="text-align: justify; font-weight: bold; font-size: 14pt; margin: 12pt 0 6pt 0; text-indent: 1cm; font-family: 'Times New Roman', serif;">
+                ${fullMucText}
               </p>
             `;
           }
@@ -1579,74 +2131,62 @@ export function generateDecree30A4Html(
             `;
           }
 
-          // 5. Tiêu đề Điều khoản (Điều 1., Điều 2...) -> In đậm tên Điều, thụt đầu dòng 1cm
+          // 5. Tiêu đề Điều khoản (Điều 1., Điều 2...)
+          // - Trường hợp có tiêu đề: Thường 13 - 14 Đứng, in đậm Ví dụ: Điều 1. Phạm vi và đối tượng áp dụng
+          // - Trường hợp không có tiêu đề: Thường 13 - 14 Đứng Ví dụ: Điều 1. Quyết định này có hiệu lực thi hành kể từ ngày…
           const articleMatch = cleanP.match(/^(Điều\s+\d+)[\.:]?\s*(.*)$/i);
           if (articleMatch) {
-            const articleLabel = articleMatch[1] + '.';
-            const rest = articleMatch[2]?.trim();
-            return `
-              <p style="text-align: justify; margin-bottom: 6pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                <strong>${articleLabel}</strong> ${rest}
-              </p>
-            `;
+            const articleLabel = `${articleMatch[1]}.`;
+            const rest = articleMatch[2]?.trim() || '';
+            const headingInfo = detectNumberedHeading(rest);
+
+            if (headingInfo.hasTitle) {
+              return `
+                <p style="text-align: justify; margin-bottom: 6pt; text-indent: 1cm; font-family: 'Times New Roman', serif; font-size: 14pt;">
+                  <strong>${articleLabel} ${headingInfo.title}</strong>${headingInfo.content ? ` ${headingInfo.content}` : ''}
+                </p>
+              `;
+            } else {
+              return `
+                <p style="text-align: justify; margin-bottom: 6pt; text-indent: 1cm; font-family: 'Times New Roman', serif; font-size: 14pt;">
+                  <strong>${articleLabel}</strong> ${rest}
+                </p>
+              `;
+            }
           }
 
-          // 6. Khoản (1., 2., 3... hoặc 1.1., 1.2...) -> TỰ ĐỘNG TÔ ĐẬM ĐẦU DÒNG BULLET
+          // 6. Khoản (1., 2., 3... hoặc 1.1., 1.2...)
+          // - Trường hợp có tiêu đề: Thường 13 - 14 Đứng, in đậm Ví dụ: 1. Phạm vi và đối tượng áp dụng
+          // - Trường hợp không có tiêu đề: Thường 13 - 14 Đứng (không đậm) Ví dụ: 1. Quyết định này có hiệu lực thi hành kể từ ngày…
           const numMatch = cleanP.match(/^(\d+(?:\.\d+)*\.)(?:\s+(.*))?$/);
           if (numMatch) {
             const numBullet = numMatch[1];
-            const rest = numMatch[2] || '';
-            const colonMatch = rest.match(/^([^:]{2,45}:)\s*(.*)$/);
-            if (colonMatch) {
+            const rest = (numMatch[2] || '').trim();
+            const headingInfo = detectNumberedHeading(rest);
+
+            if (headingInfo.hasTitle) {
+              // Trường hợp có tiêu đề: In thường 13 - 14 Đứng, đậm
               return `
-                <p style="text-align: justify; margin-bottom: 5pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                  <strong>${numBullet} ${colonMatch[1]}</strong> ${colonMatch[2]}
+                <p style="text-align: justify; margin-bottom: 5pt; text-indent: 1cm; font-family: 'Times New Roman', serif; font-size: 14pt;">
+                  <strong>${numBullet} ${headingInfo.title}</strong>${headingInfo.content ? ` ${headingInfo.content}` : ''}
+                </p>
+              `;
+            } else {
+              // Trường hợp KHÔNG có tiêu đề: In thường 13 - 14 Đứng (KHÔNG ĐẬM)
+              return `
+                <p style="text-align: justify; margin-bottom: 5pt; text-indent: 1cm; font-family: 'Times New Roman', serif; font-size: 14pt; font-weight: normal;">
+                  ${numBullet} ${rest}
                 </p>
               `;
             }
-            return `
-              <p style="text-align: justify; margin-bottom: 5pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                <strong>${numBullet}</strong> ${rest}
-              </p>
-            `;
           }
 
-          // 6.1. Số La Mã (I., II., III...) -> TỰ ĐỘNG TÔ ĐẬM ĐẦU DÒNG BULLET
-          const romanMatch = cleanP.match(/^([IVXLCDM]+\.)(?:\s+(.*))?$/);
-          if (romanMatch) {
-            const romanBullet = romanMatch[1];
-            const rest = romanMatch[2] || '';
-            const colonMatch = rest.match(/^([^:]{2,50}:)\s*(.*)$/);
-            if (colonMatch) {
-              return `
-                <p style="text-align: justify; margin-bottom: 6pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                  <strong>${romanBullet} ${colonMatch[1]}</strong> ${colonMatch[2]}
-                </p>
-              `;
-            }
-            return `
-              <p style="text-align: justify; margin-bottom: 6pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                <strong>${romanBullet}</strong> ${rest}
-              </p>
-            `;
-          }
-
-          // 7. Điểm (a), b), c)...) -> TỰ ĐỘNG TÔ ĐẬM ĐẦU DÒNG BULLET & THỐNG NHẤT THỤT ĐẦU DÒNG 1CM
+          // 7. Điểm (a), b), c)...): Thường 13 - 14 Đứng Ví dụ: a) Đối với ...
           const letterMatch = cleanP.match(/^([a-zđ]\))(?:\s+(.*))?$/i);
           if (letterMatch) {
-            const letterBullet = letterMatch[1];
-            const rest = letterMatch[2] || '';
-            const colonMatch = rest.match(/^([^:]{2,40}:)\s*(.*)$/);
-            if (colonMatch) {
-              return `
-                <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                  <strong>${letterBullet} ${colonMatch[1]}</strong> ${colonMatch[2]}
-                </p>
-              `;
-            }
             return `
-              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1cm; font-family: 'Times New Roman', serif;">
-                <strong>${letterBullet}</strong> ${rest}
+              <p style="text-align: justify; margin-bottom: 4pt; text-indent: 1cm; font-family: 'Times New Roman', serif; font-size: 14pt; font-weight: normal; font-style: normal;">
+                ${cleanP}
               </p>
             `;
           }
@@ -1753,10 +2293,15 @@ export function generateDecree30A4Html(
               return '';
             })()}
             
-            <!-- Khoảng trống ký tên rộng rãi để ký tay hoặc ký số (chuẩn 55-60pt) -->
-            <div style="height: 55pt; min-height: 55pt; display: flex; align-items: center; justify-content: center;">
+            <!-- Thêm khoảng trống 1 dòng giãn cách tiêu chuẩn ngay dưới chức năng/quyền ký hiệu -->
+            <div style="height: 14pt; line-height: 14pt; font-size: 14pt;">&nbsp;</div>
+            <!-- Thêm 1 dòng giãn cách bổ sung theo yêu cầu tăng khoảng cách tên người ký và chức danh -->
+            <div style="height: 14pt; line-height: 14pt; font-size: 14pt;">&nbsp;</div>
+            
+            <!-- Mở rộng không gian ký tên (khoảng trống 80–90pt trong HTML) cho cả chữ ký tươi và ký số điện tử -->
+            <div style="height: 85pt; min-height: 85pt; display: flex; align-items: center; justify-content: center;">
               <span style="font-size: 10pt; color: #94a3b8; font-style: italic; font-family: 'Times New Roman', serif;">
-                (Ký, ghi rõ họ tên / Ký số)
+                (Ký tươi / Ký số điện tử)
               </span>
             </div>
 
@@ -1792,7 +2337,7 @@ export function generateDecree30A4Html(
       </div>
 
       <!-- TỜ GIẤY A4 PHỤ LỤC RIÊNG BIỆT (KHỔ CHUẨN 210mm x 297mm) -->
-      <div class="a4-document-page a4-appendix-page font-times text-slate-950 bg-white" style="page-break-before: always; break-before: page; font-family: 'Times New Roman', Times, 'Tinos', serif; font-size: 14pt; line-height: 1.5; color: #000; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; border-radius: 4px; padding: 20mm 15mm 20mm 30mm; min-height: 297mm; box-sizing: border-box; background-color: #ffffff; margin-top: 24pt;">
+      <div class="a4-document-page a4-appendix-page font-times text-slate-950 bg-white" style="page-break-before: always; break-before: page; font-family: 'Times New Roman', Times, 'Tinos', serif; font-size: 14pt; line-height: 1.5; color: #000; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15); border: 1px solid #e2e8f0; border-radius: 4px; padding: 20mm 20mm 20mm 30mm; min-height: 297mm; box-sizing: border-box; background-color: #ffffff; margin-top: 24pt;">
         
         <!-- TIÊU ĐỀ PHỤ LỤC CHUẨN THỂ THỨC NGHỊ ĐỊNH 30/2020/NĐ-CP -->
         <div align="center" style="text-align: center; margin-bottom: 16pt; font-family: 'Times New Roman', serif;">
@@ -1890,7 +2435,9 @@ export function reconstructNormalizedText(doc: StructuredDoc): string {
     parts.push('');
   }
 
-  doc.bodyParagraphs.forEach(p => parts.push(p));
+  doc.bodyParagraphs
+    .filter(p => !isWarningOrInstructionLine(p))
+    .forEach(p => parts.push(p));
   parts.push('');
 
   // Nơi nhận (Rà soát và loại bỏ sạch trùng lặp với khối chữ ký)

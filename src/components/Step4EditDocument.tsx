@@ -203,7 +203,7 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
     const newText = fixSingleSpellingMatch(normalizedText, proposal.wrong, proposal.right);
     handleTextChange(newText);
     setSelectedProposal(null);
-    setSyncNotice(`✓ Đã sửa "${proposal.wrong}" ➔ "${proposal.right}" thành công!`);
+    setSyncNotice(proposal.right ? `✓ Đã sửa "${proposal.wrong}" ➔ "${proposal.right}" thành công!` : `✓ Đã xóa bỏ đoạn thừa "${proposal.wrong}" khỏi văn bản!`);
     setTimeout(() => setSyncNotice(null), 3000);
   };
 
