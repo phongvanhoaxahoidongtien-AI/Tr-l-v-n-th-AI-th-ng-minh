@@ -68,6 +68,7 @@ export interface DetectedElements {
   recipients: string[];
   signerAuthority: string | null;
   quyenHanKy?: string | null;
+  signerRoleLine2?: string | null;
   signerTitle: string | null;
   signerName: string | null;
 }
@@ -125,6 +126,7 @@ export interface NormalizeResult {
   kinhGui?: string;
   noiDung?: string;
   quyenHanKy?: string;
+  signerRoleLine2?: string;
   chucVuNguoiKy?: string;
   hoTenNguoiKy?: string;
   noiNhan?: string;

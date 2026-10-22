@@ -183,6 +183,8 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
     setTimeout(() => setSyncNotice(null), 3500);
   };
 
+  const [dismissedAgencyAlert, setDismissedAgencyAlert] = useState<boolean>(false);
+
   // Quản lý đề xuất sửa lỗi chính tả & đoạn không logic (NGUYÊN TẮC: TUYỆT ĐỐI KHÔNG TỰ ĐỘNG SỬA NỘI DUNG GỐC)
   const [dismissedProposalIds, setDismissedProposalIds] = useState<Set<string>>(new Set());
   const [selectedProposal, setSelectedProposal] = useState<SpellingProposal | null>(null);
@@ -425,38 +427,102 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
         </div>
       )}
 
-      {/* 2. CẢNH BÁO SAI LỆCH CƠ QUAN / ĐỊA DANH SO VỚI CÀI ĐẶT */}
-      {isAgencyOrLocationDifferent && (
-        <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-fade-in font-sans">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-bold text-xs sm:text-sm text-amber-950">
-                Tiểu Bảo Bối lưu ý: Phát hiện dữ liệu trong văn bản khác với Cài đặt mặc định của cơ quan
-              </h4>
-              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
-                {agencyDiff && (
-                  <span>
-                    • Cơ quan văn bản: <strong>"{docAgency}"</strong> ≠ Cài đặt: <strong>"{settingsAgency}"</strong>.{' '}
-                  </span>
-                )}
-                {locationDiff && (
-                  <span>
-                    • Địa danh văn bản: <strong>"{docLoc}"</strong> ≠ Cài đặt: <strong>"{settingsLoc}"</strong>.
-                  </span>
-                )}
-              </p>
+      {/* 2. CẢNH BÁO SAI LỆCH CƠ QUAN / ĐỊA DANH SO VỚI CÀI ĐẶT MẶC ĐỊNH - HIỂN THỊ TO & RÕ RÀNG */}
+      {isAgencyOrLocationDifferent && !dismissedAgencyAlert && (
+        <div className="p-5 md:p-6 bg-gradient-to-br from-amber-50 via-orange-50/70 to-amber-100/90 border-2 border-amber-500 rounded-2xl shadow-md animate-fade-in font-sans space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-amber-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-sm shrink-0 animate-bounce">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 bg-amber-200/90 px-2.5 py-0.5 rounded-full border border-amber-300">
+                  ⚠️ CẢNH BÁO ĐỒNG BỘ CƠ QUAN BAN HÀNH & ĐỊA DANH
+                </span>
+                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 mt-1">
+                  Phát hiện dữ liệu trong văn bản khác với Cài đặt mặc định của cơ quan
+                </h4>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-amber-800 italic hidden md:inline">
+                (Quy tắc vàng: Không tự ý sửa trừ khi đồng chí đồng ý)
+              </span>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleSyncWithDefaultSettings}
-            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-all hover:scale-105 active:scale-95 shrink-0 flex items-center justify-center gap-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-            <span>Đồng bộ theo Cài đặt mặc định</span>
-          </button>
+          {/* Bảng so sánh trực quan to rõ */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="p-3.5 bg-white/90 rounded-xl border border-rose-200 shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between text-rose-800 font-bold border-b border-rose-100 pb-1">
+                <span>📄 Dữ liệu bóc tách từ văn bản gốc:</span>
+                <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-mono">Văn bản tải lên</span>
+              </div>
+              <div className="space-y-1 text-slate-800 pt-0.5">
+                <div>
+                  <span className="text-slate-500">Cơ quan ban hành: </span>
+                  <strong className="font-serif text-rose-900 font-bold text-xs sm:text-sm">
+                    "{docAgency || 'Chưa nhận diện'}"
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500">Địa danh văn bản: </span>
+                  <strong className="font-serif text-rose-900 font-bold">
+                    "{docLoc || 'Chưa nhận diện'}"
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-white/90 rounded-xl border border-emerald-300 shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between text-emerald-800 font-bold border-b border-emerald-100 pb-1">
+                <span>🏛️ Cài đặt cơ quan mặc định của đồng chí:</span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono">Hồ sơ đã lưu</span>
+              </div>
+              <div className="space-y-1 text-slate-800 pt-0.5">
+                <div>
+                  <span className="text-slate-500">Cơ quan chuẩn: </span>
+                  <strong className="font-serif text-emerald-900 font-bold text-xs sm:text-sm">
+                    "{settingsAgency || 'Chưa thiết lập'}"
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500">Địa danh chuẩn: </span>
+                  <strong className="font-serif text-emerald-900 font-bold">
+                    "{settingsLoc || 'Chưa thiết lập'}"
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cụm nút quyết định to rõ */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+            <p className="text-xs text-amber-900/90 leading-relaxed sm:max-w-md">
+              💡 <strong>Lưu ý:</strong> Nếu đây là văn bản nội bộ của đơn vị đồng chí, hãy bấm <strong>"Đồng bộ ngay"</strong> để đưa về đúng tên cơ quan và địa danh chuẩn. Nếu là văn bản của đơn vị khác gửi đến, hãy chọn <strong>"Giữ nguyên văn bản gốc"</strong>.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setDismissedAgencyAlert(true)}
+                className="px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+                title="Bỏ qua cảnh báo và giữ nguyên thông tin cơ quan trong văn bản gốc"
+              >
+                <span>Giữ nguyên văn bản gốc</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSyncWithDefaultSettings}
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white rounded-xl text-xs sm:text-sm font-black shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 ring-2 ring-amber-400/50"
+              >
+                <Sparkles className="w-4 h-4 text-amber-200" />
+                <span>⚡ Đồng bộ ngay theo Cài đặt mặc định</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

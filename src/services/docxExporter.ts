@@ -8,7 +8,8 @@ import {
   formatDocCodeForDisplay, 
   getStandardAgencyHeaderParts, 
   cleanAndDeduplicateRecipients,
-  detectNumberedHeading
+  detectNumberedHeading,
+  getAutoAdjustedMottoLine
 } from './decree30Formatter';
 import { isWarningOrInstructionLine } from '../utils/cleanAIText';
 import { AgencySettings } from '../types';
@@ -219,7 +220,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
   };
 
-  // 1. HEADER CHUẨN QUỐC TẾ 16CM (CỘT TRÁI 6.2CM = 3515 DXA, CỘT PHẢI 9.8CM = 5556 DXA)
+  // 1. HEADER CHUẨN THỂ THỨC 16.2CM (CỘT TRÁI 6.5CM = 3685 DXA, CỘT PHẢI 9.7CM = 5499 DXA)
   // Phân chia theo hàng để đảm bảo Ô số 4 (Địa danh, ngày tháng) cùng hàng với Ô số 3 (Số công văn)
 
   // Khối tên cơ quan ban hành (Ô số 2)
@@ -263,16 +264,17 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     })
   );
 
-  // Dòng 3: Đường kẻ ngang dưới tên cơ quan (độ đậm bằng tiêu ngữ, cùng ngang 1 hàng)
+  // Dòng 3: Đường kẻ ngang dưới tên cơ quan (độ đậm bằng 100% với tiêu ngữ, cùng ngang 1 hàng)
   agencyParagraphs.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 20, after: 60, line: 160 },
       children: [
         new TextRun({
-          text: '─────────', // 9 ký tự '─' font size 17, độ đậm bằng nhau với tiêu ngữ
+          text: '─────────', // 9 ký tự '─' font size 22, độ đậm bằng 100% với tiêu ngữ
           font: 'Times New Roman',
-          size: 17,
+          size: 22,
+          bold: false,
         }),
       ],
     })
@@ -323,7 +325,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   }
 
   // Khối Quốc hiệu & Tiêu ngữ (Ô số 1)
-  const nationalHeaderParagraphs: Paragraph[] = [];
+  const nationalHeaderParagraphs: (Paragraph | Table)[] = [];
   if (!doc.isPartyDoc) {
     // Quốc hiệu: Cỡ 12-13pt (size 26), in hoa, đậm, căn giữa, chỉ trên 1 dòng
     nationalHeaderParagraphs.push(
@@ -342,13 +344,14 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     );
 
     // Tiêu ngữ: Cỡ 13-14pt (size 28), in đậm, căn giữa, chỉ trên 1 dòng
+    const mottoText = doc.motto?.trim() || 'Độc lập - Tự do - Hạnh phúc';
     nationalHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 30, line: 240 },
         children: [
           new TextRun({
-            text: 'Độc lập - Tự do - Hạnh phúc',
+            text: mottoText,
             font: 'Times New Roman',
             size: 28, // 14pt
             bold: true,
@@ -357,50 +360,93 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       })
     );
 
-    // Đường dưới tiêu ngữ: Căn giữa, dài bằng đúng 100% dòng tiêu ngữ (21 ký tự '─' font size 17 khớp 4.6cm của dòng tiêu ngữ 14pt)
+    // NÂNG CẤP DỨT ĐIỂM: Đường kẻ ngang dưới tiêu ngữ có độ dài BẰNG ĐÚNG ĐỘ DÀI CỦA DÒNG CHỮ
+    // Độ dài in ấn thực tế của dòng chữ "Độc lập - Tự do - Hạnh phúc" 14pt bold trong Word là đúng 5.3 cm (3000 dxa).
+    // Dùng Table con (Nested Table) căn giữa có viền bottom nét đơn 0.75pt (size 6) màu đen chuẩn NĐ 30.
+    // Đảm bảo không bị phụ thuộc font glyph '─', không vượt quá và không ngắn hơn trên mọi máy tính.
+    const mottoUnderlineTable = new Table({
+      alignment: AlignmentType.CENTER,
+      width: { size: 3000, type: WidthType.DXA },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 3000, type: WidthType.DXA },
+              borders: {
+                top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
+              },
+              children: [
+                new Paragraph({
+                  spacing: { before: 0, after: 0, line: 20 },
+                  children: [],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+    nationalHeaderParagraphs.push(mottoUnderlineTable);
+
+    // Khoảng cách sau đường kẻ ngang tiêu ngữ
     nationalHeaderParagraphs.push(
       new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 20, after: 60, line: 160 },
-        children: [
-          new TextRun({
-            text: '─────────────────────', // 21 ký tự U+2500 dài đúng 100% dòng tiêu ngữ
-            font: 'Times New Roman',
-            size: 17,
-          }),
-        ],
+        spacing: { before: 20, after: 40, line: 60 },
+        children: [],
       })
     );
   } else {
     // Tiêu đề Đảng theo Hướng dẫn 05-HD/VPTW
+    const partyMotto = doc.motto?.trim() || 'ĐẢNG CỘNG SẢN VIỆT NAM';
     nationalHeaderParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 30, line: 240 },
         children: [
           new TextRun({
-            text: 'ĐẢNG CỘNG SẢN VIỆT NAM',
+            text: partyMotto,
             font: 'Times New Roman',
             size: 28, // 14pt
             bold: true,
           }),
         ],
-      }),
+      })
+    );
+
+    // Đường dưới tiêu đề Đảng: Dài 1/3 - 1/2 dòng chữ (khoảng 2.6cm ~ 1500 dxa)
+    const partyUnderlineTable = new Table({
+      alignment: AlignmentType.CENTER,
+      width: { size: 1500, type: WidthType.DXA },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 1500, type: WidthType.DXA },
+              borders: {
+                top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
+              },
+              children: [
+                new Paragraph({
+                  spacing: { before: 0, after: 0, line: 20 },
+                  children: [],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+    nationalHeaderParagraphs.push(partyUnderlineTable);
+    nationalHeaderParagraphs.push(
       new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 0, after: 30, line: 240 },
-        children: [new TextRun({ text: '', font: 'Times New Roman', size: 24 })],
-      }),
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 20, after: 60, line: 160 },
-        children: [
-          new TextRun({
-            text: '─────────',
-            font: 'Times New Roman',
-            size: 18,
-          }),
-        ],
+        spacing: { before: 20, after: 40, line: 60 },
+        children: [],
       })
     );
   }
@@ -435,9 +481,9 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     ],
   });
 
-  // Bảng Header 2 cột tổng chiều dài quốc tế 16cm (9071 dxa):
-  // Cột trái: 6.2 cm = 3515 dxa
-  // Cột phải: 9.8 cm = 5556 dxa
+  // Bảng Header 2 cột tổng chiều dài 16.2cm (9185 dxa):
+  // Cột trái: 6.5 cm = 3685 dxa
+  // Cột phải: 9.7 cm = 5500 dxa
   // Row 1: Tên cơ quan (trái) & Quốc hiệu + Tiêu ngữ (phải)
   // Row 2: Ô số 3 (Số công văn) và Ô số 4 (Địa danh, ngày tháng) ĐƯỢC ĐẶT CÙNG 1 DÒNG
   // Row 3 (nếu có): Trích yếu công văn (trái) - KHÔNG CÓ DẤU GẠCH NGANG KẾT THÚC
@@ -445,12 +491,12 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     new TableRow({
       children: [
         new TableCell({
-          width: { size: 3515, type: WidthType.DXA },
+          width: { size: 3685, type: WidthType.DXA },
           borders: hiddenBorders,
           children: agencyParagraphs,
         }),
         new TableCell({
-          width: { size: 5556, type: WidthType.DXA },
+          width: { size: 5500, type: WidthType.DXA },
           borders: hiddenBorders,
           children: nationalHeaderParagraphs,
         }),
@@ -459,12 +505,12 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     new TableRow({
       children: [
         new TableCell({
-          width: { size: 3515, type: WidthType.DXA },
+          width: { size: 3685, type: WidthType.DXA },
           borders: hiddenBorders,
           children: [docCodeParagraph],
         }),
         new TableCell({
-          width: { size: 5556, type: WidthType.DXA },
+          width: { size: 5500, type: WidthType.DXA },
           borders: hiddenBorders,
           children: [locationDateParagraph],
         }),
@@ -472,17 +518,17 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     }),
   ];
 
-  if (subjectParagraphs.length > 0) {
+  if (doc.docTypeName !== 'QUYẾT ĐỊNH' && subjectParagraphs.length > 0) {
     headerTableRows.push(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 3515, type: WidthType.DXA },
+            width: { size: 3685, type: WidthType.DXA },
             borders: hiddenBorders,
             children: subjectParagraphs,
           }),
           new TableCell({
-            width: { size: 5556, type: WidthType.DXA },
+            width: { size: 5500, type: WidthType.DXA },
             borders: hiddenBorders,
             children: [new Paragraph({ children: [] })],
           }),
@@ -492,7 +538,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   }
 
   const headerTable = new Table({
-    width: { size: 9071, type: WidthType.DXA },
+    width: { size: 9185, type: WidthType.DXA },
     borders: hiddenBorders,
     rows: headerTableRows,
   });
@@ -500,29 +546,15 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   // 3. TÊN LOẠI VĂN BẢN VÀ TRÍCH YẾU (nếu không phải công văn thông thường)
   const titleParagraphs: Paragraph[] = [];
   if (!isCongVan && doc.docTypeName) {
-    titleParagraphs.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 240, after: 80, line: 240 },
-        children: [
-          new TextRun({
-            text: doc.docTypeName.toUpperCase(),
-            font: 'Times New Roman',
-            size: 30, // 15pt
-            bold: true,
-          }),
-        ],
-      })
-    );
-
-    if (doc.docTitle) {
+    if (doc.docTypeName === 'QUYẾT ĐỊNH') {
+      // Tên loại “QUYẾT ĐỊNH”: In hoa, cỡ 13–14 (14pt = size 28), đứng, đậm, canh giữa
       titleParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { before: 40, after: 200, line: 240 },
+          spacing: { before: 200, after: 60, line: 240 },
           children: [
             new TextRun({
-              text: doc.docTitle,
+              text: 'QUYẾT ĐỊNH',
               font: 'Times New Roman',
               size: 28, // 14pt
               bold: true,
@@ -530,26 +562,108 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
           ],
         })
       );
+
+      // Trích yếu (“Về việc …”): In thường, cỡ 13–14, đứng, đậm, canh giữa, có đường kẻ ngang dưới dài 1/3–1/2 dòng chữ
+      if (doc.docTitle) {
+        titleParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 40, after: 40, line: 240 },
+            children: [
+              new TextRun({
+                text: doc.docTitle,
+                font: 'Times New Roman',
+                size: 28, // 14pt
+                bold: true,
+              }),
+            ],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 0, after: 120, line: 160 },
+            children: [
+              new TextRun({
+                text: '─────────', // 9 gạch tương ứng 1/3-1/2 dòng chữ
+                font: 'Times New Roman',
+                size: 20,
+                bold: false,
+              }),
+            ],
+          })
+        );
+      }
+
+      // Thẩm quyền ban hành: Chức danh người ra quyết định, in hoa, đậm, canh giữa, đặt dưới trích yếu, Cỡ 13–14
+      if (doc.issuingAuthority) {
+        titleParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 40, after: 160, line: 240 },
+            children: [
+              new TextRun({
+                text: doc.issuingAuthority.toUpperCase(),
+                font: 'Times New Roman',
+                size: 28, // 14pt
+                bold: true,
+              }),
+            ],
+          })
+        );
+      }
+    } else {
+      titleParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 240, after: 80, line: 240 },
+          children: [
+            new TextRun({
+              text: doc.docTypeName.toUpperCase(),
+              font: 'Times New Roman',
+              size: 30, // 15pt
+              bold: true,
+            }),
+          ],
+        })
+      );
+
+      if (doc.docTitle) {
+        titleParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 40, after: 200, line: 240 },
+            children: [
+              new TextRun({
+                text: doc.docTitle,
+                font: 'Times New Roman',
+                size: 28, // 14pt
+                bold: true,
+              }),
+            ],
+          })
+        );
+      }
     }
   }
 
-  // 4. KÍNH GỬI (cho Công văn, Tờ trình, Báo cáo, Giấy mời...)
-  // - Vị trí: Nằm ngay dưới dòng trích yếu “V/v …”, trước phần nội dung.
-  // - Canh giữa theo chiều ngang trang, bắt đầu từ ở giữa của cột trái (thụt lề ~3.1cm = 1757 dxa).
-  // - Cỡ chữ “Kính gửi”: Cỡ chữ 14 (size 28), in thường (chữ cái đầu viết hoa như tên riêng), kiểu chữ đứng, không đậm.
-  // - Gửi một nơi: Ghi trên cùng một dòng, ví dụ: Kính gửi: Bộ Nội vụ.
-  // - Khi gửi nhiều nơi: Mỗi nơi nhận một dòng, bắt đầu từ cuối của từ kính gửi, đầu dòng có gạch đầu dòng, các dòng nơi nhận canh thẳng hàng với nhau, xếp thành một khối ở giữa trang. Cuối dòng có dấu chấm phẩy, dòng cuối có dấu chấm.
-  // - Nội dung công văn bắt đầu sau khối “Kính gửi”, cách phần kính gửi 1 dòng.
+  // 4. KÍNH GỬI (cho Công văn, Tờ trình, Giấy mời...)
+  // NGUYÊN TẮC VÀNG 2: Báo cáo & Quyết định KHÔNG CÓ phần Kính gửi theo chuẩn Nghị định 30/2020/NĐ-CP
+  const isReportOrDecision = doc.docTypeName === 'BÁO CÁO' || doc.docTypeName?.startsWith('BÁO CÁO') || doc.docTypeName === 'QUYẾT ĐỊNH';
   const recipientParagraphs: (Paragraph | Table)[] = [];
-  if (doc.recipientsHeader && doc.recipientsHeader.trim()) {
+  if (!isReportOrDecision && doc.recipientsHeader && doc.recipientsHeader.trim()) {
     const rawLines = doc.recipientsHeader
       .split('\n')
       .map(l => l.trim())
       .filter(Boolean);
 
-    if (rawLines.length === 1 && !rawLines[0].startsWith('-')) {
-      // Gửi một nơi: Ghi trên cùng một dòng
-      let singlePlace = rawLines[0].replace(/^Kính gửi:?\s*/i, '').replace(/[;\.]+$/, '').trim();
+    const sigRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
+    const cleanedItems = rawLines.map(l => {
+      let item = l.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
+      item = item.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+      return item;
+    }).filter(item => Boolean(item) && !sigRegex.test(item));
+
+    if (cleanedItems.length === 1) {
+      // Gửi một nơi: Đặt trên 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-)
       recipientParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.LEFT,
@@ -557,7 +671,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
           spacing: { before: 180, after: 180, line: 300 },
           children: [
             new TextRun({
-              text: `Kính gửi: ${singlePlace}.`,
+              text: `Kính gửi: ${cleanedItems[0]}.`,
               font: 'Times New Roman',
               size: 28, // 14pt
               bold: false, // In thường, đứng, không đậm
@@ -566,16 +680,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
           ],
         })
       );
-    } else if (rawLines.length > 0) {
-      // Khi gửi nhiều nơi: Bảng 2 cột ẩn viền, bắt đầu từ ở giữa cột trái (1757 dxa)
-      // Cột 1: "Kính gửi:"
-      // Cột 2: Các dòng nhận thẳng hàng, có gạch đầu dòng, cuối dòng chấm phẩy, dòng cuối có dấu chấm
-      const sigRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
-      const cleanedItems = rawLines.map(l => {
-        let item = l.replace(/^Kính gửi:?\s*/i, '').trim();
-        item = item.replace(/^[\-\+\*•●○]\s*/, '').replace(/[;\.]+$/, '').trim();
-        return item;
-      }).filter(item => Boolean(item) && !sigRegex.test(item));
+    } else if (cleanedItems.length > 1) {
 
       const recipientRows: Paragraph[] = cleanedItems.map((item, idx) => {
         const isLast = idx === cleanedItems.length - 1;
@@ -990,7 +1095,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       signerAuthority: doc.signerAuthority,
       signerTitle: doc.signerTitle,
       signerName: doc.signerName,
-    });
+    }, true);
 
     for (const r of safeRecs) {
       const cleanR = r.trim();
@@ -1025,9 +1130,53 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   // - Dòng 2: Họ và tên người ký (in đậm 14pt)
   const rightFooterParagraphs: Paragraph[] = [];
   const auth = (doc.signerAuthority || doc.quyenHanKy || '').trim().toUpperCase();
+  const role2 = (doc.signerRoleLine2 || '').trim().toUpperCase();
   const title = (doc.signerTitle || '').trim().toUpperCase();
 
-  if (auth === 'KT. CHỦ TỊCH' || doc.quyenHanKy === 'KT. CHỦ TỊCH') {
+  // Trường hợp 1: Có 3 dòng vai trò ký (Thay mặt tập thể + Ký thay / vai trò cấp trên + Chức vụ người ký trực tiếp)
+  // Ví dụ: TM. ỦY BAN NHÂN DÂN / KT. CHỦ TỊCH / PHÓ CHỦ TỊCH
+  // Hoặc: TM. BAN THƯỜNG VỤ / KT. BÍ THƯ / PHÓ BÍ THƯ
+  // Hoặc: TM. BAN CHẤP HÀNH / T/M BAN THƯỜNG VỤ / BÍ THƯ
+  if (role2 && auth && title) {
+    rightFooterParagraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 100, after: 25, line: 240 },
+        children: [
+          new TextRun({
+            text: auth,
+            font: 'Times New Roman',
+            size: 26, // 13pt
+            bold: true,
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 20, after: 25, line: 240 },
+        children: [
+          new TextRun({
+            text: role2,
+            font: 'Times New Roman',
+            size: 26, // 13pt
+            bold: true,
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 20, after: 80, line: 240 },
+        children: [
+          new TextRun({
+            text: title,
+            font: 'Times New Roman',
+            size: 26, // 13pt
+            bold: true,
+          }),
+        ],
+      })
+    );
+  } else if (auth === 'KT. CHỦ TỊCH' || doc.quyenHanKy === 'KT. CHỦ TỊCH') {
     rightFooterParagraphs.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
@@ -1326,7 +1475,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
               top: 1134, // 20mm
               bottom: 1134, // 20mm
               left: 1701, // 30mm
-              right: 1134, // 20mm (Mặc định chuẩn NĐ 30: trái 30mm, phải 20mm, chiều rộng văn bản đúng 16cm)
+              right: 1020, // 18mm (Nghị định 30: lề phải 15-20mm; trái 30mm + phải 18mm => chiều rộng văn bản đúng 16.2cm)
             },
             pageNumbers: {
               start: 1,

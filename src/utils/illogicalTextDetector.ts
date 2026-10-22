@@ -22,6 +22,11 @@ export function detectIllogicalAdministrativeText(
   let idCounter = 1;
 
   // 1. Trùng lặp Tiêu đề quốc ngữ hoặc Tiêu đề Đảng trong thân bài
+  // Xác định vị trí bắt đầu phần thân văn bản/căn cứ/tiêu đề (nơi tiêu đề quốc ngữ không được phép lọt vào)
+  const bodyStartRegex = /(?:^|\n)\s*(?:Căn\s+cứ\b|Kính\s*(?:gửi|trình):|QUYẾT\s+ĐỊNH\b|QUYẾT\s+NGHỊ\b|KẾT\s+LUẬN\b|CHỈ\s+THỊ\b|THÔNG\s+BÁO\b|BÁO\s+CÁO\b|KẾ\s+HOẠCH\b|TỜ\s+TRÌNH\b|NGHỊ\s+QUYẾT\b|Điều\s+\d+|Phần\s+[IVXLCDM\d]|Chương\s+[IVXLCDM\d])/i;
+  const bodyStartMatch = text.match(bodyStartRegex);
+  const bodyStartIndex = bodyStartMatch && bodyStartMatch.index !== undefined ? bodyStartMatch.index : -1;
+
   const duplicateHeaderRules = [
     {
       regex: /CỘNG\s+H[ÒO]A\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM/gi,
@@ -42,11 +47,19 @@ export function detectIllogicalAdministrativeText(
 
   for (const rule of duplicateHeaderRules) {
     const matches = Array.from(text.matchAll(rule.regex));
-    // Nếu xuất hiện nhiều hơn 1 lần trong toàn văn bản, các lần từ thứ 2 trở đi là thừa
     if (matches.length > 0) {
       matches.forEach((m, idx) => {
-        // Nếu match nằm sâu trong văn bản (index > 150) hoặc là lần lặp thứ 2 trở lên
-        if (m.index !== undefined && (m.index > 150 || idx > 0)) {
+        const mIdx = m.index !== undefined ? m.index : 0;
+        // Lần xuất hiện đầu tiên (idx === 0) trước phần thân/căn cứ/tiêu đề là Tiêu ngữ / Quốc hiệu chuẩn theo NĐ 30 & HD 05
+        // TUYỆT ĐỐI KHÔNG BÔI VÀNG VÀ KHÔNG COI LÀ LỖI
+        const isLegitimateHeader = idx === 0 && (bodyStartIndex === -1 || mIdx < bodyStartIndex);
+        if (isLegitimateHeader) {
+          return;
+        }
+
+        // Chỉ coi là lỗi nếu xuất hiện lần thứ 2 trở lên (idx > 0) hoặc lọt sâu vào sau phần Căn cứ/Thân văn bản
+        const isLeakedIntoBody = idx > 0 || (bodyStartIndex !== -1 && mIdx >= bodyStartIndex);
+        if (isLeakedIntoBody) {
           findings.push({
             id: `illogical_dup_${idCounter++}`,
             target: m[0],

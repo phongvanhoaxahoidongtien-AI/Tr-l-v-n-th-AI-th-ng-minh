@@ -40,6 +40,12 @@ export const Step5FinalExport: React.FC<Step5FinalExportProps> = ({
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [customFileName, setCustomFileName] = useState<string>(() => {
+    return (originalFileName || selectedType.name || 'VanBan')
+      .replace(/\.[^/.]+$/, '')
+      .trim()
+      .replace(/\s+/g, '_');
+  });
 
   // Parse tài liệu đã hoàn thiện: ƯU TIÊN SỐ 1 LÀ KẾT QUẢ CHỈNH SỬA TỪ "XEM VÀ SỬA SONG SONG" (BƯỚC 4)
   const doc = useMemo(() => {
@@ -60,7 +66,7 @@ export const Step5FinalExport: React.FC<Step5FinalExportProps> = ({
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
     const yyyy = String(now.getFullYear());
-    const baseName = (originalFileName || selectedType.name || 'VanBan')
+    const baseName = (customFileName.trim() || originalFileName || selectedType.name || 'VanBan')
       .replace(/\.[^/.]+$/, '')
       .trim()
       .replace(/\s+/g, '_');
@@ -372,7 +378,183 @@ export const Step5FinalExport: React.FC<Step5FinalExportProps> = ({
         </div>
       </div>
 
-      {/* 4. FOOTER ĐIỀU HƯỚNG BƯỚC 5 */}
+      {/* 4. TÙY CHỌN TẢI FILE XUỐNG DƯỚI CÙNG (SAU KHI XEM TOÀN BỘ VĂN BẢN HOÀN CHỈNH) */}
+      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-5 sm:p-6 text-white shadow-xl space-y-5 border border-slate-700">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-700/80">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                <Download className="w-5 h-5" />
+              </div>
+              <h3 className="text-base sm:text-lg font-bold text-white font-serif">
+                Tùy chọn tải file xuống (Sau khi đã xem toàn bộ văn bản hoàn chỉnh)
+              </h3>
+            </div>
+            <p className="text-xs text-slate-300 mt-1">
+              Đồng chí đã kiểm tra trọn vẹn văn bản ở bản in A4 phía trên. Lựa chọn định dạng và tải tệp về máy tính:
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs text-emerald-300">
+            <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400" />
+            <span className="font-medium">Bảo toàn 100% Quốc hiệu, Tiêu ngữ & Bảng biểu</span>
+          </div>
+        </div>
+
+        {/* Cấu hình tên file xuất */}
+        <div className="bg-slate-800/80 rounded-xl p-3.5 border border-slate-700 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <label className="text-xs font-semibold text-slate-300 shrink-0 min-w-[120px]">
+            Đổi tên tệp lưu về:
+          </label>
+          <div className="flex-1 w-full flex items-center gap-2">
+            <input
+              type="text"
+              value={customFileName}
+              onChange={(e) => setCustomFileName(e.target.value)}
+              placeholder="Nhập tên tệp theo ý muốn..."
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400 font-mono"
+            />
+            <span className="text-xs font-mono text-slate-400 shrink-0">
+              _{String(new Date().getMonth() + 1).padStart(2, '0')}_{String(new Date().getDate()).padStart(2, '0')}_{new Date().getFullYear()}.docx
+            </span>
+          </div>
+        </div>
+
+        {/* 4 Tùy chọn tải file */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* Tùy chọn 1: Word .docx chuẩn NĐ 30 */}
+          <div className="bg-slate-800/90 hover:bg-slate-800 border-2 border-emerald-500/60 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-md transition-all hover:scale-[1.02] group">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
+                  Khuyên dùng nhất
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-400">.docx</span>
+              </div>
+              <h4 className="font-bold text-sm text-white group-hover:text-emerald-300 transition-colors">
+                Microsoft Word (.docx)
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                Đường kẻ Tiêu ngữ 5.3cm tuyệt đối, chuẩn chữ ký 2 hoặc 3 dòng (TM./KT./Chức vụ), giữ nguyên bảng biểu và thụt dòng.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadDocx}
+              disabled={isExportingDocx}
+              className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-2 shadow cursor-pointer transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isExportingDocx ? 'Đang tạo .docx...' : 'Tải file .docx ngay'}</span>
+            </button>
+          </div>
+
+          {/* Tùy chọn 2: Word .doc tương thích */}
+          <div className="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-amber-500/50 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-md transition-all hover:scale-[1.02] group">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40">
+                  Tương thích cao
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-400">.doc</span>
+              </div>
+              <h4 className="font-bold text-sm text-white group-hover:text-amber-300 transition-colors">
+                Word 97-2003 (.doc)
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                Định dạng tương thích 100% với các máy tính cũ, cơ quan dùng phiên bản Word 2003/2007 hoặc máy in chuyên dụng.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadWordDoc}
+              className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-500 text-slate-950 rounded-lg font-bold text-xs flex items-center justify-center gap-2 shadow cursor-pointer transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Tải file .doc tương thích</span>
+            </button>
+          </div>
+
+          {/* Tùy chọn 3: Sao chép sang Word */}
+          <div className="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-teal-500/50 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-md transition-all hover:scale-[1.02] group">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-300 bg-teal-950/80 px-2 py-0.5 rounded border border-teal-500/40">
+                  Dán nhanh (Ctrl+V)
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-400">Clipboard</span>
+              </div>
+              <h4 className="font-bold text-sm text-white group-hover:text-teal-300 transition-colors">
+                Sao chép định dạng
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                Sao chép trọn vẹn HTML Rich-Text vào bộ nhớ tạm. Mở Word bất kỳ và nhấn Ctrl + V để dán giữ nguyên định dạng bảng.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyFormattedWord}
+              className="w-full py-2.5 px-3 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-2 shadow cursor-pointer transition-colors"
+            >
+              <Copy className="w-4 h-4" />
+              <span>{isCopiedWordFormat ? '✓ Đã sao chép!' : 'Sao chép sang Word'}</span>
+            </button>
+          </div>
+
+          {/* Tùy chọn 4: In / Xuất PDF */}
+          <div className="bg-slate-800/90 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/50 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-md transition-all hover:scale-[1.02] group">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-300 bg-sky-950/80 px-2 py-0.5 rounded border border-sky-500/40">
+                  In trực tiếp
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-400">PDF / A4</span>
+              </div>
+              <h4 className="font-bold text-sm text-white group-hover:text-sky-300 transition-colors">
+                In ấn / Lưu PDF (A4)
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                Mở cửa sổ in chuyên nghiệp, đúng khổ giấy A4, lề trên 20mm, lề trái 30mm, lề phải 20mm, sẵn sàng in hoặc lưu PDF.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="w-full py-2.5 px-3 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-2 shadow cursor-pointer transition-colors"
+            >
+              <Printer className="w-4 h-4" />
+              <span>In / Lưu PDF ngay</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tóm tắt các tiêu chuẩn kỹ thuật đã đạt */}
+        <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-700/60 text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              Phông chữ: Times New Roman (Unicode)
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              Đường kẻ tiêu ngữ: Khớp chính xác chiều dài dòng chữ (5.3cm)
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              Khổ giấy: A4 (210 x 297 mm), lề chuẩn NĐ 30
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              Chữ ký: Hỗ trợ linh hoạt 2 dòng & 3 dòng (TM./KT.)
+            </span>
+          </div>
+          <span className="text-amber-300 font-semibold">
+            Tiểu Bảo Bối 1.0
+          </span>
+        </div>
+      </div>
+
+      {/* 5. FOOTER ĐIỀU HƯỚNG BƯỚC 5 */}
       <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans">
         <button
           type="button"

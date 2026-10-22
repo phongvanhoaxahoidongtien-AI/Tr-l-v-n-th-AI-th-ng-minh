@@ -397,25 +397,17 @@ export function isWarningOrInstructionLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
 
-  // 1. Các câu cảnh báo xóa tiêu đề/tiêu ngữ cụ thể
+  // 1. Các câu cảnh báo xóa tiêu đề/tiêu ngữ cụ thể do hệ thống sinh ra
   if (/Xóa\s*bỏ\s*tiêu\s*đề\s*quốc\s*ngữ\s*thừa\s*này/i.test(trimmed)) return true;
   if (/Xóa\s*bỏ\s*tiêu\s*ngữ\s*thừa\s*này/i.test(trimmed)) return true;
   if (/Xóa\s*bỏ\s*tiêu\s*đề\s*Đảng\s*thừa\s*này/i.test(trimmed)) return true;
-  if (/Xóa\s*(?:bỏ\s*)?căn\s*cứ.*?(?:này)?$/i.test(trimmed)) return true;
-  if (/Xóa\s*bỏ\s*dòng\s*này/i.test(trimmed)) return true;
-  if (/Xóa\s*bỏ\s*đoạn\s*(?:văn\s*bản\s*)?này/i.test(trimmed)) return true;
-
-  // 2. Các thông báo cảnh báo lỗi nhận diện
-  if (/Tiêu\s*đề\s*Quốc\s*hiệu\s*bị\s*trùng\s*lặp/i.test(trimmed)) return true;
-  if (/Tiêu\s*ngữ\s*.*?bị\s*lọt\s*vào/i.test(trimmed)) return true;
-  if (/Tiêu\s*đề\s*.*?bị\s*lọt\s*vào/i.test(trimmed)) return true;
   if (/^⚠️/i.test(trimmed)) return true;
 
-  // 3. Các dạng nhãn cảnh báo trong ngoặc hoặc tiền tố
-  if (/^(?:\[|\()?⚠️?\s*(?:Cảnh\s*báo|Lưu\s*ý|Ghi\s*chú|Nhắc\s*nhở|Đề\s*xuất|Gợi\s*ý|Xóa\s*bỏ|Cần\s*xác\s*nhận|Hướng\s*dẫn|Khuyến\s*nghị)[\s:\.\-–—].*(?:\]|\))?$/i.test(trimmed)) return true;
+  // 2. Chỉ loại bỏ các thẻ cảnh báo hệ thống trong ngoặc vuông dạng [CẢNH BÁO: ...] hoặc [TIỂU BẢO BỐI: ...]
+  if (/^\[⚠️?\s*(?:Cảnh\s*báo|Hệ\s*thống|Tiểu\s*Bảo\s*Bối|AIS_METADATA|Cần\s*xác\s*nhận)[\s:\.\-–—].*\]$/i.test(trimmed)) return true;
   if (/^\[CẦN\s*XÁC\s*NHẬN.*?\]$/i.test(trimmed)) return true;
-  if (/^(?:Xóa\s*bỏ|Gỡ\s*bỏ|Loại\s*bỏ)\s+(?:tiêu\s*đề|tiêu\s*ngữ|quốc\s*hiệu|căn\s*cứ|dòng|đoạn|thừa).*$/i.test(trimmed)) return true;
 
+  // TUYỆT ĐỐI KHÔNG XÓA các dòng nội dung hợp lệ của người dùng như "Ghi chú:", "Lưu ý:", "Hướng dẫn:"
   return false;
 }
 
@@ -570,21 +562,19 @@ export function cleanAIText(
   text = text.replace(/^```[a-zA-Z0-9_-]*\s*/gm, '');
   text = text.replace(/```\s*$/gm, '');
 
-  // 6. Loại bỏ lời chào hỏi / mở đầu của AI
+  // 6. Loại bỏ lời chào hỏi / mở đầu của AI (chỉ loại bỏ khi là lời chào chatbot đứng đầu văn bản)
   const aiChatterIntros = [
-    /^(?:Dưới đây là|Sau đây là|Tôi xin gửi|Gửi bạn|Đây là|Theo yêu cầu của bạn|Chào bạn|Kính gửi đồng chí).*?(?:dự thảo|văn bản|nội dung|quyết định|công văn|tờ trình|mẫu|bản chuẩn hóa).*?[:\.]\s*\n+/gim,
-    /^(?:Dưới đây là toàn bộ|Dưới đây là bản|Sau đây là dự thảo).*?[:\.]\s*\n+/gim,
-    /^(?:Tôi đã (?:chuẩn hóa|rà soát|soạn thảo|sửa lại)).*?[:\.]\s*\n+/gim,
-    /^(?:Dưới đây là nội dung chi tiết).*?[:\.]\s*\n+/gim
+    /^(?:Chào bạn!|Dưới đây là bản chuẩn hóa|Sau đây là văn bản được chuẩn hóa).*?[:\.]\s*\n+/im,
+    /^(?:Tôi đã (?:chuẩn hóa|rà soát) xong văn bản).*?[:\.]\s*\n+/im
   ];
   for (const regex of aiChatterIntros) {
     text = text.replace(regex, '');
   }
 
-  // Loại bỏ lời kết của AI
+  // Loại bỏ lời kết meta của AI (không chạm vào Ghi chú hay Lưu ý của văn bản)
   const aiChatterOutros = [
-    /\n+(?:Hy vọng|Chúc bạn|Chúc đồng chí|Lưu ý khi ban hành|Lưu ý thêm|Nếu cần chỉnh sửa|Bạn có thể thay đổi|Ghi chú:).*$/gims,
-    /\n+(?:Trên đây là dự thảo|Mọi thắc mắc|Cần hỗ trợ thêm).*$/gims
+    /\n+(?:Hy vọng văn bản này hữu ích cho bạn!|Chúc bạn một ngày làm việc hiệu quả!).*$/gims,
+    /\n+(?:Mọi thắc mắc vui lòng liên hệ trợ lý AI).*$/gims
   ];
   for (const regex of aiChatterOutros) {
     text = text.replace(regex, '');

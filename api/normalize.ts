@@ -35,10 +35,11 @@ function getSystemPrompt(docType: string, docCategory: string, configuredAgency:
 - Nơi nhận chỉ chứa các đối tượng nhận văn bản (có dấu gạch ngang (-) ở đầu dòng, kết thúc bằng dấu chấm phẩy (;)) và dòng "Lưu: VT, ..." ở cuối cùng.
 - TUYỆT ĐỐI LOẠI BỎ mọi thành phần của khối chữ ký (Quyền hạn ký, chức vụ, họ tên người ký, chỉ dẫn ký) khỏi danh sách Nơi nhận.
 
-5. NGUYÊN TẮC VÀNG VỀ BẢO VỆ NỘI DUNG VĂN BẢN VÀ KÍNH GỬI:
-- TUYỆT ĐỐI KHÔNG TỰ Ý THAY ĐỔI, rút gọn, hay viết lại bất kỳ đoạn nào trong văn bản gốc.
-- TUYỆT ĐỐI KHÔNG tự động sửa phần Kính gửi, Nơi nhận, tên cơ quan, số hiệu, ngày tháng và toàn bộ nội dung chính.
-- Giữ nguyên 100% nội dung gốc; việc đề xuất sửa và bôi vàng sẽ do giao diện người dùng hiển thị cho người dùng tự bấm chọn.
+5. NGUYÊN TẮC VÀNG VỀ BÁO CÁO, KÍNH GỬI VÀ NƠI NHẬN:
+- BÁO CÁO theo Nghị định 30/2020/NĐ-CP KHÔNG CÓ phần Kính gửi ở đầu văn bản (kinhGui để chuỗi rỗng ""). Nếu văn bản gốc có ghi Kính gửi trong Báo cáo, chuyển đối tượng nhận đó vào Nơi nhận (để b/c).
+- Nhận diện chuẩn xác Tên loại và Tiêu đề báo cáo (kể cả Báo cáo kết quả, Báo cáo tổng kết, Báo cáo nhanh, v.v.).
+- Nơi nhận: Mọi sửa đổi của người dùng là PHÁN QUYẾT CUỐI CÙNG. TUYỆT ĐỐI KHÔNG tự động bỏ đi các dòng người nhận hợp lệ như "Chủ tịch, các Phó Chủ tịch UBND phường (để b/c);", "(để chỉ đạo)", v.v.
+- TUYỆT ĐỐI KHÔNG TỰ Ý THAY ĐỔI, rút gọn, hay viết lại bất kỳ đoạn nào trong nội dung chính của văn bản gốc. Giữ nguyên 100% nội dung gốc.
 
 ### CẤU TRÚC TRẢ VỀ (JSON CHUẨN THUẦN TÚY):
 {
@@ -49,13 +50,13 @@ function getSystemPrompt(docType: string, docCategory: string, configuredAgency:
   "soHieu": "Số ký hiệu văn bản trong văn bản gốc",
   "diaDanhNgayThang": "Địa danh ngày tháng năm trong văn bản gốc",
   "tenLoaiVanBan": "${docType.toUpperCase()}",
-  "trichYeu": "Trích yếu nội dung văn bản",
-  "kinhGui": "Kính gửi nguyên văn trong văn bản gốc (hỗ trợ nhiều dòng với \\\\n, tuyệt đối không tự ý thay đổi)",
+  "trichYeu": "Trích yếu nội dung văn bản (đối với Báo cáo: nhận diện chuẩn tiêu đề báo cáo)",
+  "kinhGui": "Kính gửi (ĐỐI VỚI BÁO CÁO: để trống \"\", vì Báo cáo theo Nghị định 30 không có phần Kính gửi; các văn bản khác như Công văn, Tờ trình thì giữ nguyên văn)",
   "noiDung": "Nội dung văn bản (bảo toàn nguyên vẹn 100% các khối <table>...</table> và toàn bộ câu chữ của văn bản gốc, tuyệt đối không tự ý thay đổi)",
   "quyenHanKy": "KT. CHỦ TỊCH | TM. | T/M | KT. | Q.",
   "chucVuNguoiKy": "Chức vụ người ký trong văn bản",
   "hoTenNguoiKy": "Họ tên người ký trong văn bản",
-  "noiNhan": "Nơi nhận (mỗi đối tượng một dòng với - ở đầu, kết thúc bằng ;, cuối là Lưu: VT...)",
+  "noiNhan": "Nơi nhận (mỗi đối tượng một dòng với - ở đầu, kết thúc bằng ;, giữ nguyên dòng 'Chủ tịch, các Phó Chủ tịch... (để b/c);' nếu có, cuối là Lưu: VT...)",
   "canhBao": [],
   "cacMucDaChinh": [
     "Đã tách Quốc hiệu và Tiêu ngữ thành công vào đúng header cột phải",

@@ -45,6 +45,7 @@ interface RawSpellingEntry {
   right: string;
   reason: string;
   category?: 'chinh_ta' | 'nham_tu' | 'logic' | 'van_phong' | 'the_thuc' | 'lap_tu';
+  caseSensitive?: boolean;
 }
 
 const RAW_SPELLING_ENTRIES: RawSpellingEntry[] = [
@@ -232,9 +233,9 @@ const RAW_SPELLING_ENTRIES: RawSpellingEntry[] = [
 
   // 9. Chuẩn hóa Tiêu ngữ & Căn cứ
   { wrong: 'Độc lập-Tự do-Hạnh phúc', right: 'Độc lập - Tự do - Hạnh phúc', reason: 'Thể thức NĐ 30: Tiêu ngữ có dấu cách trước và sau dấu gạch nối (-)', category: 'the_thuc' },
-  { wrong: 'Độc Lập - Tự Do - Hạnh Phúc', right: 'Độc lập - Tự do - Hạnh phúc', reason: 'Thể thức NĐ 30: Tiêu ngữ viết hoa chữ cái đầu mỗi cụm từ', category: 'the_thuc' },
+  { wrong: 'Độc Lập - Tự Do - Hạnh Phúc', right: 'Độc lập - Tự do - Hạnh phúc', reason: 'Thể thức NĐ 30: Tiêu ngữ viết hoa chữ cái đầu mỗi cụm từ (Độc lập - Tự do - Hạnh phúc)', category: 'the_thuc', caseSensitive: true },
+  { wrong: 'ĐỘC LẬP - TỰ DO - HẠNH PHÚC', right: 'Độc lập - Tự do - Hạnh phúc', reason: 'Thể thức NĐ 30: Tiêu ngữ không viết hoa toàn bộ (Độc lập - Tự do - Hạnh phúc)', category: 'the_thuc', caseSensitive: true },
   { wrong: 'Căn cứ vào', right: 'Căn cứ', reason: 'Thể thức NĐ 30: Viết "Căn cứ", không viết "Căn cứ vào"', category: 'the_thuc' },
-  { wrong: 'ba phần tư', right: 'ba phần tư', reason: 'Chuẩn chính tả: "ba phần tư"', category: 'chinh_ta' },
 
   // 10. Lỗi viết sai / nhầm từ thông dụng trong văn bản hành chính (Theo yêu cầu nâng cấp Tiểu Bảo Bối)
   { wrong: 'cơ quann', right: 'cơ quan', reason: 'Viết nhầm từ: "cơ quann" ➔ "cơ quan"', category: 'nham_tu' },
@@ -283,11 +284,25 @@ const RAW_SPELLING_ENTRIES: RawSpellingEntry[] = [
   { wrong: 'thực tê', right: 'thực tế', reason: 'Thiếu dấu sắc: "thực tê" ➔ "thực tế"', category: 'chinh_ta' },
   { wrong: 'đánh dá', right: 'đánh giá', reason: 'Sai phụ âm: "đánh dá" ➔ "đánh giá"', category: 'chinh_ta' },
   { wrong: 'uy ban', right: 'ủy ban', reason: 'Chuẩn dấu thanh: "uy ban" ➔ "ủy ban"', category: 'chinh_ta' },
-  { wrong: 'uỷ ban', right: 'ủy ban', reason: 'Chuẩn hóa dấu thanh: "uỷ ban" ➔ "ủy ban"', category: 'chinh_ta' }
+  { wrong: 'uỷ ban', right: 'ủy ban', reason: 'Chuẩn hóa dấu thanh: "uỷ ban" ➔ "ủy ban"', category: 'chinh_ta' },
+  { wrong: 'đồng chíi', right: 'đồng chí', reason: 'Viết nhầm từ: "đồng chíi" ➔ "đồng chí"', category: 'nham_tu' },
+  { wrong: 'đồng chi', right: 'đồng chí', reason: 'Thiếu dấu sắc: "đồng chi" ➔ "đồng chí"', category: 'chinh_ta' },
+  { wrong: 'phê duyêt', right: 'phê duyệt', reason: 'Thiếu dấu nặng: "phê duyêt" ➔ "phê duyệt"', category: 'chinh_ta' },
+  { wrong: 'phê duyết', right: 'phê duyệt', reason: 'Sai dấu thanh: "phê duyết" ➔ "phê duyệt"', category: 'chinh_ta' },
+  { wrong: 'kết luân', right: 'kết luận', reason: 'Thiếu dấu nặng: "kết luân" ➔ "kết luận"', category: 'chinh_ta' },
+  { wrong: 'nghiêm tút', right: 'nghiêm túc', reason: 'Sai phụ âm cuối: "nghiêm tút" ➔ "nghiêm túc"', category: 'chinh_ta' },
+  { wrong: 'đáp ứn', right: 'đáp ứng', reason: 'Sai phụ âm cuối: "đáp ứn" ➔ "đáp ứng"', category: 'chinh_ta' },
+  { wrong: 'thời han', right: 'thời hạn', reason: 'Thiếu dấu nặng: "thời han" ➔ "thời hạn"', category: 'chinh_ta' },
+  { wrong: 'chấp hanh', right: 'chấp hành', reason: 'Thiếu dấu huyền: "chấp hanh" ➔ "chấp hành"', category: 'chinh_ta' },
+  { wrong: 'ban hanh', right: 'ban hành', reason: 'Thiếu dấu huyền: "ban hanh" ➔ "ban hành"', category: 'chinh_ta' },
+  { wrong: 'thủ tuc', right: 'thủ tục', reason: 'Thiếu dấu nặng: "thủ tuc" ➔ "thủ tục"', category: 'chinh_ta' },
+  { wrong: 'hồ sơr', right: 'hồ sơ', reason: 'Viết nhầm từ: "hồ sơr" ➔ "hồ sơ"', category: 'nham_tu' },
+  { wrong: 'giải quyêt', right: 'giải quyết', reason: 'Sai dấu sắc: "giải quyêt" ➔ "giải quyết"', category: 'chinh_ta' },
+  { wrong: 'bảo đàm', right: 'bảo đảm', reason: 'Sai dấu thanh: "bảo đàm" ➔ "bảo đảm"', category: 'chinh_ta' }
 ];
 
 export const VIETNAMESE_SPELLING_RULES: SpellingRule[] = RAW_SPELLING_ENTRIES.map(entry => ({
-  pattern: createVnWordRegex(entry.wrong),
+  pattern: createVnWordRegex(entry.wrong, entry.caseSensitive ? 'g' : 'gi'),
   wrong: entry.wrong,
   right: entry.right,
   reason: entry.reason,
@@ -309,6 +324,13 @@ export function checkVietnameseSpelling(text: string): SpellingErrorMatch[] {
 
     while ((m = regex.exec(text)) !== null) {
       const matchText = m[0];
+      // Nếu chuỗi khớp đã trùng 100% với từ chuẩn (right) thì không phải là lỗi!
+      if (matchText === rule.right) continue;
+      // Bảo vệ các tiêu chuẩn quốc gia & Đảng: Tiêu ngữ chuẩn "Độc lập - Tự do - Hạnh phúc" không bao giờ coi là lỗi
+      if (matchText === 'Độc lập - Tự do - Hạnh phúc') continue;
+      if (matchText === 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM') continue;
+      if (matchText === 'ĐẢNG CỘNG SẢN VIỆT NAM') continue;
+
       const key = `${matchText.toLowerCase()}_${m.index}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -352,6 +374,7 @@ export function fixAllVietnameseSpelling(text: string): {
     let foundInCurrent = false;
 
     while ((m = regex.exec(current)) !== null) {
+      if (m[0] === rule.right || m[0] === 'Độc lập - Tự do - Hạnh phúc' || m[0] === 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM' || m[0] === 'ĐẢNG CỘNG SẢN VIỆT NAM') continue;
       foundInCurrent = true;
       appliedFixes.push({
         wrong: m[0],
@@ -528,5 +551,11 @@ export function detectAllDocumentProposals(
     }
   }
 
-  return proposals.sort((a, b) => a.index - b.index);
+  return proposals.filter(p => {
+    const w = (p.wrong || '').trim();
+    if (w === 'Độc lập - Tự do - Hạnh phúc') return false;
+    if (w === 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM') return false;
+    if (w === 'ĐẢNG CỘNG SẢN VIỆT NAM') return false;
+    return true;
+  }).sort((a, b) => a.index - b.index);
 }

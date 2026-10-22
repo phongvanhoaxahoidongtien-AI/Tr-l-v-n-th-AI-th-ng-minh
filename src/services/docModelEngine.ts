@@ -398,9 +398,10 @@ export class DocModelEngine {
           spacing: { before: 20, after: 60, line: 160 },
           children: [
             new TextRun({
-              text: '──────────────────',
+              text: '────────────────────────',
               font: 'Times New Roman',
-              size: 18,
+              size: 28, // 14pt cùng kích thước với Tiêu ngữ để dài bằng đúng độ dài tiêu ngữ
+              bold: false, // độ đậm đều bằng nhau, nét liền chuẩn thể thức NĐ 30
             }),
           ],
         })
@@ -431,15 +432,15 @@ export class DocModelEngine {
       })
     );
 
-    // Bảng Header 2 cột tổng 16cm: Cột trái 6.2cm (3515 dxa), Cột phải 9.8cm (5556 dxa)
+    // Bảng Header 2 cột tổng 16,2cm: Cột trái 6.5cm (3685 dxa), Cột phải 9.7cm (5500 dxa)
     const headerTable = new Table({
-      width: { size: 9071, type: WidthType.DXA },
+      width: { size: 9185, type: WidthType.DXA },
       borders: hiddenBorders,
       rows: [
         new TableRow({
           children: [
-            new TableCell({ width: { size: 3515, type: WidthType.DXA }, borders: hiddenBorders, children: leftHeaderParagraphs }),
-            new TableCell({ width: { size: 5556, type: WidthType.DXA }, borders: hiddenBorders, children: rightHeaderParagraphs })
+            new TableCell({ width: { size: 3685, type: WidthType.DXA }, borders: hiddenBorders, children: leftHeaderParagraphs }),
+            new TableCell({ width: { size: 5500, type: WidthType.DXA }, borders: hiddenBorders, children: rightHeaderParagraphs })
           ]
         })
       ]
@@ -468,8 +469,9 @@ export class DocModelEngine {
       }
     }
 
-    // Kính gửi / Kính trình
-    if (doc.kinhGuiHoacKinhTrinh) {
+    // Kính gửi / Kính trình (Báo cáo KHÔNG CÓ phần Kính gửi theo NĐ 30)
+    const isReportType = doc.tenLoai === 'BÁO CÁO' || doc.tenLoai.startsWith('BÁO CÁO');
+    if (!isReportType && doc.kinhGuiHoacKinhTrinh) {
       bodyParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.LEFT,
@@ -595,7 +597,7 @@ export class DocModelEngine {
                 top: 1134, // 20mm
                 bottom: 1134, // 20mm
                 left: 1701, // 30mm
-                right: 1134 // 20mm (Chiều rộng văn bản chuẩn 16cm)
+                right: 1020 // 18mm (Nghị định 30: lề phải 15-20mm; trái 30mm + phải 18mm => chiều rộng văn bản đúng 16.2cm)
               }
             }
           },

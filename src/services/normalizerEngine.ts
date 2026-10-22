@@ -327,7 +327,9 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     noiDungChuanHoa: content,
     goiY: suggestions,
     cacMucDaChinh: structured.cacMucDaChinh || [
-      'Đã tách Quốc hiệu và Tiêu ngữ thành công',
+      'Đã tách Quốc hiệu và Tiêu ngữ chuẩn 16.2cm (Cột trái 6.5cm - Cột phải 9.7cm)',
+      'Đường kẻ ngang dưới Tiêu ngữ nét liền, dài bằng đúng độ dài dòng chữ Độc lập - Tự do - Hạnh phúc',
+      'Bảo toàn 100% nội dung gốc được copy vào, không tự ý xóa bỏ',
       'Đã ngăn nội dung không bị đẩy vào ô Cơ quan ban hành',
       'Đã hỗ trợ xuống dòng cho Kính gửi và Nơi nhận',
       'Đã thêm trường Quyền hạn ký'
@@ -429,13 +431,23 @@ export async function runDocumentNormalization(params: RunNormalizeParams): Prom
           parts.push('');
         }
 
-        if (kinhGui && kinhGui.trim()) {
+        const isBaoCao = tenLoaiVanBan?.toUpperCase().includes('BÁO CÁO') || params.docType?.toUpperCase().includes('BÁO CÁO');
+        if (!isBaoCao && kinhGui && kinhGui.trim()) {
           const kLines = kinhGui.split('\n').map((l: string) => l.trim()).filter(Boolean);
-          if (kLines.length === 1 && !kLines[0].startsWith('-')) {
-            parts.push(kLines[0].startsWith('Kính gửi:') ? kLines[0] : `Kính gửi: ${kLines[0]}`);
-          } else {
+          const cleanList = kLines.map((l: string) => {
+            let item = l.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
+            item = item.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+            return item;
+          }).filter(Boolean);
+
+          if (cleanList.length === 1) {
+            parts.push(`Kính gửi: ${cleanList[0]}.`);
+          } else if (cleanList.length > 1) {
             parts.push('Kính gửi:');
-            kLines.forEach((l: string) => parts.push(l.startsWith('Kính gửi:') ? l.replace('Kính gửi:', '').trim() : (l.startsWith('-') ? l : `- ${l}`)));
+            cleanList.forEach((item: string, idx: number) => {
+              const isLast = idx === cleanList.length - 1;
+              parts.push(`- ${item}${isLast ? '.' : ';'}`);
+            });
           }
           parts.push('');
         }

@@ -308,23 +308,33 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
 
       {/* CẢNH BÁO & ĐỒNG BỘ NẾU PHÁT HIỆN CƠ QUAN / ĐỊA DANH KHÁC CÀI ĐẶT MẶC ĐỊNH */}
       {isAgencyOrLocationDifferent && (
-        <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-300 text-amber-950 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fade-in">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <div className="font-bold text-sm text-amber-900 flex items-center gap-2 font-sans">
-                <span>Phát hiện Cơ quan ban hành hoặc Địa danh khác với Cài đặt mặc định của đồng chí</span>
-                <span className="text-[10px] bg-amber-200/90 text-amber-900 px-2 py-0.5 rounded font-semibold font-mono">Ưu tiên Cài đặt</span>
+        <div className="p-5 md:p-6 bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100 rounded-2xl border-2 border-amber-500 text-amber-950 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fade-in font-sans">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-xs shrink-0 mt-0.5 animate-pulse">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-black uppercase text-amber-900 bg-amber-200/90 px-2.5 py-0.5 rounded-full border border-amber-300">
+                  ⚠️ CẢNH BÁO ĐỒNG BỘ CÀI ĐẶT
+                </span>
+                <span className="font-extrabold text-sm sm:text-base text-slate-900">
+                  Cơ quan ban hành hoặc Địa danh khác với Cài đặt mặc định của đồng chí
+                </span>
               </div>
-              <div className="text-xs text-amber-800 mt-1 space-y-0.5 font-sans">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {agencyDiff && (
-                  <div>
-                    • Cơ quan trong văn bản: <strong className="font-serif">"{activeDoc.agencyName}"</strong> ➔ Cài đặt mặc định: <strong className="font-serif text-amber-950">"{agencySettings.agencyName}"</strong>
+                  <div className="p-2 bg-white/80 rounded-lg border border-amber-200">
+                    <span className="text-slate-500">Cơ quan văn bản: </span>
+                    <strong className="font-serif text-rose-800">"{activeDoc.agencyName}"</strong>
+                    <div className="text-emerald-800 font-medium">➔ Mặc định: <strong className="font-serif">"{agencySettings.agencyName}"</strong></div>
                   </div>
                 )}
                 {locationDiff && (
-                  <div>
-                    • Địa danh trong văn bản: <strong className="font-serif">"{docLoc}"</strong> ➔ Cài đặt mặc định: <strong className="font-serif text-amber-950">"{agencySettings.shortLocation}"</strong>
+                  <div className="p-2 bg-white/80 rounded-lg border border-amber-200">
+                    <span className="text-slate-500">Địa danh văn bản: </span>
+                    <strong className="font-serif text-rose-800">"{docLoc}"</strong>
+                    <div className="text-emerald-800 font-medium">➔ Mặc định: <strong className="font-serif">"{agencySettings.shortLocation}"</strong></div>
                   </div>
                 )}
               </div>
@@ -334,10 +344,10 @@ export const Step4Export: React.FC<Step4ExportProps> = ({
           <button
             type="button"
             onClick={handleSyncWithDefaultSettings}
-            className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-700 hover:to-red-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+            className="px-5 py-3 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 text-white font-black text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98] ring-2 ring-amber-400/50"
           >
-            <RotateCcw className="w-4 h-4" />
-            <span>Đồng bộ lại theo Cài đặt mặc định</span>
+            <RotateCcw className="w-4 h-4 text-amber-200" />
+            <span>⚡ Đồng bộ lại theo Cài đặt mặc định</span>
           </button>
         </div>
       )}

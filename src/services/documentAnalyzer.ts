@@ -1,6 +1,6 @@
 import { AgencySettings, DocumentAnalysisReport, DetectedElements, ReviewIssue, AutoFixItem, PassedItem } from '../types';
 import { checkVietnameseSpelling } from '../utils/vietnameseSpellingChecker';
-import { formatDecree30TitleCase } from './decree30Formatter';
+import { formatDecree30TitleCase, isDocumentBodyStart } from './decree30Formatter';
 
 /**
  * Đọc và phân tích toàn diện văn bản đầu vào theo đúng chuẩn của trolyvanthu.isavn.edu.vn:
@@ -55,10 +55,12 @@ export function analyzeDocumentText(
     const l = lines[i];
 
     // Số ký hiệu (chuẩn hóa cả dạng / và - của Đảng và hành chính)
-    const codeMatch = l.match(/(?:^|[\s\u00A0])(?:Số|SỐ|Số\s*:|Số\s*\.)\s*:?\.?\s*([0-9A-Za-z\-\.…\s]*[\/\-][A-Za-z0-9\-\.…]+(?:[\/\-][A-Za-z0-9\-\.…]+)*|[0-9]+)/i);
-    if (codeMatch) {
-      docCode = codeMatch[1].replace(/^(?:CỘNG|ĐỘC|ĐẢNG).*$/gi, '').trim();
-      continue;
+    if (!docCode && !/^Căn cứ|^Kính gửi/i.test(l)) {
+      const codeMatch = l.match(/(?:^|[\s\u00A0])(?:Số|SỐ|Số\s*:|Số\s*\.)\s*:?\.?\s*([0-9A-Za-zĐđÀ-ỹ\-\.…\s]*[\/\-][A-Za-z0-9ĐđÀ-ỹ\-\.…]+(?:[\/\-][A-Za-z0-9ĐđÀ-ỹ\-\.…]+)*|[0-9]+)/i);
+      if (codeMatch) {
+        docCode = codeMatch[1].replace(/^(?:CỘNG|ĐỘC|ĐẢNG).*$/gi, '').trim();
+        continue;
+      }
     }
 
     // Địa danh & Ngày tháng
@@ -90,14 +92,17 @@ export function analyzeDocumentText(
 
     // Trích yếu Công văn (V/v...)
     if (/^V\/v\s+/i.test(l) || /^Về việc\s+/i.test(l)) {
-      subject = l.replace(/^Về việc\s+/i, 'V/v ');
-      if (!docTypeName) docTypeName = 'CÔNG VĂN';
-      continue;
+      const isActuallyDecision = lines.slice(0, 15).some(line => /^(?:QUYẾT\s+ĐỊNH|Quyết\s+định)\b/i.test(line.trim()) || /\/QĐ\b/i.test(line));
+      if (!isActuallyDecision) {
+        subject = l.replace(/^Về việc\s+/i, 'V/v ');
+        if (!docTypeName) docTypeName = 'CÔNG VĂN';
+        continue;
+      }
     }
 
     // Nâng cấp nhận diện 100% chính xác 29 loại văn bản hành chính (NĐ 30) và 15 loại văn bản Đảng (HD 05)
     if (!docTypeName) {
-      const reportM = l.match(/^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s*(?:NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ|ĐÁNH\s+GIÁ|KẾT\s+QUẢ|TÌNH\s+HÌNH|CÔNG\s+TÁC|TỰ\s+KIỂM\s+TRA|RÀ\s+SOÁT))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
+      const reportM = l.match(/^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s+(NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ|ĐÁNH\s+GIÁ|KẾT\s+QUẢ|TÌNH\s+HÌNH|CÔNG\s+TÁC|TỰ\s+KIỂM\s+TRA|RÀ\s+SOÁT))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
       const decM = l.match(/^(?:QUYẾT\s+ĐỊNH|Quyết\s+định)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
       const planM = l.match(/^(?:KẾ\s+HOẠCH|Kế\s+hoạch)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
       const subM = l.match(/^(?:TỜ\s+TRÌNH|Tờ\s+trình)(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i);
@@ -112,7 +117,15 @@ export function analyzeDocumentText(
 
       if (reportM) {
         matchedType = 'BÁO CÁO';
-        inlineTitle = reportM[1] || '';
+        const subTypeWord = (reportM[1] || '').trim();
+        const restWords = (reportM[2] || '').trim();
+        if (subTypeWord && restWords) {
+          inlineTitle = `${subTypeWord} ${restWords}`;
+        } else if (subTypeWord) {
+          inlineTitle = subTypeWord;
+        } else {
+          inlineTitle = restWords;
+        }
       } else if (decM) {
         matchedType = 'QUYẾT ĐỊNH';
         inlineTitle = decM[1] || '';
@@ -146,19 +159,31 @@ export function analyzeDocumentText(
           titleParts.push(inlineTitle.trim());
         }
 
-        // Kiểm tra dòng kế tiếp trong lines xem có phải là trích yếu tiêu đề nhiều dòng không
-        if (i + 1 < lines.length) {
-          const nextL = lines[i + 1];
-          if (nextL && !/^Kính|^Căn cứ|^Điều\s+\d+|^Số:/i.test(nextL) && (
-            /^(?:Về việc|Về|Ban hành|Phê duyệt|Quy định|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Thực hiện|Triển khai)/i.test(nextL) ||
-            (titleParts.length > 0 && nextL.length < 150 && !nextL.endsWith('.'))
-          )) {
+        // Đọc tiếp các dòng tiếp theo là trích yếu tiêu đề nhiều dòng
+        let nextIdx = i + 1;
+        while (nextIdx < lines.length) {
+          const nextL = lines[nextIdx];
+          if (!nextL || isDocumentBodyStart(nextL) || /^Kính|^Căn cứ|^Điều\s+\d+|^Số:|^I\.|^1\.|^Phần\s+/i.test(nextL)) {
+            break;
+          }
+          const isStartKeyword = /^(?:Về việc|Về|Ban hành|Phê duyệt|Quy định|Kết quả|Tình hình|Tổng kết|Sơ kết|Đánh giá|Triển khai|Nhiệm vụ|Kiểm tra|Rà soát|Công tác|Tự kiểm tra)/i.test(nextL);
+          const isContinuationWord = /^(?:và|về|giai đoạn|năm|quý|tháng|trên địa bàn|tại|của|thuộc|theo|trong công tác)/i.test(nextL);
+          const isShortTitleLine = titleParts.length > 0 && titleParts.length < 2 && nextL.length < 130 && !nextL.endsWith('.') && !nextL.startsWith('-');
+
+          if (isStartKeyword || isContinuationWord || isShortTitleLine) {
             titleParts.push(nextL.trim());
+            nextIdx++;
+          } else {
+            break;
           }
         }
 
         if (titleParts.length > 0) {
-          subject = formatDecree30TitleCase(titleParts.join(' '));
+          let rawCollected = titleParts.join(' ').trim();
+          if (docTypeName === 'BÁO CÁO') {
+            rawCollected = rawCollected.replace(/^(?:BÁO\s*CÁO|Báo\s*cáo)[\s:\-–—\.]*/i, '').trim();
+          }
+          subject = formatDecree30TitleCase(rawCollected);
         }
         continue;
       }
@@ -246,6 +271,25 @@ export function analyzeDocumentText(
 
   // 3. NHÓM "CẦN XEM LẠI" / "CẦN SỬA"
   const reviewIssues: ReviewIssue[] = [];
+
+  // Kiểm tra phần chữ ký có bị thiếu dòng (chỉ có 1 dòng quyền hạn hoặc chức vụ ký - Yêu cầu 2)
+  const hasAuth = Boolean(signerAuthority);
+  const hasTitle = Boolean(signerTitle);
+  const isSingleLineSig = (hasAuth && !hasTitle) || (!hasAuth && hasTitle) || (hasAuth && hasTitle && signerAuthority?.toUpperCase() === signerTitle?.toUpperCase());
+  if (isSingleLineSig) {
+    const currentLine = signerAuthority || signerTitle || 'Chưa có chức vụ/quyền hạn ký';
+    reviewIssues.push({
+      id: 'single-line-signature',
+      type: 'can_sua',
+      title: `Phần chữ ký chỉ có 1 dòng quyền hạn hoặc chức vụ: "${currentLine}"`,
+      count: 1,
+      description: 'Theo Nghị định 30/2020/NĐ-CP Điều 13 và Phụ lục I, phần chữ ký của cơ quan/đơn vị cần có đủ 2 dòng: Dòng 1 ghi thẩm quyền ký (TM. ỦY BAN NHÂN DÂN hoặc KT. CHỦ TỊCH...), Dòng 2 ghi chức vụ người ký (CHỦ TỊCH hoặc PHÓ CHỦ TỊCH). Hệ thống đã bôi vàng để đồng chí lưu ý bổ sung.',
+      examples: [
+        { snippet: `Hiện tại: "${currentLine}" ➔ Cần bổ sung đủ 2 dòng: Dòng 1: Quyền hạn ký (TM./KT.), Dòng 2: Chức vụ ký` }
+      ],
+      basis: 'Căn cứ: Nghị định 30/2020/NĐ-CP - Thể thức phần chữ ký'
+    });
+  }
 
   // A. Phát hiện câu quá dài (trên 55 từ)
   // Tách văn bản thành các câu độc lập
