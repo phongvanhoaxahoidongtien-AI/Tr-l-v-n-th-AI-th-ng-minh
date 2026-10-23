@@ -11,6 +11,12 @@ import {
   detectNumberedHeading,
   getAutoAdjustedMottoLine
 } from './decree30Formatter';
+import { 
+  isCongVanDocument, 
+  formatCongVanSubject, 
+  getCongVanSubject, 
+  buildCongVanDocxHeaderRows 
+} from './Module_CongVan.js';
 import { isWarningOrInstructionLine } from '../utils/cleanAIText';
 import { AgencySettings } from '../types';
 
@@ -210,7 +216,7 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
  * - Bố cục footer 2 cột ẩn viền (Nơi nhận & Chữ ký)
  */
 export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySettings): Promise<Blob> {
-  const isCongVan = doc.docTypeName === 'CÔNG VĂN' || (!doc.docTypeName && Boolean(doc.docSubjectShort));
+  const isCongVan = isCongVanDocument(doc);
 
   // Viền ẩn cho bảng bố cục header và footer
   const hiddenBorders = {
@@ -484,41 +490,46 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   // Bảng Header 2 cột tổng chiều dài 16.2cm (9185 dxa):
   // Cột trái: 6.5 cm = 3685 dxa
   // Cột phải: 9.7 cm = 5500 dxa
-  // Row 1: Tên cơ quan (trái) & Quốc hiệu + Tiêu ngữ (phải)
-  // Row 2: Ô số 3 (Số công văn) và Ô số 4 (Địa danh, ngày tháng) ĐƯỢC ĐẶT CÙNG 1 DÒNG
-  // Row 3 (nếu có): Trích yếu công văn (trái) - KHÔNG CÓ DẤU GẠCH NGANG KẾT THÚC
-  const headerTableRows: TableRow[] = [
-    new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 3685, type: WidthType.DXA },
-          borders: hiddenBorders,
-          children: agencyParagraphs,
+  // NẾU LÀ CÔNG VĂN: GỌI MODULE_CONG_VAN CHUYÊN TRÁCH ĐỂ ĐẢM BẢO TRÍCH YẾU NẰM ĐÚNG Ô BÊN TRÁI DƯỚI SỐ KÝ HIỆU
+  const headerTableRows: TableRow[] = isCongVan
+    ? buildCongVanDocxHeaderRows(
+        doc,
+        settings,
+        { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle },
+        { getStandardAgencyHeaderParts, formatDocCodeForDisplay, getAutoAdjustedMottoLine }
+      )
+    : [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 3685, type: WidthType.DXA },
+              borders: hiddenBorders,
+              children: agencyParagraphs,
+            }),
+            new TableCell({
+              width: { size: 5500, type: WidthType.DXA },
+              borders: hiddenBorders,
+              children: nationalHeaderParagraphs,
+            }),
+          ],
         }),
-        new TableCell({
-          width: { size: 5500, type: WidthType.DXA },
-          borders: hiddenBorders,
-          children: nationalHeaderParagraphs,
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 3685, type: WidthType.DXA },
+              borders: hiddenBorders,
+              children: [docCodeParagraph],
+            }),
+            new TableCell({
+              width: { size: 5500, type: WidthType.DXA },
+              borders: hiddenBorders,
+              children: [locationDateParagraph],
+            }),
+          ],
         }),
-      ],
-    }),
-    new TableRow({
-      children: [
-        new TableCell({
-          width: { size: 3685, type: WidthType.DXA },
-          borders: hiddenBorders,
-          children: [docCodeParagraph],
-        }),
-        new TableCell({
-          width: { size: 5500, type: WidthType.DXA },
-          borders: hiddenBorders,
-          children: [locationDateParagraph],
-        }),
-      ],
-    }),
-  ];
+      ];
 
-  if (doc.docTypeName !== 'QUYẾT ĐỊNH' && subjectParagraphs.length > 0) {
+  if (!isCongVan && doc.docTypeName !== 'QUYẾT ĐỊNH' && subjectParagraphs.length > 0) {
     headerTableRows.push(
       new TableRow({
         children: [

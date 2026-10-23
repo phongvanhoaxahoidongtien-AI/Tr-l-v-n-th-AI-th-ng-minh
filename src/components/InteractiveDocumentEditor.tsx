@@ -12,6 +12,11 @@ import {
   isDocumentBodyStart,
   StructuredDoc 
 } from '../services/decree30Formatter';
+import { 
+  isCongVanDocument, 
+  formatCongVanSubject, 
+  getCongVanSubject 
+} from '../services/Module_CongVan.js';
 import { cleanAIText, formatHtmlTableToFitA4 } from '../utils/cleanAIText';
 import { AGENCY_PRESETS } from '../utils/agencyPresets';
 import { 
@@ -30,6 +35,106 @@ import {
   Check, X, Eye, Undo2, ArrowRight, Building, Bold, ListOrdered,
   Table as TableIcon, AlignCenter, Plus, Home, Trash2, Paperclip, FilePlus
 } from 'lucide-react';
+
+/**
+ * Nhận diện ranh giới bắt đầu nội dung chính trong trường Kính gửi
+ * (Thực hiện..., Căn cứ..., UBND nhận được..., Nhận được..., Tiếp nhận..., Phúc đáp...)
+ */
+export function isKinhGuiBodyLeakLine(line: string): boolean {
+  if (!line) return false;
+  const clean = line.trim();
+  if (!clean) return false;
+  if (isDocumentBodyStart(clean)) return true;
+  if (/^(?:Thực\s+hiện|thực\s+hiện)\b/i.test(clean)) return true;
+  if (/^(?:Căn\s+cứ|căn\s+cứ)\b/i.test(clean)) return true;
+  if (/^(?:UBND|Ủy\s+ban\s+nhân\s+dân|Uỷ\s+ban\s+nhân\s+dân)\b.*?\b(?:nhận\s+được|tiếp\s+nhận|ban\s+hành|chỉ\s+đạo|yêu\s+cầu|đề\s+nghị|thực\s+hiện|báo\s+cáo)\b/i.test(clean)) return true;
+  if (/^(?:Nhận\s+được|nhận\s+được|Tiếp\s+nhận|tiếp\s+nhận|Phúc\s+đáp|phúc\s+đáp|Xét\s+đề\s+nghị|xét\s+đề\s+nghị|Theo\s+đề\s+nghị|theo\s+đề\s+nghị|Trả\s+lời\s+công\s+văn)\b/i.test(clean)) return true;
+  if (clean.length > 50 && /\b(?:thực hiện|chỉ đạo|phối hợp|triển khai|báo cáo|kính đề nghị)\b/i.test(clean)) return true;
+  return false;
+}
+
+/**
+ * Nâng cấp khả năng nhận diện các nơi kính gửi và đảm bảo nơi cuối cùng kết thúc bằng dấu "."
+ * - Tách nhiều nơi nhận qua dòng mới, chấm phẩy, hoặc gạch đầu dòng
+ * - Tách riêng các dòng nội dung chính bị dính vào Kính gửi (Thực hiện..., Căn cứ..., UBND nhận được...)
+ * - Nơi cuối cùng được kết thúc bằng dấu "."
+ * - Nếu 1 nơi nhận: không có dấu gạch (-), kết thúc bằng dấu "."
+ * - Nếu >= 2 nơi nhận: các dòng trước kết thúc bằng ";", dòng cuối kết thúc bằng "."
+ */
+export function processAndFormatKinhGui(raw: string | string[]): {
+  formattedText: string;
+  recipients: string[];
+  leakedBodyLines: string[];
+} {
+  const rawLines: string[] = Array.isArray(raw) ? raw : (raw || '').split('\n');
+  const candidateRecipients: string[] = [];
+  const leakedBodyLines: string[] = [];
+  let foundBodyStart = false;
+
+  for (const line of rawLines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Nếu đã phát hiện ranh giới thân bài, toàn bộ các dòng sau đều là nội dung chính
+    if (foundBodyStart) {
+      leakedBodyLines.push(trimmed);
+      continue;
+    }
+
+    // Kiểm tra dòng có phải là bắt đầu nội dung chính không (Thực hiện..., Căn cứ..., UBND... nhận được...)
+    if (isKinhGuiBodyLeakLine(trimmed)) {
+      foundBodyStart = true;
+      leakedBodyLines.push(trimmed);
+      continue;
+    }
+
+    // Tách bỏ tiền tố "Kính gửi:", "Kính trình:", "Kính chuyển:"
+    let clean = trimmed.replace(/^Kính\s*(?:gửi|trình|chuyển):?\s*/i, '').trim();
+    if (!clean) continue;
+
+    // Lại kiểm tra xem sau khi bỏ tiền tố Kính gửi, phần còn lại có phải nội dung thân bài không
+    if (isKinhGuiBodyLeakLine(clean)) {
+      foundBodyStart = true;
+      leakedBodyLines.push(clean);
+      continue;
+    }
+
+    // Hỗ trợ trường hợp nhiều nơi nhận nằm trên cùng 1 dòng cách nhau bởi dấu chấm phẩy ";"
+    if (clean.includes(';')) {
+      const subParts = clean.split(';').map(p => p.trim()).filter(Boolean);
+      for (const sub of subParts) {
+        if (isKinhGuiBodyLeakLine(sub)) {
+          foundBodyStart = true;
+          leakedBodyLines.push(sub);
+          continue;
+        }
+        const itemClean = sub.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        if (itemClean) candidateRecipients.push(itemClean);
+      }
+    } else {
+      const itemClean = clean.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+      if (itemClean) candidateRecipients.push(itemClean);
+    }
+  }
+
+  let formattedLines: string[] = [];
+  if (candidateRecipients.length === 1) {
+    // 1 nơi nhận: trên 1 dòng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
+    formattedLines = [`${candidateRecipients[0]}.`];
+  } else if (candidateRecipients.length > 1) {
+    // >= 2 nơi nhận: mỗi dòng có gạch đầu dòng (-), các dòng trước kết thúc bằng (;), dòng cuối kết thúc bằng (.)
+    formattedLines = candidateRecipients.map((item, idx) => {
+      const isLast = idx === candidateRecipients.length - 1;
+      return `- ${item}${isLast ? '.' : ';'}`;
+    });
+  }
+
+  return {
+    formattedText: formattedLines.join('\n'),
+    recipients: candidateRecipients,
+    leakedBodyLines
+  };
+}
 
 interface InteractiveDocumentEditorProps {
   normalizedText: string;
@@ -70,7 +175,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   // Multiline string states cho Kính gửi và Nơi nhận (Kính gửi 1 nơi: không có dấu gạch -; Nơi nhận: có dấu - ở đầu dòng)
   const [kinhGuiText, setKinhGuiText] = useState(() => {
     const raw = externalDoc?.recipientsHeader ?? doc.recipientsHeader ?? '';
-    return raw ? formatKinhGuiLines(raw).join('\n') : '';
+    return raw ? processAndFormatKinhGui(raw).formattedText : '';
   });
   const [noiNhanText, setNoiNhanText] = useState(() => {
     const raw = externalDoc?.recipients ?? doc.recipients ?? [];
@@ -98,10 +203,25 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     }
     if (externalDoc) {
       setDoc(externalDoc);
-      setKinhGuiText(externalDoc.recipientsHeader ? formatKinhGuiLines(externalDoc.recipientsHeader).join('\n') : '');
+      const kgResult = processAndFormatKinhGui(externalDoc.recipientsHeader || '');
+      setKinhGuiText(kgResult.formattedText);
       setNoiNhanText(formatBulletLines(externalDoc.recipients || []).join('\n'));
       if (externalDoc.signerRoleLine2) {
         setHasThreeSignerLines(true);
+      }
+      if (kgResult.leakedBodyLines.length > 0) {
+        const paras = [...(externalDoc.bodyParagraphs || [])];
+        let hasNew = false;
+        for (let i = kgResult.leakedBodyLines.length - 1; i >= 0; i--) {
+          const lk = kgResult.leakedBodyLines[i];
+          if (!paras.some(p => p.trim() === lk.trim())) {
+            paras.unshift(lk);
+            hasNew = true;
+          }
+        }
+        if (hasNew) {
+          setDoc(prev => ({ ...prev, recipientsHeader: kgResult.formattedText, bodyParagraphs: paras }));
+        }
       }
     }
   }, [externalDoc]);
@@ -114,9 +234,25 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
       return;
     }
     const parsed = parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name);
-    setDoc(parsed);
-    setKinhGuiText(parsed.recipientsHeader ? formatKinhGuiLines(parsed.recipientsHeader).join('\n') : '');
+    const kgResult = processAndFormatKinhGui(parsed.recipientsHeader || '');
+    setKinhGuiText(kgResult.formattedText);
     setNoiNhanText(formatBulletLines(parsed.recipients || []).join('\n'));
+    if (kgResult.leakedBodyLines.length > 0) {
+      const paras = [...(parsed.bodyParagraphs || [])];
+      let hasNew = false;
+      for (let i = kgResult.leakedBodyLines.length - 1; i >= 0; i--) {
+        const lk = kgResult.leakedBodyLines[i];
+        if (!paras.some(p => p.trim() === lk.trim())) {
+          paras.unshift(lk);
+          hasNew = true;
+        }
+      }
+      if (hasNew) {
+        parsed.recipientsHeader = kgResult.formattedText;
+        parsed.bodyParagraphs = paras;
+      }
+    }
+    setDoc(parsed);
   }, [normalizedText, agencySettings, selectedType.category, selectedType.name, externalDoc]);
 
   // Section toggle state (accordions)
@@ -630,7 +766,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     setTimeout(() => setFixNotice(null), 2500);
   };
 
-  const isCongVan = selectedType.id === 'cong-van' || doc.docTypeName === 'CÔNG VĂN';
+  const isCongVan = isCongVanDocument(doc, selectedType);
   const sigCheck = useMemo(() => checkSignatureLines(doc), [doc.signerAuthority, doc.quyenHanKy, doc.signerTitle]);
 
   return (
@@ -1035,6 +1171,40 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     Khoảng trống giữa "Số:" và "/" rộng khoảng 1cm, để trắng không dùng dấu ...
                   </p>
                 </div>
+
+                {/* VỊ TRÍ ĐÚNG THEO NGHỊ ĐỊNH 30 CHO CÔNG VĂN: Ô SỐ 5b NẰM Ở Ô BÊN TRÁI, DÒNG DƯỚI SỐ KÝ HIỆU VĂN BẢN */}
+                {isCongVan && (
+                  <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200 space-y-1.5 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-blue-950 block text-xs flex items-center gap-1.5 font-sans">
+                        <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                        <span>Trích yếu công văn (Ô số 5b - Ô bên trái, dòng dưới Số ký hiệu):</span>
+                      </label>
+                      <span className="text-[10px] text-blue-800 bg-blue-100 px-2 py-0.5 rounded font-bold border border-blue-300">
+                        Cỡ 12–13, chữ đứng, không in đậm
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={doc.docSubjectShort || (doc.docTitle?.startsWith('V/v') ? doc.docTitle : (doc.docTitle ? `V/v ${doc.docTitle}` : ''))}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (/^Về việc\s+/i.test(val)) {
+                          val = val.replace(/^Về việc\s+/i, 'V/v ');
+                        }
+                        updateDocField('docSubjectShort', val);
+                        if (doc.docTitle) {
+                          updateDocField('docTitle', '');
+                        }
+                      }}
+                      placeholder="Ví dụ: V/v tăng cường công tác phòng cháy, chữa cháy và cứu nạn, cứu hộ"
+                      className="w-full p-2.5 rounded-lg border border-blue-300 bg-white font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-2xs"
+                    />
+                    <p className="text-[10px] text-blue-800 mt-1 italic leading-relaxed">
+                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP (Ô số 5b): Vị trí ở <strong>ô bên trái, ngay dòng dưới Số ký hiệu văn bản</strong> (ô số 3), căn giữa trong khối 6,5cm. Bắt đầu bằng "V/v", chữ thường, kích thước 12–13, kiểu chữ đứng, không in đậm, kết thúc KHÔNG có dấu gạch ngang.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Cột 2: Địa danh, Ngày tháng & Tên loại */}
@@ -1050,87 +1220,89 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     placeholder="Ví dụ: Đông Tiến, ngày 15 tháng 10 năm 2026"
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 mt-0.5 italic">
+                    Cỡ 13-14, chữ nghiêng, căn giữa cột phải 9.5-9.7cm, ngang hàng với Số ký hiệu văn bản.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Loại văn bản:
-                  </label>
-                  <input
-                    type="text"
-                    value={doc.docTypeName}
-                    onChange={(e) => updateDocField('docTypeName', e.target.value.toUpperCase())}
-                    placeholder="Ví dụ: CÔNG VĂN, QUYẾT ĐỊNH, TỜ TRÌNH, BÁO CÁO..."
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700 block text-xs">
-                      {isCongVan ? 'Trích yếu công văn (ô số 5b - bắt đầu bằng V/v):' : doc.docTypeName === 'BÁO CÁO' ? 'Tiêu đề Báo cáo (Chuẩn NĐ 30):' : 'Trích yếu nội dung (V/v hoặc Về việc):'}
-                    </label>
-                    {isCongVan && (
-                      <span className="text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded font-bold border border-rose-200">
-                        Cỡ 12–13, chữ đứng, không in đậm
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={doc.docSubjectShort || doc.docTitle}
-                    onChange={(e) => {
-                      let val = e.target.value;
-                      if (isCongVan) {
-                        if (/^Về việc\s+/i.test(val)) {
-                          val = val.replace(/^Về việc\s+/i, 'V/v ');
-                        }
-                        updateDocField('docSubjectShort', val);
-                      } else if (val.startsWith('V/v')) {
-                        updateDocField('docSubjectShort', val);
-                      } else {
-                        updateDocField('docTitle', val);
-                      }
-                    }}
-                    placeholder={isCongVan ? 'Ví dụ: V/v tăng cường an toàn PCCC và CNCH' : doc.docTypeName === 'BÁO CÁO' ? 'Ví dụ: Kết quả thực hiện nhiệm vụ công tác năm 2026...' : 'Ví dụ: V/v tăng cường an toàn PCCC hoặc Về việc ban hành...'}
-                    className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                  {isCongVan && (
-                    <p className="text-[10px] text-blue-700 mt-1 italic">
-                      ✓ Quy định cho trích yếu công văn: Vị trí ngay dưới dòng “Số, ký hiệu” (ô số 3), thuộc khối bên trái (6,2cm), canh giữa. Bắt đầu bằng “V/v” rồi đến câu rút gọn hoặc cụm từ nêu nội dung chính. Chữ thường, kích thước 12–13, kiểu chữ đứng, không in đậm, kết thúc không có dấu gạch ngang.
-                    </p>
-                  )}
-                  {(doc.docTypeName === 'BÁO CÁO' || selectedType.name === 'Báo cáo') && (
-                    <div className="mt-2 p-2.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-1.5 font-sans">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1">
-                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                          Gợi ý nhanh tiêu đề Báo cáo chuẩn Nghị định 30:
-                        </span>
-                        <span className="text-[10px] text-blue-700 italic">In thường, cỡ 13-14, chữ đứng hoặc đậm, căn giữa</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {[
-                          'Kết quả thực hiện nhiệm vụ công tác',
-                          'Tình hình kinh tế - xã hội và nhiệm vụ trọng tâm',
-                          'Đánh giá tiến độ triển khai thực hiện',
-                          'Tổng kết công tác thi đua, khen thưởng năm'
-                        ].map((sug, sIdx) => (
-                          <button
-                            key={sIdx}
-                            type="button"
-                            onClick={() => {
-                              updateDocField('docTitle', sug);
-                            }}
-                            className="text-[10px] bg-white hover:bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded cursor-pointer transition-colors shadow-2xs font-sans"
-                          >
-                            + {sug}...
-                          </button>
-                        ))}
-                      </div>
+                {isCongVan ? (
+                  /* THÔNG BÁO THỂ THỨC RIÊNG CHO CÔNG VĂN: KHÔNG CÓ TÊN LOẠI Ở GIỮA TRANG */
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-2">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                      <span className="text-emerald-600">✓</span>
+                      <span>Thể thức Công văn hành chính (Nghị định 30):</span>
                     </div>
-                  )}
-                </div>
+                    <ul className="text-[11px] text-slate-600 space-y-1.5 pl-4 list-disc">
+                      <li>Công văn <strong>không ghi tên loại</strong> "CÔNG VĂN" ở giữa trang.</li>
+                      <li>Trích yếu nội dung (ô 5b) đã được đặt <strong>ở ô bên trái, dòng dưới số ký hiệu văn bản</strong>.</li>
+                      <li>Sau phần đầu văn bản, công văn sẽ <strong>đi thẳng vào mục Kính gửi</strong> (ô số 6).</li>
+                    </ul>
+                  </div>
+                ) : (
+                  /* CÁC LOẠI VĂN BẢN CÓ TÊN LOẠI (Báo cáo, Kế hoạch, Quyết định, Tờ trình...) */
+                  <>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">
+                        Loại văn bản:
+                      </label>
+                      <input
+                        type="text"
+                        value={doc.docTypeName}
+                        onChange={(e) => updateDocField('docTypeName', e.target.value.toUpperCase())}
+                        placeholder="Ví dụ: QUYẾT ĐỊNH, BÁO CÁO, KẾ HOẠCH, TỜ TRÌNH..."
+                        className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 uppercase focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-slate-700 block text-xs">
+                          {doc.docTypeName === 'BÁO CÁO' ? 'Tiêu đề Báo cáo (Chuẩn NĐ 30):' : 'Trích yếu nội dung (Về việc...):'}
+                        </label>
+                        <span className="text-[10px] text-slate-500">
+                          In đậm, cỡ 13-14, căn giữa
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={doc.docTitle}
+                        onChange={(e) => updateDocField('docTitle', e.target.value)}
+                        placeholder={doc.docTypeName === 'BÁO CÁO' ? 'Ví dụ: Kết quả thực hiện nhiệm vụ công tác năm 2026...' : 'Ví dụ: Về việc ban hành Kế hoạch kiểm tra...'}
+                        className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                      {(doc.docTypeName === 'BÁO CÁO' || selectedType.name === 'Báo cáo') && (
+                        <div className="mt-2 p-2.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-1.5 font-sans">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                              Gợi ý nhanh tiêu đề Báo cáo chuẩn Nghị định 30:
+                            </span>
+                            <span className="text-[10px] text-blue-700 italic">In thường, cỡ 13-14, chữ đứng hoặc đậm, căn giữa</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              'Kết quả thực hiện nhiệm vụ công tác',
+                              'Tình hình kinh tế - xã hội và nhiệm vụ trọng tâm',
+                              'Đánh giá tiến độ triển khai thực hiện',
+                              'Tổng kết công tác thi đua, khen thưởng năm'
+                            ].map((sug, sIdx) => (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onClick={() => {
+                                  updateDocField('docTitle', sug);
+                                }}
+                                className="text-[10px] bg-white hover:bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 rounded cursor-pointer transition-colors shadow-2xs font-sans"
+                              >
+                                + {sug}...
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
             </div>
@@ -1198,41 +1370,69 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   <button
                     type="button"
                     onClick={() => {
-                      const formatted = formatKinhGuiLines(kinhGuiText).join('\n');
-                      setKinhGuiText(formatted);
-                      updateDocField('recipientsHeader', formatted);
+                      const result = processAndFormatKinhGui(kinhGuiText);
+                      setKinhGuiText(result.formattedText);
+                      updateDocField('recipientsHeader', result.formattedText);
+                      
+                      // Nếu phát hiện nội dung thân văn bản lọt vào Kính gửi (Thực hiện..., Căn cứ..., UBND nhận được...), chuyển lại vào Thân văn bản
+                      if (result.leakedBodyLines.length > 0) {
+                        const newParas = [...doc.bodyParagraphs];
+                        let added = 0;
+                        for (let i = result.leakedBodyLines.length - 1; i >= 0; i--) {
+                          const lLine = result.leakedBodyLines[i];
+                          if (!newParas.some(p => p.trim() === lLine.trim())) {
+                            newParas.unshift(lLine);
+                            added++;
+                          }
+                        }
+                        if (added > 0) {
+                          updateDocField('bodyParagraphs', newParas);
+                          setFixNotice(`✓ Đã chuẩn hóa Kính gửi (nơi cuối kết thúc dấu ".") và chuyển ${added} câu mở đầu ("Thực hiện...", "Căn cứ...", "UBND nhận được"...) vào Thân văn bản!`);
+                          setTimeout(() => setFixNotice(null), 3500);
+                          return;
+                        }
+                      }
+                      setFixNotice('✓ Đã chuẩn hóa Kính gửi: Nơi cuối cùng kết thúc bằng dấu "." theo chuẩn NĐ 30!');
+                      setTimeout(() => setFixNotice(null), 2500);
                     }}
                     className="text-[11px] bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-1 rounded hover:bg-slate-200 cursor-pointer font-medium"
-                    title="Nếu 1 cơ quan: trên 1 dòng không gạch (-). Nếu từ 2 cơ quan trở lên: tự động thêm gạch (-) đầu dòng"
+                    title="Tự động nhận diện các nơi nhận, nếu 1 cơ quan không gạch (-), từ 2 cơ quan có gạch (-) và nơi cuối cùng kết thúc bằng dấu (.)"
                   >
                     Chuẩn hóa Kính gửi
                   </button>
 
+                  {kinhGuiText.trim() && !kinhGuiText.trim().endsWith('.') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const clean = kinhGuiText.trim().replace(/[;\.]+$/, '');
+                        if (clean) {
+                          const next = `${clean}.`;
+                          setKinhGuiText(next);
+                          updateDocField('recipientsHeader', next);
+                          setFixNotice('✓ Đã thêm dấu chấm (.) vào nơi nhận cuối cùng!');
+                          setTimeout(() => setFixNotice(null), 2000);
+                        }
+                      }}
+                      className="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2 py-1 rounded cursor-pointer font-medium"
+                      title="Thêm dấu chấm (.) vào cuối nơi nhận cuối cùng"
+                    >
+                      + Dấu (.) cuối
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
-                      // 1. Chuẩn hóa kinhGuiText
-                      const lines = kinhGuiText
-                        .split('\n')
-                        .map(l => l.trim())
-                        .filter(Boolean);
+                      // 1. Nhận diện các nơi nhận và tách lọc ranh giới nội dung thân bài (Thực hiện..., Căn cứ..., UBND nhận được...)
+                      const processed = processAndFormatKinhGui(kinhGuiText);
 
-                      if (lines.length === 0) {
+                      if (processed.recipients.length === 0 && processed.leakedBodyLines.length === 0) {
                         setIsKinhGuiFinalized(true);
                         setFixNotice('Đã xác nhận văn bản không có phần Kính gửi!');
                         setTimeout(() => setFixNotice(null), 2500);
                         return;
                       }
-
-                      // Làm sạch từng dòng: loại bỏ dấu câu ở cuối, tách riêng chức danh lãnh đạo
-                      const rawCleaned = lines.map(line => {
-                        let clean = line.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
-                        clean = clean.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
-                        clean = clean.replace(/[;\.]+$/, '').trim();
-                        return clean;
-                      }).filter(Boolean);
-
-                      if (rawCleaned.length === 0) return;
 
                       // Tách chức danh thẩm quyền ký hoặc tên lãnh đạo ra khỏi Kính gửi (Yêu cầu 1 & 5)
                       const sigKeywordRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
@@ -1242,7 +1442,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       let hasSeparatedSigner = false;
 
                       const cleanedItems: string[] = [];
-                      for (const item of rawCleaned) {
+                      for (const item of processed.recipients) {
                         if (sigKeywordRegex.test(item)) {
                           hasSeparatedSigner = true;
                           if (/^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH)/i.test(item)) {
@@ -1276,15 +1476,16 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       setKinhGuiText(finalKinhGuiStr);
 
                       // 2. Lọc sạch triệt để các dòng Kính gửi và chức danh lãnh đạo khỏi bodyParagraphs để chống trùng lặp 100%
-                      // Lưu ý: Nếu dòng đó là bắt đầu nội dung chính (isDocumentBodyStart), TUYỆT ĐỐI KHÔNG lọc bỏ!
+                      // Lưu ý: Nếu dòng đó là bắt đầu nội dung chính (isDocumentBodyStart, Thực hiện..., Căn cứ..., UBND nhận được...), TUYỆT ĐỐI KHÔNG lọc bỏ!
                       const currentParas = [...doc.bodyParagraphs];
                       const filteredParas = currentParas.filter(p => {
                         const pTrim = p.trim();
                         if (!pTrim) return false;
+                        if (isKinhGuiBodyLeakLine(pTrim)) return true;
                         if (isDocumentBodyStart(pTrim)) return true;
                         if (/^Kính\s*(?:gửi|trình):?/i.test(pTrim)) return false;
                         if (sigKeywordRegex.test(pTrim)) return false;
-                        for (const item of rawCleaned) {
+                        for (const item of cleanedItems) {
                           if (pTrim === item || pTrim === `- ${item}` || pTrim === `- ${item};` || pTrim === `- ${item}.`) {
                             return false;
                           }
@@ -1295,6 +1496,16 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         }
                         return true;
                       });
+
+                      // Đảm bảo đưa các đoạn ranh giới thân bài (Thực hiện..., Căn cứ..., UBND nhận được...) trở lại thân văn bản
+                      if (processed.leakedBodyLines.length > 0) {
+                        for (let i = processed.leakedBodyLines.length - 1; i >= 0; i--) {
+                          const leaked = processed.leakedBodyLines[i];
+                          if (!filteredParas.some(p => p.trim() === leaked.trim())) {
+                            filteredParas.unshift(leaked);
+                          }
+                        }
+                      }
 
                       const updatedDoc: StructuredDoc = {
                         ...doc,
@@ -1308,9 +1519,11 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
                       commitDocChanges(updatedDoc);
                       setIsKinhGuiFinalized(true);
-                      const noticeMsg = hasSeparatedSigner
-                        ? '✓ Đã chốt Kính gửi kết thúc dấu ".", tự động tách chức danh/lãnh đạo sang phần Chữ ký và khóa chống trùng lặp!'
-                        : '✓ Đã chốt hoàn tất phần Kính gửi kết thúc bằng dấu "." và khóa ngăn chặn trùng lặp với văn bản chính!';
+                      const noticeMsg = processed.leakedBodyLines.length > 0
+                        ? `✓ Đã chốt Kính gửi (kết thúc dấu "."), chuyển ${processed.leakedBodyLines.length} đoạn câu mở đầu vào Thân văn bản và khóa chống trùng lặp!`
+                        : hasSeparatedSigner
+                          ? '✓ Đã chốt Kính gửi kết thúc dấu ".", tự động tách chức danh/lãnh đạo sang phần Chữ ký và khóa chống trùng lặp!'
+                          : '✓ Đã chốt hoàn tất phần Kính gửi kết thúc bằng dấu "." và khóa ngăn chặn trùng lặp với văn bản chính!';
                       setFixNotice(noticeMsg);
                       setTimeout(() => setFixNotice(null), 3500);
                     }}
@@ -1357,8 +1570,30 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   const end = target.selectionEnd ?? 0;
                   const val = target.value;
                   const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
-                  setKinhGuiText(next);
-                  updateDocField('recipientsHeader', next);
+                  
+                  // Nhận diện thông minh ranh giới nội dung chính (Thực hiện..., Căn cứ..., UBND nhận được...)
+                  const processed = processAndFormatKinhGui(next);
+                  if (processed.leakedBodyLines.length > 0) {
+                    setKinhGuiText(processed.formattedText);
+                    updateDocField('recipientsHeader', processed.formattedText);
+                    const newParas = [...doc.bodyParagraphs];
+                    let added = 0;
+                    for (let i = processed.leakedBodyLines.length - 1; i >= 0; i--) {
+                      const lk = processed.leakedBodyLines[i];
+                      if (!newParas.some(p => p.trim() === lk.trim())) {
+                        newParas.unshift(lk);
+                        added++;
+                      }
+                    }
+                    if (added > 0) {
+                      updateDocField('bodyParagraphs', newParas);
+                    }
+                    setFixNotice(`✓ Đã nhận diện Kính gửi (nơi cuối kết thúc dấu ".") và chuyển ${processed.leakedBodyLines.length} câu nội dung thân bài vào Thân văn bản!`);
+                    setTimeout(() => setFixNotice(null), 3500);
+                  } else {
+                    setKinhGuiText(next);
+                    updateDocField('recipientsHeader', next);
+                  }
                   if (isKinhGuiFinalized) setIsKinhGuiFinalized(false);
                 }}
                 placeholder="- Các ban ngành, đoàn thể phường;&#10;- Ban cán sự các tổ dân phố trên địa bàn."
@@ -1371,10 +1606,10 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-500 italic">
                 <span>
-                  ✓ Quy định NĐ 30: Gửi 1 nơi kết thúc bằng dấu <strong>"."</strong>; gửi nhiều nơi các dòng trước kết thúc bằng <strong>";"</strong>, dòng cuối kết thúc bằng <strong>"."</strong>.
+                  ✓ Quy định NĐ 30: Nơi cuối cùng kết thúc bằng dấu <strong>"."</strong>. Gửi 1 nơi: không gạch đầu dòng, kết thúc <strong>"."</strong>; gửi nhiều nơi: các dòng trước <strong>";"</strong>, dòng cuối <strong>"."</strong>.
                 </span>
                 <span className="text-emerald-700 font-semibold not-italic">
-                  Nút [Kết thúc & Khóa Kính gửi] đảm bảo 100% không trùng lặp vào thân bài
+                  Tự động nhận diện ranh giới: "Thực hiện", "Căn cứ", "UBND nhận được"... không bị dính vào Kính gửi
                 </span>
               </div>
             </div>

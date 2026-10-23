@@ -1,6 +1,14 @@
 import { AgencySettings, IllogicalSegment, DocumentAppendix } from '../types';
 import { convertMarkdownTableToHtml, formatHtmlTableToFitA4, isWarningOrInstructionLine } from '../utils/cleanAIText';
 import { detectIllogicalAdministrativeText } from '../utils/illogicalTextDetector';
+import { 
+  isCongVanDocument, 
+  formatCongVanSubject, 
+  extractCongVanSubjectFromLines,
+  CONG_VAN_SUBJECT_REGEX,
+  getCongVanSubject, 
+  renderCongVanHeaderTableHtml 
+} from './Module_CongVan.js';
 
 /**
  * Chuẩn hóa kiểu chữ trích yếu / tiêu đề văn bản theo Nghị định 30/2020/NĐ-CP:
@@ -1196,6 +1204,29 @@ export function parseDocumentStructure(
   let detectedType = '';
   let inlineTitle = '';
 
+  // 5.0. NHẬN DIỆN VÀ BÓC TÁCH TRÍCH YẾU CÔNG VĂN (Ô SỐ 5b CỘT TRÁI - BẮT ĐẦU BẰNG "V/v" HOẶC "Về việc")
+  // Căn cứ Nghị định 30/2020/NĐ-CP:
+  // Công văn thường bắt đầu bằng "V/v" hoặc "Về việc", nằm ở các dòng đầu của văn bản (ngay dưới số ký hiệu hoặc trước Kính gửi).
+  // Công văn KHÔNG có tên loại ở giữa trang, trích yếu phải đưa vào đúng vị trí Ô số 5b cột trái dòng dưới số ký hiệu.
+  const isExplicitCongVanHint = docTypeNameHint === 'CÔNG VĂN' || docTypeNameHint === 'Công văn' || docCategory === 'cong_van';
+  const hasKinhGuiEarly = remainingLines.slice(0, 15).some(l => /^Kính\s*(?:gửi|trình):/i.test(l.trim()));
+  const hasCongVanSubjectInHead = remainingLines.slice(0, 12).some(l => CONG_VAN_SUBJECT_REGEX.test(l.trim()));
+  const isDocCodeDecision = Boolean(docCode && /\/QĐ(?:-[A-Za-z0-9ĐđÀ-ỹ]+)?\b/i.test(docCode));
+  const isExplicitDecisionHint = docTypeNameHint === 'QUYẾT ĐỊNH' || docCategory === 'quyet_dinh';
+
+  if (!isDocCodeDecision && !isExplicitDecisionHint && (isExplicitCongVanHint || hasCongVanSubjectInHead || (hasKinhGuiEarly && !docTypeNameHint))) {
+    const extractedSubject = extractCongVanSubjectFromLines(remainingLines, 12);
+    if (extractedSubject) {
+      docSubjectShort = extractedSubject;
+      docTypeName = 'CÔNG VĂN';
+      docTitle = '';
+      cacMucDaChinh.push(`Đã nhận diện chuẩn xác Trích yếu công văn (Ô số 5b cột trái, dòng dưới Số ký hiệu): "${docSubjectShort}"`);
+    } else if (isExplicitCongVanHint) {
+      docTypeName = 'CÔNG VĂN';
+      docTitle = '';
+    }
+  }
+
   // Danh mục đầy đủ 29 loại hành chính + 15 loại Đảng
   // Nhận diện BÁO CÁO và bảo toàn phân loại báo cáo (Tổng kết, Sơ kết, Kết quả, Tình hình, Nhanh, v.v.)
   const reportPattern = /^(?:BÁO\s+CÁO|Báo\s+cáo)(?:\s+(NHANH|CHUYÊN\s+ĐỀ|ĐỘT\s+XUẤT|SƠ\s+KẾT|TỔNG\s+KẾT|ĐỊNH\s+KỲ|ĐÁNH\s+GIÁ|KẾT\s+QUẢ|TÌNH\s+HÌNH|CÔNG\s+TÁC|TỰ\s+KIỂM\s+TRA|RÀ\s+SOÁT))?(?:[\:\-–—\.]\s*|\s+|$)(.*)$/i;
@@ -1593,23 +1624,23 @@ export function parseDocumentStructure(
     docTitle = formatDecree30TitleCase(rawCollected);
     cacMucDaChinh.push(`Đã nhận diện chuẩn xác Tên loại [${docTypeName}] và Tiêu đề theo Nghị định 30`);
   } else {
-    // Nếu không tìm thấy tên loại văn bản nào khác nhưng có V/v hoặc Về việc -> Đây là CÔNG VĂN
-    if (docSubjectShort || !docTypeName) {
+    // Nếu không tìm thấy tên loại văn bản nào khác hoặc văn bản là CÔNG VĂN:
+    // Đảm bảo bóc tách đầy đủ trích yếu bắt đầu bằng "V/v" hoặc "Về việc" để đưa vào đúng vị trí Ô số 5b
+    const isCongVanCandidate = docTypeName === 'CÔNG VĂN' || !docTypeName || isExplicitCongVanHint || Boolean(docSubjectShort);
+    if (isCongVanCandidate) {
       docTypeName = 'CÔNG VĂN';
       if (!docSubjectShort) {
-        // Tìm dòng V/v hoặc Về việc còn sót lại
-        const vvIdx = remainingLines.findIndex(l => /^(?:V\/v|Về việc)\s+/i.test(l));
-        if (vvIdx !== -1) {
-          docSubjectShort = remainingLines[vvIdx].trim();
-          remainingLines.splice(vvIdx, 1);
+        // Quét tìm dòng V/v hoặc Về việc còn sót lại trong các dòng đầu
+        const extracted = extractCongVanSubjectFromLines(remainingLines, 15);
+        if (extracted) {
+          docSubjectShort = extracted;
+        } else if (docTitle && (/^(?:V\/v|Về việc)/i.test(docTitle) || docTypeName === 'CÔNG VĂN')) {
+          docSubjectShort = formatCongVanSubject(docTitle);
+          docTitle = '';
         }
       }
       if (docSubjectShort) {
-        if (/^Về việc\s+/i.test(docSubjectShort)) {
-          docSubjectShort = docSubjectShort.replace(/^Về việc\s+/i, 'V/v ');
-        } else if (!/^V\/v\s+/i.test(docSubjectShort)) {
-          docSubjectShort = `V/v ${docSubjectShort.replace(/^V\/v:?\s*/i, '')}`;
-        }
+        docSubjectShort = formatCongVanSubject(docSubjectShort);
       }
       docTitle = ''; // Công văn không có tiêu đề ở giữa trang, trích yếu đặt ở Ô 5b cột trái
     }
@@ -1647,6 +1678,28 @@ export function parseDocumentStructure(
 
   if (!docTypeName) {
     docTypeName = docSubjectShort ? 'CÔNG VĂN' : (docTypeNameHint ? docTypeNameHint.toUpperCase() : 'CÔNG VĂN');
+  }
+
+  // ĐẢM BẢO 100% ĐỐI VỚI CÔNG VĂN:
+  // - Trích yếu luôn được đưa vào docSubjectShort (Ô số 5b cột trái, dòng dưới số ký hiệu)
+  // - Tuyệt đối không để trích yếu sót trong docTitle hay thân bài
+  if (docTypeName === 'CÔNG VĂN' || isExplicitCongVanHint || (!docTypeName && Boolean(docSubjectShort))) {
+    docTypeName = 'CÔNG VĂN';
+    if (!docSubjectShort) {
+      if (docTitle) {
+        docSubjectShort = formatCongVanSubject(docTitle);
+        docTitle = '';
+      } else {
+        const fallbackSub = extractCongVanSubjectFromLines(remainingLines, 10);
+        if (fallbackSub) {
+          docSubjectShort = fallbackSub;
+        }
+      }
+    }
+    if (docSubjectShort) {
+      docSubjectShort = formatCongVanSubject(docSubjectShort);
+    }
+    docTitle = '';
   }
 
   // 7. Tìm và bóc tách Kính gửi 100% chính xác (kết thúc bằng dấu ".", không bao giờ dính vào nội dung chính)
@@ -2333,7 +2386,7 @@ export function generateDecree30A4Html(
   const doc = (typeof textOrDoc === 'object' && textOrDoc !== null)
     ? textOrDoc
     : parseDocumentStructure(textOrDoc, settings, docCategory, docTypeNameHint);
-  const isCongVan = doc.docTypeName === 'CÔNG VĂN' || (!doc.docTypeName && Boolean(doc.docSubjectShort));
+  const isCongVan = isCongVanDocument(doc, null, docTypeNameHint);
 
   // Chuẩn bị danh sách Kính gửi (nếu có)
   const recipientHeaderItems = doc.recipientsHeader
@@ -2351,6 +2404,14 @@ export function generateDecree30A4Html(
 
       <!-- BẢNG BỐ CỤC ĐẦU VĂN BẢN (TỔNG CHIỀU DÀI 16,2CM, CỘT TRÁI 6,5CM, CỘT PHẢI 9,7CM, ẨN VIỀN, NỘI DUNG CANH GIỮA TRONG TỪNG CỘT) -->
       ${(() => {
+        // NẾU LÀ CÔNG VĂN: GỌI MODULE_CONG_VAN CHUYÊN BIỆT ĐỂ ĐẢM BẢO TRÍCH YẾU NẰM ĐÚNG Ô BÊN TRÁI DƯỚI SỐ KÝ HIỆU
+        if (isCongVan) {
+          return renderCongVanHeaderTableHtml(doc, settings, {
+            getStandardAgencyHeaderParts,
+            formatDocCodeForDisplay
+          });
+        }
+
         const agencyParts = getStandardAgencyHeaderParts(doc.parentAgency, doc.agencyName);
         const agencyNameText = agencyParts.hasLine2 ? agencyParts.line2 : agencyParts.line1;
         // Kích cỡ tên cơ quan ban hành: bình thường để 13pt, chỉ những đơn vị dài mới để xuống 12pt
@@ -2905,8 +2966,10 @@ export function reconstructNormalizedText(doc: StructuredDoc): string {
   if (doc.parentAgency) parts.push(doc.parentAgency);
   if (doc.agencyName) parts.push(doc.agencyName);
   if (doc.docCode) parts.push(doc.docCode);
-  if (doc.docSubjectShort) parts.push(doc.docSubjectShort);
-  if (doc.parentAgency || doc.agencyName || doc.docCode || doc.docSubjectShort) parts.push('');
+  const isCongVan = isCongVanDocument(doc);
+  const cvSubject = isCongVan ? getCongVanSubject(doc) : (doc.docSubjectShort || '');
+  if (cvSubject) parts.push(cvSubject);
+  if (doc.parentAgency || doc.agencyName || doc.docCode || cvSubject) parts.push('');
 
   if (!doc.isPartyDoc) {
     if (doc.countryHeader) parts.push(doc.countryHeader);
@@ -2916,8 +2979,6 @@ export function reconstructNormalizedText(doc: StructuredDoc): string {
   }
   if (doc.locationDate) parts.push(doc.locationDate);
   if (doc.countryHeader || doc.motto || doc.locationDate) parts.push('');
-
-  const isCongVan = doc.docTypeName === 'CÔNG VĂN' || (!doc.docTypeName && Boolean(doc.docSubjectShort));
 
   if (!isCongVan && doc.docTypeName) {
     parts.push(doc.docTypeName);
@@ -3125,7 +3186,7 @@ export function validateMandatoryDocumentElements(
   doc: StructuredDoc, 
   settings: AgencySettings
 ): MandatoryValidationStatus {
-  const isCongVan = doc.docTypeName === 'CÔNG VĂN' || (!doc.docTypeName && Boolean(doc.docSubjectShort));
+  const isCongVan = isCongVanDocument(doc);
   const isParty = doc.isPartyDoc;
 
   // 1. Đầu văn bản
@@ -3304,7 +3365,7 @@ export function autoFillMissingMandatoryElements(
   settings: AgencySettings, 
   defaultDocTypeName?: string
 ): StructuredDoc {
-  const isCongVan = doc.docTypeName === 'CÔNG VĂN' || (!doc.docTypeName && Boolean(doc.docSubjectShort));
+  const isCongVan = isCongVanDocument(doc, null, defaultDocTypeName);
   const isParty = doc.isPartyDoc || settings.roleBlock === 'dang';
   const targetYear = settings.issuingYear || String(new Date().getFullYear());
   const defaultLoc = settings.shortLocation || 'Đông Tiến';
