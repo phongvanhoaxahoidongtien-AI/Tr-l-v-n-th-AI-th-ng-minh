@@ -228,12 +228,59 @@ export function detectIllogicalAdministrativeText(
       id: `illogical_place_${idCounter++}`,
       target: m[0],
       reason: 'Đoạn văn chứa ký tự giữ chỗ chưa được hoàn thiện nội dung trước khi ban hành.',
-      suggestion: 'Điền thông tin chính xác hoặc xóa thẻ giữ chỗ này',
+      suggestion: 'Xóa bỏ thẻ giữ chỗ này hoặc điền thông tin',
       category: 'incomplete_placeholder'
     });
   }
 
-  // 7. Nhảy cóc thứ tự Điều/Khoản
+  // 7. Ghi chú văn bản dự thảo, lưu hành nội bộ (đề xuất bôi vàng xóa bỏ trước khi ban hành)
+  const draftNoteRules = [
+    {
+      regex: /\(\s*(?:Dự\s+thảo|Dự\s+thảo\s+lần\s+\d+|Lưu\s+hành\s+nội\s+bộ|Chưa\s+ký\s+duyệt|Tài\s+liệu\s+mật\s+nội\s+bộ)\s*\)/gi,
+      reason: 'Ghi chú văn bản dự thảo / lưu hành nội bộ: Cần rà soát xóa bỏ trước khi phát hành chính thức.',
+      suggestion: 'Xóa bỏ ghi chú dự thảo này'
+    },
+    {
+      regex: /(?:^|\n)\s*(?:Dự\s+thảo|Dự\s+thảo\s+lần\s+\d+|Lưu\s+hành\s+nội\s+bộ)\s*(?:\n|$)/gi,
+      reason: 'Dòng ghi chú dự thảo đứng độc lập trong văn bản.',
+      suggestion: 'Xóa bỏ dòng ghi chú này'
+    }
+  ];
+  for (const rule of draftNoteRules) {
+    const matches = Array.from(text.matchAll(rule.regex));
+    for (const m of matches) {
+      findings.push({
+        id: `illogical_draft_${idCounter++}`,
+        target: m[0].trim(),
+        reason: rule.reason,
+        suggestion: rule.suggestion,
+        category: 'draft_note' as any
+      });
+    }
+  }
+
+  // 8. Lời chào hỏi / câu giao tiếp ngoài luồng của trợ lý AI hoặc công cụ chat
+  const aiChatterRules = [
+    {
+      regex: /(?:Chào bạn!|Dưới đây là (?:bản|văn bản) chuẩn hóa|Sau đây là văn bản được chuẩn hóa|Hy vọng văn bản này hữu ích cho bạn!|Chúc bạn một ngày làm việc hiệu quả!|Tôi đã (?:chuẩn hóa|rà soát) xong văn bản)[^\n]*/gi,
+      reason: 'Câu giao tiếp ngoài luồng hoặc lời chào của trợ lý AI/công cụ sao chép.',
+      suggestion: 'Xóa bỏ câu ngoài luồng này'
+    }
+  ];
+  for (const rule of aiChatterRules) {
+    const matches = Array.from(text.matchAll(rule.regex));
+    for (const m of matches) {
+      findings.push({
+        id: `illogical_chatter_${idCounter++}`,
+        target: m[0].trim(),
+        reason: rule.reason,
+        suggestion: rule.suggestion,
+        category: 'ai_chatter' as any
+      });
+    }
+  }
+
+  // 9. Nhảy cóc thứ tự Điều/Khoản
   const dieuMatches = Array.from(text.matchAll(/Điều\s+(\d+)[\.:]/gi));
   if (dieuMatches.length >= 2) {
     for (let i = 0; i < dieuMatches.length - 1; i++) {

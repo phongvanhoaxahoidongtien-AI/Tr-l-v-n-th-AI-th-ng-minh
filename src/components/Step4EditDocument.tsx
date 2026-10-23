@@ -15,7 +15,7 @@ import {
   Eye, Columns, ArrowRight, ArrowLeft, Maximize2, 
   ZoomIn, ZoomOut, Home, Edit3, Sparkles, BookOpen, 
   CheckCircle2, AlertTriangle, FileCheck, ShieldAlert, Check, X, AlertCircle,
-  Wand2, ChevronDown, ChevronUp
+  Wand2, ChevronDown, ChevronUp, Trash2
 } from 'lucide-react';
 
 interface Step4EditDocumentProps {
@@ -635,8 +635,10 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
 
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-slate-500 text-[11px] shrink-0">Đề xuất:</span>
-                        <strong className="text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 font-serif">
-                          {p.right}
+                        <strong className={`px-1.5 py-0.5 rounded border font-serif ${
+                          !p.right ? 'text-rose-800 bg-rose-50 border-rose-300' : 'text-emerald-800 bg-emerald-50 border-emerald-300'
+                        }`}>
+                          {p.right ? p.right : 'Xóa bỏ đoạn thừa / lặp lại này'}
                         </strong>
                       </div>
                     </div>
@@ -646,11 +648,13 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
                     <button
                       type="button"
                       onClick={() => handleAcceptProposal(p)}
-                      className="flex-1 py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                      title={`Đồng ý sửa "${p.wrong}" thành "${p.right}"`}
+                      className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-2xs text-white ${
+                        !p.right ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                      }`}
+                      title={p.right ? `Đồng ý sửa "${p.wrong}" thành "${p.right}"` : `Đồng ý xóa bỏ "${p.wrong}"`}
                     >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Đồng ý sửa</span>
+                      {!p.right ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                      <span>{!p.right ? 'Đồng ý xóa' : 'Đồng ý sửa'}</span>
                     </button>
 
                     <button
@@ -659,7 +663,7 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
                       className="py-1 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium border border-slate-200 cursor-pointer transition-colors"
                       title={`Bỏ qua, giữ nguyên "${p.wrong}"`}
                     >
-                      <span>Bỏ qua</span>
+                      <span>{!p.right ? 'Giữ lại' : 'Bỏ qua'}</span>
                     </button>
                   </div>
                 </div>
@@ -699,16 +703,18 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
                   </mark>
                 </div>
                 <div>
-                  <span className="text-slate-600">Đề xuất cách viết đúng: </span>
-                  <strong className="text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-300 font-serif text-sm">
-                    {selectedProposal.right}
+                  <span className="text-slate-600">Đề xuất xử lý: </span>
+                  <strong className={`px-2 py-0.5 rounded border font-serif text-sm ${
+                    !selectedProposal.right ? 'text-rose-800 bg-rose-50 border-rose-300' : 'text-emerald-800 bg-white border-emerald-300'
+                  }`}>
+                    {selectedProposal.right ? selectedProposal.right : 'Xóa bỏ đoạn thừa / lặp lại này'}
                   </strong>
                 </div>
               </div>
             </div>
 
             <p className="text-[11px] text-slate-500 italic">
-              Nội dung gốc chỉ được thay đổi khi bạn bấm [Đồng ý sửa]. Nếu bấm [Bỏ qua], nội dung gốc được giữ nguyên 100% và màu bôi vàng sẽ biến mất.
+              Nội dung gốc chỉ được thay đổi khi bạn bấm [{!selectedProposal.right ? 'Đồng ý xóa ngay' : 'Đồng ý sửa ngay'}]. Nếu bấm [Bỏ qua (Giữ nguyên)], nội dung gốc được giữ nguyên 100% và màu bôi vàng sẽ biến mất.
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -722,10 +728,12 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
               <button
                 type="button"
                 onClick={() => handleAcceptProposal(selectedProposal)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                className={`px-4 py-2 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors text-white ${
+                  !selectedProposal.right ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
-                <Check className="w-4 h-4" />
-                <span>Đồng ý sửa ngay</span>
+                {!selectedProposal.right ? <Trash2 className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                <span>{!selectedProposal.right ? 'Đồng ý xóa ngay' : 'Đồng ý sửa ngay'}</span>
               </button>
             </div>
           </div>

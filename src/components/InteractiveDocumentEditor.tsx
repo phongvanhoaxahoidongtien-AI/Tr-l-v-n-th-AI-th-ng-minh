@@ -44,22 +44,34 @@ export function isKinhGuiBodyLeakLine(line: string): boolean {
   if (!line) return false;
   const clean = line.trim();
   if (!clean) return false;
+
+  // Nếu dòng bắt đầu bằng tên cơ quan, hội đồng, ban bệ, đoàn thể, chức danh nhận văn bản:
+  // TUYỆT ĐỐI KHÔNG coi là nội dung thân bài (trừ khi có các động từ trần thuật của câu kể đầy đủ)
+  const isAgencyEntity = /^(?:Ban\s+Chỉ\s+đạo|Ban\s+Quản\s+lý|Ban\s+Cán\s+sự|Ban\s+Chấp\s+hành|Hội\s+đồng|Tổ\s+công\s+tác|Đoàn\s+kiểm\s+tra|Đoàn\s+công\s+tác|UBND|Ủy\s+ban\s+nhân\s+dân|Uỷ\s+ban\s+nhân\s+dân|HĐND|UBMTTQ|Sở|Phòng|Chi\s+cục|Cục|Trung\s+tâm|Công\s+an|Trạm|Bệnh\s+viện|Trường|Công\s+ty|Tổng\s+công\s+ty|Đồng\s+chí|Đ\/c|Ông|Bà|Chủ\s+tịch|Phó\s+Chủ\s+tịch|Giám\s+đốc|Phó\s+Giám\s+đốc|Trưởng\s+phòng|Phó\s+Trưởng\s+phòng|Thủ\s+trưởng)\b/i.test(clean);
+
+  if (isAgencyEntity) {
+    // Chỉ coi là body leak nếu có cụm động từ trần thuật rõ ràng của câu văn bản gửi đến
+    return /\b(?:nhận\s+được\s+(?:Công\s+văn|Tờ\s+trình|Báo\s+cáo|văn\s+bản|kế\s+hoạch)|tiếp\s+nhận\s+(?:Công\s+văn|văn\s+bản)|yêu\s+cầu\s+các\s+(?:phòng|ban|đơn\s+vị)|đề\s+nghị\s+các\s+(?:phòng|ban|đơn\s+vị)|chỉ\s+đạo\s+các)\b/i.test(clean);
+  }
+
   if (isDocumentBodyStart(clean)) return true;
   if (/^(?:Thực\s+hiện|thực\s+hiện)\b/i.test(clean)) return true;
   if (/^(?:Căn\s+cứ|căn\s+cứ)\b/i.test(clean)) return true;
-  if (/^(?:UBND|Ủy\s+ban\s+nhân\s+dân|Uỷ\s+ban\s+nhân\s+dân)\b.*?\b(?:nhận\s+được|tiếp\s+nhận|ban\s+hành|chỉ\s+đạo|yêu\s+cầu|đề\s+nghị|thực\s+hiện|báo\s+cáo)\b/i.test(clean)) return true;
   if (/^(?:Nhận\s+được|nhận\s+được|Tiếp\s+nhận|tiếp\s+nhận|Phúc\s+đáp|phúc\s+đáp|Xét\s+đề\s+nghị|xét\s+đề\s+nghị|Theo\s+đề\s+nghị|theo\s+đề\s+nghị|Trả\s+lời\s+công\s+văn)\b/i.test(clean)) return true;
-  if (clean.length > 50 && /\b(?:thực hiện|chỉ đạo|phối hợp|triển khai|báo cáo|kính đề nghị)\b/i.test(clean)) return true;
+  if (clean.length > 55 && /\b(?:thực hiện\s+(?:Công\s+văn|Kế\s+hoạch|Nghị\s+quyết|Quyết\s+định|Chỉ\s+thị)|kính\s+đề\s+nghị|kính\s+báo\s+cáo)\b/i.test(clean)) return true;
   return false;
 }
 
 /**
- * Nâng cấp khả năng nhận diện các nơi kính gửi và đảm bảo nơi cuối cùng kết thúc bằng dấu "."
- * - Tách nhiều nơi nhận qua dòng mới, chấm phẩy, hoặc gạch đầu dòng
+ * Nâng cấp khả năng nhận diện các nơi kính gửi theo chuẩn Nghị định 30/2020/NĐ-CP:
+ * - KHÔNG tự ý bỏ đi bất kỳ nơi nhận nào người dùng đã nhập hoặc paste vào.
+ * - Nhận diện tách nhiều nơi nhận qua: xuống dòng (\n), dấu chấm phẩy (;), gạch đầu dòng (-), bullet (•, *), số thứ tự (1, 2...)
+ *   hoặc phân cách dấu phẩy (,) khi liệt kê các cơ quan khác nhau.
  * - Tách riêng các dòng nội dung chính bị dính vào Kính gửi (Thực hiện..., Căn cứ..., UBND nhận được...)
- * - Nơi cuối cùng được kết thúc bằng dấu "."
- * - Nếu 1 nơi nhận: không có dấu gạch (-), kết thúc bằng dấu "."
- * - Nếu >= 2 nơi nhận: các dòng trước kết thúc bằng ";", dòng cuối kết thúc bằng "."
+ * - Quy tắc thể thức Nghị định 30/2020/NĐ-CP:
+ *   + Nếu 1 nơi nhận: ghi trên 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
+ *   + Nếu nhiều nơi nhận (>= 2): mỗi nơi nhận trên 1 dòng riêng biệt, đầu dòng BẮT BUỘC có dấu gạch (- ),
+ *     canh thẳng hàng lề trái, các dòng trước kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
  */
 export function processAndFormatKinhGui(raw: string | string[]): {
   formattedText: string;
@@ -92,14 +104,14 @@ export function processAndFormatKinhGui(raw: string | string[]): {
     let clean = trimmed.replace(/^Kính\s*(?:gửi|trình|chuyển):?\s*/i, '').trim();
     if (!clean) continue;
 
-    // Lại kiểm tra xem sau khi bỏ tiền tố Kính gửi, phần còn lại có phải nội dung thân bài không
+    // Kiểm tra lại sau khi bỏ tiền tố Kính gửi, phần còn lại có phải nội dung thân bài không
     if (isKinhGuiBodyLeakLine(clean)) {
       foundBodyStart = true;
       leakedBodyLines.push(clean);
       continue;
     }
 
-    // Hỗ trợ trường hợp nhiều nơi nhận nằm trên cùng 1 dòng cách nhau bởi dấu chấm phẩy ";"
+    // 1. Phân tách nếu dòng chứa dấu chấm phẩy ";"
     if (clean.includes(';')) {
       const subParts = clean.split(';').map(p => p.trim()).filter(Boolean);
       for (const sub of subParts) {
@@ -108,30 +120,77 @@ export function processAndFormatKinhGui(raw: string | string[]): {
           leakedBodyLines.push(sub);
           continue;
         }
-        const itemClean = sub.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        const itemClean = sub
+          .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
+          .replace(/^\d+[\.\)]\s*/, '')
+          .replace(/[;\.]+$/, '')
+          .trim();
         if (itemClean) candidateRecipients.push(itemClean);
       }
-    } else {
-      const itemClean = clean.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
-      if (itemClean) candidateRecipients.push(itemClean);
+      continue;
+    }
+
+    // 2. Phân tách nếu dòng chứa dấu phẩy "," phân cách các cơ quan/chức danh riêng biệt
+    // Ví dụ: "Sở Nội vụ, Sở Tài chính, UBND các huyện" hoặc "Đ/c Bí thư Đảng ủy, Đ/c Chủ tịch UBND"
+    const agencyLookahead = /(?:,\s*(?:và\s+)?|\s+và\s+)(?=(?:Sở|Ban|Phòng|UBND|Ủy\s+ban|HĐND|UBMTTQ|Chi\s+cục|Cục|Trung\s+tâm|Công\s+an|Trường|Bệnh\s+viện|Công\s+ty|Đồng\s+chí|Đ\/c|Ông|Bà|Chủ\s+tịch|Giám\s+đốc|Trưởng\s+phòng)\b)/i;
+    if (agencyLookahead.test(clean)) {
+      const subParts = clean.split(agencyLookahead).map(p => p.trim()).filter(Boolean);
+      let parsedAny = false;
+      for (const sub of subParts) {
+        if (isKinhGuiBodyLeakLine(sub)) {
+          foundBodyStart = true;
+          leakedBodyLines.push(sub);
+          continue;
+        }
+        const itemClean = sub
+          .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
+          .replace(/^\d+[\.\)]\s*/, '')
+          .replace(/[;\.]+$/, '')
+          .trim();
+        if (itemClean) {
+          candidateRecipients.push(itemClean);
+          parsedAny = true;
+        }
+      }
+      if (parsedAny) continue;
+    }
+
+    // 3. Dòng thông thường (1 cơ quan/đơn vị trên 1 dòng)
+    const itemClean = clean
+      .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
+      .replace(/^\d+[\.\)]\s*/, '')
+      .replace(/[;\.]+$/, '')
+      .trim();
+    if (itemClean) {
+      candidateRecipients.push(itemClean);
+    }
+  }
+
+  // KHÔNG BỎ SÓT BẤT KỲ NƠI NHẬN NÀO:
+  // Lọc trùng lặp chính xác (nếu người dùng lỡ paste 2 dòng giống hệt nhau thì giữ 1, còn khác nhau giữ nguyên 100%)
+  const uniqueRecipients: string[] = [];
+  for (const r of candidateRecipients) {
+    const rTrim = r.trim();
+    if (rTrim && !uniqueRecipients.some(existing => existing.toLowerCase() === rTrim.toLowerCase())) {
+      uniqueRecipients.push(rTrim);
     }
   }
 
   let formattedLines: string[] = [];
-  if (candidateRecipients.length === 1) {
+  if (uniqueRecipients.length === 1) {
     // 1 nơi nhận: trên 1 dòng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
-    formattedLines = [`${candidateRecipients[0]}.`];
-  } else if (candidateRecipients.length > 1) {
-    // >= 2 nơi nhận: mỗi dòng có gạch đầu dòng (-), các dòng trước kết thúc bằng (;), dòng cuối kết thúc bằng (.)
-    formattedLines = candidateRecipients.map((item, idx) => {
-      const isLast = idx === candidateRecipients.length - 1;
+    formattedLines = [`${uniqueRecipients[0]}.`];
+  } else if (uniqueRecipients.length > 1) {
+    // Nhiều nơi nhận: mỗi dòng có gạch đầu dòng (- ), các dòng trước kết thúc bằng (;), dòng cuối kết thúc bằng (.)
+    formattedLines = uniqueRecipients.map((item, idx) => {
+      const isLast = idx === uniqueRecipients.length - 1;
       return `- ${item}${isLast ? '.' : ';'}`;
     });
   }
 
   return {
     formattedText: formattedLines.join('\n'),
-    recipients: candidateRecipients,
+    recipients: uniqueRecipients,
     leakedBodyLines
   };
 }
@@ -672,15 +731,25 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     setTimeout(() => setFixNotice(null), 2500);
   };
 
-  // Xóa bỏ đoạn văn bản thiếu tính logic
+  // Xóa bỏ đoạn văn bản thừa / lặp lại / thiếu tính logic
   const handleDeleteIllogicalSnippet = (target: string) => {
     const currentFullText = normalizedText;
     const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(?:\\r?\\n)?\\s*${escaped}\\s*(?:\\r?\\n)?`, 'gi');
     const newText = currentFullText.replace(regex, '\n').replace(/\n{3,}/g, '\n\n').trim();
+
+    // Đồng bộ lập tức vào bodyParagraphs của doc để Live Preview cập nhật tức thì
+    const updatedParas = doc.bodyParagraphs
+      .map(p => p.replace(new RegExp(escaped, 'gi'), '').trim())
+      .filter(p => p.length > 0);
+    const updatedDoc = { ...doc, bodyParagraphs: updatedParas };
+    isInternalUpdateRef.current = true;
+    setDoc(updatedDoc);
+    if (onUpdateDoc) onUpdateDoc(updatedDoc);
+
     onUpdateText(newText);
     setActiveFix(null);
-    setFixNotice(`Đã xóa bỏ đoạn thiếu tính logic: "${target.substring(0, 30)}..."!`);
+    setFixNotice(`Đã xóa bỏ đoạn thừa: "${target.substring(0, 30)}..."!`);
     setTimeout(() => setFixNotice(null), 2500);
   };
 
@@ -1350,20 +1419,37 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
               )}
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <label className="font-bold text-slate-800 text-xs">
                     Kính gửi (hỗ trợ nhiều dòng, kết thúc bằng dấu "."):
                   </label>
                   {isKinhGuiFinalized ? (
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold border border-emerald-300 flex items-center gap-1 shadow-2xs">
                       <Check className="w-3 h-3 text-emerald-600" />
-                      <span>Đã kết thúc bằng dấu "." & khóa chống trùng lặp</span>
+                      <span>Đã chốt kết thúc dấu "." & khóa chống trùng lặp</span>
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
                       Chưa chốt kết thúc
                     </span>
                   )}
+                  {(() => {
+                    const parsed = processAndFormatKinhGui(kinhGuiText);
+                    const count = parsed.recipients.length;
+                    if (count === 0) return null;
+                    if (count === 1) {
+                      return (
+                        <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full border border-blue-200 shadow-2xs">
+                          1 nơi nhận (không gạch đầu dòng, kết thúc ".")
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
+                        {count} nơi nhận (mỗi cơ quan 1 dòng, có gạch đầu dòng -, dòng cuối ".")
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1387,16 +1473,20 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         }
                         if (added > 0) {
                           updateDocField('bodyParagraphs', newParas);
-                          setFixNotice(`✓ Đã chuẩn hóa Kính gửi (nơi cuối kết thúc dấu ".") và chuyển ${added} câu mở đầu ("Thực hiện...", "Căn cứ...", "UBND nhận được"...) vào Thân văn bản!`);
-                          setTimeout(() => setFixNotice(null), 3500);
-                          return;
                         }
+                        setFixNotice(`✓ Đã chuẩn hóa Kính gửi (bảo toàn đủ ${result.recipients.length} nơi nhận) và chuyển ${added} câu mở đầu ("Thực hiện...", "Căn cứ...", "UBND nhận được"...) vào Thân văn bản!`);
+                        setTimeout(() => setFixNotice(null), 3500);
+                        return;
                       }
-                      setFixNotice('✓ Đã chuẩn hóa Kính gửi: Nơi cuối cùng kết thúc bằng dấu "." theo chuẩn NĐ 30!');
-                      setTimeout(() => setFixNotice(null), 2500);
+                      const count = result.recipients.length;
+                      const msg = count === 1
+                        ? '✓ Đã chuẩn hóa 1 nơi nhận: trên 1 hàng, không gạch đầu dòng, kết thúc bằng dấu "." chuẩn NĐ 30!'
+                        : `✓ Đã chuẩn hóa đầy đủ ${count} nơi nhận: mỗi cơ quan 1 dòng có gạch đầu dòng (- ), các dòng trước ";" và dòng cuối "." chuẩn NĐ 30!`;
+                      setFixNotice(msg);
+                      setTimeout(() => setFixNotice(null), 3000);
                     }}
                     className="text-[11px] bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-1 rounded hover:bg-slate-200 cursor-pointer font-medium"
-                    title="Tự động nhận diện các nơi nhận, nếu 1 cơ quan không gạch (-), từ 2 cơ quan có gạch (-) và nơi cuối cùng kết thúc bằng dấu (.)"
+                    title="Tự động nhận diện đầy đủ các nơi nhận, nếu 1 cơ quan không gạch (-), từ 2 cơ quan có gạch (-) và nơi cuối cùng kết thúc bằng dấu (.)"
                   >
                     Chuẩn hóa Kính gửi
                   </button>
@@ -1424,7 +1514,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   <button
                     type="button"
                     onClick={() => {
-                      // 1. Nhận diện các nơi nhận và tách lọc ranh giới nội dung thân bài (Thực hiện..., Căn cứ..., UBND nhận được...)
+                      // 1. Nhận diện đầy đủ các nơi nhận và tách lọc ranh giới nội dung thân bài (Thực hiện..., Căn cứ..., UBND nhận được...)
                       const processed = processAndFormatKinhGui(kinhGuiText);
 
                       if (processed.recipients.length === 0 && processed.leakedBodyLines.length === 0) {
@@ -1434,38 +1524,15 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         return;
                       }
 
-                      // Tách chức danh thẩm quyền ký hoặc tên lãnh đạo ra khỏi Kính gửi (Yêu cầu 1 & 5)
-                      const sigKeywordRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|PHÓ\s*TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
-                      let newAuth = doc.signerAuthority || doc.quyenHanKy || '';
-                      let newTitle = doc.signerTitle || '';
-                      let newName = doc.signerName || '';
-                      let hasSeparatedSigner = false;
-
-                      const cleanedItems: string[] = [];
-                      for (const item of processed.recipients) {
-                        if (sigKeywordRegex.test(item)) {
-                          hasSeparatedSigner = true;
-                          if (/^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH)/i.test(item)) {
-                            newAuth = item.toUpperCase();
-                          } else {
-                            newTitle = item.toUpperCase();
-                          }
-                          continue;
-                        }
-                        if (/^[A-ZÀ-Ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){1,4}$/.test(item) && !/^(?:Đồng chí|Kính gửi|Các|Toàn thể|Ban|Phòng|Sở|Ủy ban|UBND|Công ty)/i.test(item)) {
-                          hasSeparatedSigner = true;
-                          if (!newName) newName = item;
-                          continue;
-                        }
-                        cleanedItems.push(item);
-                      }
+                      // NGUYÊN TẮC VÀNG: TUYỆT ĐỐI KHÔNG TỰ Ý BỎ ĐI BẤT KỲ NƠI GỬI NÀO NGƯỜI DÙNG ĐÃ PASTE HOẶC NHẬP VÀO
+                      const cleanedItems: string[] = [...processed.recipients];
 
                       let formattedLines: string[] = [];
                       if (cleanedItems.length === 1) {
                         // 1 nơi nhận: đặt trên 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
                         formattedLines = [`${cleanedItems[0]}.`];
                       } else if (cleanedItems.length > 1) {
-                        // Nhiều nơi nhận: các dòng trước dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
+                        // Nhiều nơi nhận: mỗi nơi nhận 1 dòng có gạch đầu dòng (- ), các dòng trước dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
                         formattedLines = cleanedItems.map((item, idx) => {
                           const isLast = idx === cleanedItems.length - 1;
                           return `- ${item}${isLast ? '.' : ';'}`;
@@ -1475,7 +1542,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       const finalKinhGuiStr = formattedLines.join('\n');
                       setKinhGuiText(finalKinhGuiStr);
 
-                      // 2. Lọc sạch triệt để các dòng Kính gửi và chức danh lãnh đạo khỏi bodyParagraphs để chống trùng lặp 100%
+                      // 2. Lọc sạch triệt để các dòng Kính gửi trùng lặp khỏi bodyParagraphs
                       // Lưu ý: Nếu dòng đó là bắt đầu nội dung chính (isDocumentBodyStart, Thực hiện..., Căn cứ..., UBND nhận được...), TUYỆT ĐỐI KHÔNG lọc bỏ!
                       const currentParas = [...doc.bodyParagraphs];
                       const filteredParas = currentParas.filter(p => {
@@ -1484,7 +1551,6 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         if (isKinhGuiBodyLeakLine(pTrim)) return true;
                         if (isDocumentBodyStart(pTrim)) return true;
                         if (/^Kính\s*(?:gửi|trình):?/i.test(pTrim)) return false;
-                        if (sigKeywordRegex.test(pTrim)) return false;
                         for (const item of cleanedItems) {
                           if (pTrim === item || pTrim === `- ${item}` || pTrim === `- ${item};` || pTrim === `- ${item}.`) {
                             return false;
@@ -1510,20 +1576,14 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       const updatedDoc: StructuredDoc = {
                         ...doc,
                         recipientsHeader: finalKinhGuiStr,
-                        signerAuthority: newAuth,
-                        quyenHanKy: newAuth,
-                        signerTitle: newTitle,
-                        signerName: newName,
                         bodyParagraphs: filteredParas
                       };
 
                       commitDocChanges(updatedDoc);
                       setIsKinhGuiFinalized(true);
                       const noticeMsg = processed.leakedBodyLines.length > 0
-                        ? `✓ Đã chốt Kính gửi (kết thúc dấu "."), chuyển ${processed.leakedBodyLines.length} đoạn câu mở đầu vào Thân văn bản và khóa chống trùng lặp!`
-                        : hasSeparatedSigner
-                          ? '✓ Đã chốt Kính gửi kết thúc dấu ".", tự động tách chức danh/lãnh đạo sang phần Chữ ký và khóa chống trùng lặp!'
-                          : '✓ Đã chốt hoàn tất phần Kính gửi kết thúc bằng dấu "." và khóa ngăn chặn trùng lặp với văn bản chính!';
+                        ? `✓ Đã chốt Kính gửi (đủ ${cleanedItems.length} nơi nhận, kết thúc dấu "."), chuyển ${processed.leakedBodyLines.length} câu mở đầu vào Thân văn bản và khóa chống trùng lặp!`
+                        : `✓ Đã chốt Kính gửi: bảo toàn đầy đủ ${cleanedItems.length} nơi nhận theo chuẩn NĐ 30, kết thúc bằng dấu "." và khóa chống trùng lặp!`;
                       setFixNotice(noticeMsg);
                       setTimeout(() => setFixNotice(null), 3500);
                     }}
@@ -1551,7 +1611,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
               </div>
 
               <textarea
-                rows={3}
+                rows={Math.max(3, Math.min(8, (kinhGuiText.split('\n').length || 1) + 1))}
                 value={kinhGuiText}
                 readOnly={isKinhGuiFinalized}
                 onChange={(e) => {
@@ -1571,11 +1631,14 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   const val = target.value;
                   const next = (val.substring(0, start) + cleaned + val.substring(end)).normalize('NFC');
                   
-                  // Nhận diện thông minh ranh giới nội dung chính (Thực hiện..., Căn cứ..., UBND nhận được...)
+                  // Nhận diện thông minh ranh giới nội dung chính và nơi nhận chuẩn Nghị định 30
                   const processed = processAndFormatKinhGui(next);
+                  
+                  // NGUYÊN TẮC VÀNG: Bảo toàn 100% tất cả các nơi gửi người dùng đã paste vào
+                  setKinhGuiText(processed.formattedText);
+                  updateDocField('recipientsHeader', processed.formattedText);
+
                   if (processed.leakedBodyLines.length > 0) {
-                    setKinhGuiText(processed.formattedText);
-                    updateDocField('recipientsHeader', processed.formattedText);
                     const newParas = [...doc.bodyParagraphs];
                     let added = 0;
                     for (let i = processed.leakedBodyLines.length - 1; i >= 0; i--) {
@@ -1588,15 +1651,19 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     if (added > 0) {
                       updateDocField('bodyParagraphs', newParas);
                     }
-                    setFixNotice(`✓ Đã nhận diện Kính gửi (nơi cuối kết thúc dấu ".") và chuyển ${processed.leakedBodyLines.length} câu nội dung thân bài vào Thân văn bản!`);
+                    setFixNotice(`✓ Đã nhận diện đầy đủ ${processed.recipients.length} nơi nhận chuẩn NĐ 30 và chuyển ${processed.leakedBodyLines.length} câu nội dung thân bài vào Thân văn bản!`);
                     setTimeout(() => setFixNotice(null), 3500);
                   } else {
-                    setKinhGuiText(next);
-                    updateDocField('recipientsHeader', next);
+                    const count = processed.recipients.length;
+                    const msg = count === 1
+                      ? '✓ Đã nhận diện 1 nơi nhận: không gạch đầu dòng, kết thúc bằng dấu "." chuẩn NĐ 30!'
+                      : `✓ Đã nhận diện đầy đủ ${count} nơi nhận: tự động thêm gạch đầu dòng (- ), các dòng kết thúc bằng ";" và dòng cuối kết thúc bằng "." chuẩn NĐ 30!`;
+                    setFixNotice(msg);
+                    setTimeout(() => setFixNotice(null), 3000);
                   }
                   if (isKinhGuiFinalized) setIsKinhGuiFinalized(false);
                 }}
-                placeholder="- Các ban ngành, đoàn thể phường;&#10;- Ban cán sự các tổ dân phố trên địa bàn."
+                placeholder="Ví dụ 1 nơi: Ủy ban nhân dân thị xã Bỉm Sơn.&#10;Ví dụ nhiều nơi:&#10;- Sở Nội vụ;&#10;- Sở Tài chính;&#10;- UBND các huyện, thị xã, thành phố."
                 className={`w-full p-2.5 rounded-lg border font-serif text-xs text-slate-900 focus:outline-none transition-colors ${
                   isKinhGuiFinalized 
                     ? 'bg-emerald-50/40 border-emerald-300' 
@@ -1606,10 +1673,10 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-500 italic">
                 <span>
-                  ✓ Quy định NĐ 30: Nơi cuối cùng kết thúc bằng dấu <strong>"."</strong>. Gửi 1 nơi: không gạch đầu dòng, kết thúc <strong>"."</strong>; gửi nhiều nơi: các dòng trước <strong>";"</strong>, dòng cuối <strong>"."</strong>.
+                  ✓ Quy định NĐ 30: Nơi cuối cùng kết thúc bằng dấu <strong>"."</strong>. Gửi 1 nơi: ghi trên cùng dòng "Kính gửi:", không gạch đầu dòng, kết thúc <strong>"."</strong>; gửi nhiều nơi: mỗi cơ quan 1 dòng có gạch đầu dòng <strong>"- "</strong>, các dòng trước <strong>";"</strong>, dòng cuối <strong>"."</strong>.
                 </span>
                 <span className="text-emerald-700 font-semibold not-italic">
-                  Tự động nhận diện ranh giới: "Thực hiện", "Căn cứ", "UBND nhận được"... không bị dính vào Kính gửi
+                  Bảo toàn 100% nơi nhận paste vào • Tự động nhận diện ranh giới "Thực hiện", "Căn cứ", "UBND nhận được"...
                 </span>
               </div>
             </div>
@@ -1833,51 +1900,65 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                               </span>
                             </div>
 
-                            {activeFix.suggestion && (
-                              <div className="text-xs">
-                                <span className="text-slate-600">Gợi ý điều chỉnh: </span>
-                                <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 font-serif">
-                                  {activeFix.suggestion}
-                                </strong>
-                              </div>
-                            )}
+                            {(() => {
+                              const isDeletionProposal = !activeFix.suggestion || 
+                                activeFix.suggestion.toLowerCase().includes('xóa bỏ') || 
+                                activeFix.suggestion.toLowerCase().includes('xóa căn cứ') || 
+                                (activeFix.proposal && (!activeFix.proposal.right || activeFix.proposal.right.trim() === ''));
 
-                            <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-amber-300">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (activeFix.proposal && onAcceptProposal) {
-                                    onAcceptProposal(activeFix.proposal);
-                                  } else if (activeFix.suggestion && !activeFix.suggestion.toLowerCase().includes('xóa bỏ') && !activeFix.suggestion.toLowerCase().includes('xóa căn cứ')) {
-                                    handleApplyIllogicalFix(activeFix.target, activeFix.suggestion);
-                                  } else {
-                                    handleDeleteIllogicalSnippet(activeFix.target);
-                                  }
-                                  setActiveFix(null);
-                                }}
-                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Đồng ý sửa đoạn này theo đề xuất chuẩn mực"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Đồng ý sửa</span>
-                              </button>
+                              return (
+                                <>
+                                  <div className="text-xs">
+                                    <span className="text-slate-600">Đề xuất xử lý: </span>
+                                    <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 font-serif">
+                                      {isDeletionProposal ? 'Xóa bỏ đoạn thừa / lặp lại này' : activeFix.suggestion}
+                                    </strong>
+                                  </div>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (activeFix.proposal && onDismissProposal) {
-                                    onDismissProposal(activeFix.proposal);
-                                  } else if (onDismissProposal && activeProposals) {
-                                    const found = activeProposals.find(p => p.wrong === activeFix.target);
-                                    if (found) onDismissProposal(found);
-                                  }
-                                  setActiveFix(null);
-                                }}
-                                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
-                              >
-                                Bỏ qua
-                              </button>
-                            </div>
+                                  <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-amber-300">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (activeFix.proposal && onAcceptProposal) {
+                                          onAcceptProposal(activeFix.proposal);
+                                        } else if (activeFix.suggestion && !isDeletionProposal) {
+                                          handleApplyIllogicalFix(activeFix.target, activeFix.suggestion);
+                                        } else {
+                                          handleDeleteIllogicalSnippet(activeFix.target);
+                                        }
+                                        setActiveFix(null);
+                                      }}
+                                      className={`px-3.5 py-1.5 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs ${
+                                        isDeletionProposal 
+                                          ? 'bg-rose-600 hover:bg-rose-700' 
+                                          : 'bg-emerald-600 hover:bg-emerald-700'
+                                      }`}
+                                      title={isDeletionProposal ? 'Đồng ý xóa đoạn thừa này khỏi văn bản' : 'Đồng ý sửa đoạn này theo đề xuất chuẩn mực'}
+                                    >
+                                      {isDeletionProposal ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                                      <span>{isDeletionProposal ? 'Đồng ý xóa' : 'Đồng ý sửa'}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (activeFix.proposal && onDismissProposal) {
+                                          onDismissProposal(activeFix.proposal);
+                                        } else if (onDismissProposal && activeProposals) {
+                                          const found = activeProposals.find(p => p.wrong === activeFix.target);
+                                          if (found) onDismissProposal(found);
+                                        }
+                                        setActiveFix(null);
+                                      }}
+                                      className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg cursor-pointer"
+                                      title="Bỏ qua đề xuất, giữ nguyên 100% nội dung gốc"
+                                    >
+                                      <span>{isDeletionProposal ? 'Giữ lại (Không xóa)' : 'Bỏ qua'}</span>
+                                    </button>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
 

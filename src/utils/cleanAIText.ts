@@ -562,30 +562,11 @@ export function cleanAIText(
   text = text.replace(/^```[a-zA-Z0-9_-]*\s*/gm, '');
   text = text.replace(/```\s*$/gm, '');
 
-  // 6. Loại bỏ lời chào hỏi / mở đầu của AI (chỉ loại bỏ khi là lời chào chatbot đứng đầu văn bản)
-  const aiChatterIntros = [
-    /^(?:Chào bạn!|Dưới đây là bản chuẩn hóa|Sau đây là văn bản được chuẩn hóa).*?[:\.]\s*\n+/im,
-    /^(?:Tôi đã (?:chuẩn hóa|rà soát) xong văn bản).*?[:\.]\s*\n+/im
-  ];
-  for (const regex of aiChatterIntros) {
-    text = text.replace(regex, '');
-  }
-
-  // Loại bỏ lời kết meta của AI (không chạm vào Ghi chú hay Lưu ý của văn bản)
-  const aiChatterOutros = [
-    /\n+(?:Hy vọng văn bản này hữu ích cho bạn!|Chúc bạn một ngày làm việc hiệu quả!).*$/gims,
-    /\n+(?:Mọi thắc mắc vui lòng liên hệ trợ lý AI).*$/gims
-  ];
-  for (const regex of aiChatterOutros) {
-    text = text.replace(regex, '');
-  }
-
-  // 7. Xử lý Tiêu đề Quốc ngữ: bảo toàn tuyệt đối theo mặc định
+  // 6. Xử lý Tiêu đề Quốc ngữ & Nội dung: Bảo toàn tuyệt đối 100% nội dung gốc được dán vào
+  // Tuyệt đối không tự ý xóa bỏ; các nội dung muốn đề xuất xóa bỏ sẽ được bôi vàng kèm đề xuất để người dùng lựa chọn
   if (stripHeader) {
     const { cleanedText } = stripImportedNationalHeaders(text);
     text = cleanedText;
-  } else {
-    text = removeDuplicateNationalHeadersFromBody(text);
   }
 
   // 8. Loại bỏ Markdown formatting

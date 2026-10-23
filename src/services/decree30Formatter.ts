@@ -2010,32 +2010,31 @@ export function parseDocumentStructure(
     const isMatchingSettingsAgency = !hasNarrativeVerbs && settings.agencyName && rawL.trim().toUpperCase() === settings.agencyName.toUpperCase();
 
     if (isBeforeBasis) {
-      // Bất kỳ dòng nào trước phần căn cứ / nội dung mà là tiêu đề, ngày tháng, số hiệu, loại văn bản, trích yếu, tên cơ quan hoặc gạch ngang trang trí -> LOẠI BỎ HOÀN TOÀN
+      // Bất kỳ dòng nào trước phần căn cứ / nội dung mà là tiêu đề, ngày tháng, số hiệu, loại văn bản, trích yếu, tên cơ quan hoặc gạch ngang trang trí -> LOẠI BỎ KHỎI NỘI DUNG VÌ ĐÃ ĐƯỢC LƯU VÀO CÁC Ô ĐẦU VĂN BẢN
       if (!hasNarrativeVerbs && (isNationalHeader || isSeparator || isDateLine || isDocCodeLine || isTypeNameLine || isSubjectLine || isAgencyLine || isMatchingAgencyName || isMatchingParentAgency || isMatchingSettingsAgency)) {
-        continue;
-      }
-    } else {
-      // Sau bodyStartIdx, nếu dòng này là dòng tiêu đề cơ quan đứng riêng lẻ hoặc tiêu đề quốc ngữ lặp lại
-      if (isMatchingAgencyName || isMatchingParentAgency || isMatchingSettingsAgency || isAgencyLine || isNationalHeader || isDateLine || isDocCodeLine) {
         continue;
       }
     }
 
-    // Với dòng nói chung trong phần còn lại, lọc bỏ các chuỗi Quốc hiệu / Tiêu ngữ nếu bị dính trong dòng
+    // Với dòng nói chung trong phần còn lại, giữ nguyên vẹn các khối bảng biểu nguyên tử
     if (rawL.includes('___DECREE30_ATOMIC_TABLE_')) {
       cleanRemainingLines.push(rawL);
       continue;
     }
 
-    const cleanL = rawL
-      .replace(/(?:CỘNG\s+H[ÒO]A\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM|CỘNG\s+HOÀ\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM)/gi, '')
-      .replace(/(?:Độc\s+lập\s*[-–—]\s*Tự\s+do\s*[-–—]\s*Hạnh\s+phúc|Độc\s+Lập\s*[-–—]\s*Tự\s+Do\s*[-–—]\s*Hạnh\s+Phúc|ĐỘC\s+LẬP\s*[-–—]\s*TỰ\s+DO\s*[-–—]\s*HẠNH\s+PHÚC)[\.:]?/gi, '')
-      .replace(/(?:ĐẢNG\s+CỘNG\s+SẢN\s+VIỆT\s+NAM|Đảng\s+Cộng\s+sản\s+Việt\s+Nam)/gi, '')
-      .replace(/^[*\-–—_~=]{2,}$/, '')
-      .trim();
+    if (!isBeforeBasis) {
+      // NGUYÊN TẮC VÀNG: GIỮ NGUYÊN 100% NỘI DUNG VÀ VỊ TRÍ VĂN BẢN ĐƯỢC PASTE VÀO!
+      // Tuyệt đối không tự ý xóa bỏ bằng continue; hay regex replace các dòng tiêu đề lặp lại, ghi chú dự thảo, AI chatter.
+      // Giữ nguyên tuần tự trong cleanRemainingLines để hệ thống bôi vàng kèm đề xuất xóa để người dùng chủ động chọn [Đồng ý xóa] hoặc [Bỏ qua].
+      cleanRemainingLines.push(rawL.trim());
+    } else {
+      const cleanL = rawL
+        .replace(/^[*\-–—_~=]{2,}$/, '')
+        .trim();
 
-    if (cleanL) {
-      cleanRemainingLines.push(cleanL);
+      if (cleanL) {
+        cleanRemainingLines.push(cleanL);
+      }
     }
   }
 
@@ -2320,39 +2319,23 @@ export function checkSignatureLines(doc: {
  * An toàn 100% với cấu trúc HTML: chỉ bôi vàng trên nội dung chữ hiển thị, không làm hỏng thẻ HTML.
  * Mỗi điểm lỗi được bọc trong <mark class="decree30-spelling-highlight" ...> để click chọn sửa hoặc bỏ qua.
  */
-export function highlightHtmlTextContent(
-  html: string,
-  proposals?: Array<{ id: string; wrong: string; right: string; reason?: string }>
+function highlightTokens(
+  htmlContent: string,
+  proposals: Array<{ id: string; wrong: string; right: string; reason?: string }>
 ): string {
-  if (!html || !proposals || proposals.length === 0) return html;
+  if (!htmlContent || !proposals || proposals.length === 0) return htmlContent;
 
-  // LỌC BỎ CỤM TỪ TIÊU NGỮ / QUỐC HIỆU CHUẨN:
-  // "Độc lập - Tự do - Hạnh phúc", "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", "ĐẢNG CỘNG SẢN VIỆT NAM"
-  // TUYỆT ĐỐI không bao giờ bị bôi vàng ở tiêu đề văn bản khi đã chuẩn hóa / đồng bộ mặc định!
-  const validProposals = proposals.filter(p => {
-    if (!p || !p.wrong || p.wrong.trim().length === 0) return false;
-    const cleanWrong = p.wrong.trim();
-    if (/^(?:Độc\s+lập\s*[-–—]\s*Tự\s+do\s*[-–—]\s*Hạnh\s+phúc|CỘNG\s+H[ÒO]A\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM|ĐẢNG\s+CỘNG\s+SẢN\s+VIỆT\s+NAM)$/i.test(cleanWrong)) {
-      return false;
-    }
-    return true;
-  });
+  const valid = proposals.filter(p => p && p.wrong && p.wrong.trim().length > 0);
+  if (valid.length === 0) return htmlContent;
 
-  if (validProposals.length === 0) return html;
-
-  // Sắp xếp các cụm từ theo độ dài giảm dần để ưu tiên cụm từ dài nhất trước
-  const sorted = [...validProposals].sort((a, b) => b.wrong.length - a.wrong.length);
-
-  // Tách HTML thành các đoạn tag <...> và đoạn text thông thường
-  const tokens = html.split(/(<[^>]+>)/g);
+  const sorted = [...valid].sort((a, b) => b.wrong.length - a.wrong.length);
+  const tokens = htmlContent.split(/(<[^>]+>)/g);
 
   return tokens.map(token => {
-    // Nếu là tag HTML thì giữ nguyên tuyệt đối
     if (token.startsWith('<') && token.endsWith('>')) {
       return token;
     }
 
-    // Nếu là text, tìm và bôi vàng các lỗi
     let textChunk = token;
     for (const p of sorted) {
       if (!textChunk.includes(p.wrong)) continue;
@@ -2360,12 +2343,51 @@ export function highlightHtmlTextContent(
       const regex = new RegExp(`(?<![a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ])(${escaped})(?![a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ])`, 'gi');
 
       textChunk = textChunk.replace(regex, (match) => {
-        return `<mark class="decree30-spelling-highlight" data-proposal-id="${p.id}" data-proposal-wrong="${encodeURIComponent(p.wrong)}" data-proposal-right="${encodeURIComponent(p.right)}" data-proposal-reason="${encodeURIComponent(p.reason || '')}" style="background-color: #fef08a; color: #713f12; padding: 1px 3px; border-radius: 3px; border: 1px solid #facc15; font-weight: 600; cursor: pointer; text-decoration: underline wavy #eab308;" title="⚠️ ${p.reason || 'Lỗi chính tả/không logic'}: Bấm để xem đề xuất sửa [Đồng ý sửa / Bỏ qua]">${match}</mark>`;
+        const isDeletion = !p.right || p.right.trim() === '';
+        const titleText = isDeletion
+          ? `⚠️ ${p.reason || 'Đoạn thừa / lặp lại / không logic'}: Bấm để xem đề xuất [Đồng ý xóa / Bỏ qua]`
+          : `⚠️ ${p.reason || 'Lỗi chính tả/không logic'}: Bấm để xem đề xuất [Đồng ý sửa / Bỏ qua]`;
+        return `<mark class="decree30-spelling-highlight" data-proposal-id="${p.id}" data-proposal-wrong="${encodeURIComponent(p.wrong)}" data-proposal-right="${encodeURIComponent(p.right)}" data-proposal-reason="${encodeURIComponent(p.reason || '')}" style="background-color: #fef08a; color: #713f12; padding: 1px 3px; border-radius: 3px; border: 1px solid #facc15; font-weight: 600; cursor: pointer; text-decoration: underline wavy #eab308;" title="${titleText}">${match}</mark>`;
       });
     }
 
     return textChunk;
   }).join('');
+}
+
+export function highlightHtmlTextContent(
+  html: string,
+  proposals?: Array<{ id: string; wrong: string; right: string; reason?: string }>
+): string {
+  if (!html || !proposals || proposals.length === 0) return html;
+
+  if (html.includes('<!-- OFFICIAL_HEADER_TABLE_START -->') && html.includes('<!-- OFFICIAL_HEADER_TABLE_END -->')) {
+    const parts = html.split('<!-- OFFICIAL_HEADER_TABLE_START -->');
+    const before = parts[0];
+    const subParts = parts[1].split('<!-- OFFICIAL_HEADER_TABLE_END -->');
+    const headerSection = subParts[0];
+    const after = subParts.slice(1).join('<!-- OFFICIAL_HEADER_TABLE_END -->');
+
+    // Trong bảng tiêu đề chính thức ở đầu văn bản: bảo vệ Quốc hiệu, Tiêu ngữ chuẩn không bị bôi vàng
+    const headerProposals = proposals.filter(p => {
+      const cleanWrong = (p.wrong || '').trim();
+      return !/^(?:Độc\s+lập\s*[-–—]\s*Tự\s+do\s*[-–—]\s*Hạnh\s+phúc|CỘNG\s+H[ÒO]A\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM|ĐẢNG\s+CỘNG\s+SẢN\s+VIỆT\s+NAM)$/i.test(cleanWrong);
+    });
+
+    const highlightedHeader = highlightTokens(headerSection, headerProposals);
+    // Trong toàn bộ phần còn lại (nội dung body, căn cứ, phụ lục...): Áp dụng 100% đề xuất kể cả Quốc hiệu trùng lặp trong body, ghi chú dự thảo, AI chatter
+    const highlightedAfter = highlightTokens(after, proposals);
+
+    return before + '<!-- OFFICIAL_HEADER_TABLE_START -->' + highlightedHeader + '<!-- OFFICIAL_HEADER_TABLE_END -->' + highlightedAfter;
+  }
+
+  // Fallback nếu không có marker: bảo vệ Quốc hiệu nếu chưa có zone
+  const validProposals = proposals.filter(p => {
+    if (!p || !p.wrong || p.wrong.trim().length === 0) return false;
+    return true;
+  });
+
+  return highlightTokens(html, validProposals);
 }
 
 /**
@@ -2402,6 +2424,7 @@ export function generateDecree30A4Html(
         <span>Số trang văn bản (NĐ 30 & HD 05): Tự động đặt ở giữa theo chiều ngang lề trên, cỡ 13-14pt chữ đứng, đánh số từ trang thứ 2 (trang 1 không ghi)</span>
       </div>
 
+      <!-- OFFICIAL_HEADER_TABLE_START -->
       <!-- BẢNG BỐ CỤC ĐẦU VĂN BẢN (TỔNG CHIỀU DÀI 16,2CM, CỘT TRÁI 6,5CM, CỘT PHẢI 9,7CM, ẨN VIỀN, NỘI DUNG CANH GIỮA TRONG TỪNG CỘT) -->
       ${(() => {
         // NẾU LÀ CÔNG VĂN: GỌI MODULE_CONG_VAN CHUYÊN BIỆT ĐỂ ĐẢM BẢO TRÍCH YẾU NẰM ĐÚNG Ô BÊN TRÁI DƯỚI SỐ KÝ HIỆU
@@ -2521,6 +2544,7 @@ export function generateDecree30A4Html(
           </table>
         `;
       })()}
+      <!-- OFFICIAL_HEADER_TABLE_END -->
 
       <!-- TÊN LOẠI VĂN BẢN VÀ TRÍCH YẾU (KHÔNG DÙNG CHO CÔNG VĂN THÔNG THƯỜNG) -->
       ${!isCongVan && doc.docTypeName ? (

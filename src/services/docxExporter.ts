@@ -666,12 +666,11 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       .map(l => l.trim())
       .filter(Boolean);
 
-    const sigRegex = /^(?:TM\.|T\/M|KT\.|Q\.|TL\.|TUQ\.|T\.UQ|KT\s*CHỦ\s*TỊCH|CHỦ\s*TỊCH|PHÓ\s*CHỦ\s*TỊCH|BÍ\s*THƯ|PHÓ\s*BÍ\s*THƯ|GIÁM\s*ĐỐC|PHÓ\s*GIÁM\s*ĐỐC|TRƯỞNG\s*PHÒNG|HIỆU\s*TRƯỞNG)\b/i;
     const cleanedItems = rawLines.map(l => {
       let item = l.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
       item = item.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
       return item;
-    }).filter(item => Boolean(item) && !sigRegex.test(item));
+    }).filter(Boolean);
 
     if (cleanedItems.length === 1) {
       // Gửi một nơi: Đặt trên 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-)

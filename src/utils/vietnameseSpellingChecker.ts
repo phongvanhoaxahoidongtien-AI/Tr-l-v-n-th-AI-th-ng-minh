@@ -553,9 +553,14 @@ export function detectAllDocumentProposals(
 
   return proposals.filter(p => {
     const w = (p.wrong || '').trim();
-    if (w === 'Độc lập - Tự do - Hạnh phúc') return false;
-    if (w === 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM') return false;
-    if (w === 'ĐẢNG CỘNG SẢN VIỆT NAM') return false;
+    // Chỉ loại trừ tiêu đề chuẩn hợp lệ ở đầu văn bản (index < 120), KHÔNG loại trừ các tiêu đề bị lặp lại trong thân bài
+    if (p.index < 120 && (
+      w === 'Độc lập - Tự do - Hạnh phúc' ||
+      w === 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM' ||
+      w === 'ĐẢNG CỘNG SẢN VIỆT NAM'
+    )) {
+      return false;
+    }
     return true;
   }).sort((a, b) => a.index - b.index);
 }
