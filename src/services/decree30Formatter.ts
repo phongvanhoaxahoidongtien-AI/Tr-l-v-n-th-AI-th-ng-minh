@@ -133,30 +133,94 @@ export function formatBulletLines(raw: string | string[], prefixToRemove?: RegEx
 }
 
 /**
- * Định dạng riêng cho phần Kính gửi chuẩn Nghị định 30/2020/NĐ-CP:
- * - Nếu chỉ có 1 cơ quan: Đặt trên cùng 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-)
- * - Nếu có từ 2 cơ quan trở lên: Các dòng tiếp theo có gạch đầu dòng (-), cuối dòng chấm phẩy (;), dòng cuối chấm (.)
+ * Định dạng danh sách Nơi nhận chuẩn Nghị định 30/2020/NĐ-CP & Hướng dẫn 05-HD/VPTW:
+ * - Mỗi nơi nhận trên một dòng riêng, đầu dòng có dấu gạch ngang (- )
+ * - Các nơi nhận trước kết thúc bằng dấu chấm phẩy (;)
+ * - Nơi nhận cuối cùng kết thúc bằng dấu chấm (.)
  */
-export function formatKinhGuiLines(raw: string | string[]): string[] {
-  const lines: string[] = Array.isArray(raw) ? raw : (raw || '').split('\n');
+export function formatRecipientsLines(raw: string | string[], prefixToRemove?: RegExp): string[] {
+  const lines: string[] = Array.isArray(raw) 
+    ? raw 
+    : (raw || '').split('\n');
+
   const cleaned = lines
     .map(line => {
       let l = line.trim();
-      l = l.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
+      if (prefixToRemove) {
+        l = l.replace(prefixToRemove, '').trim();
+      }
+      l = l.replace(/^Nơi\s*nhận:?\s*/i, '').trim();
       l = l.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim();
+      l = l.replace(/[;\.]+$/, '').trim();
       return l;
     })
     .filter(Boolean);
 
+  if (cleaned.length === 0) return [];
   if (cleaned.length === 1) {
-    const single = cleaned[0].replace(/[;\.]+$/, '').trim();
-    return [`${single}.`];
-  } else if (cleaned.length > 1) {
-    return cleaned.map((c, idx) => {
-      const isLast = idx === cleaned.length - 1;
-      const clean = c.replace(/[;\.]+$/, '').trim();
-      return `- ${clean}${isLast ? '.' : ';'}`;
-    });
+    return [`- ${cleaned[0]}.`];
+  }
+
+  return cleaned.map((c, idx) => {
+    const isLast = idx === cleaned.length - 1;
+    return `- ${c}${isLast ? '.' : ';'}`;
+  });
+}
+
+/**
+ * Định dạng riêng cho phần Kính gửi chuẩn Nghị định 30/2020/NĐ-CP:
+ * - Nếu chỉ có 1 cơ quan: Đặt trên cùng 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
+ * - Nếu có từ 2 cơ quan trở lên: Dòng đầu là "Kính gửi:", các dòng tiếp theo mỗi cơ quan 1 dòng
+ *   bắt đầu bằng gạch đầu dòng (-), các dòng trước kết thúc bằng chấm phẩy (;), dòng cuối kết thúc bằng chấm (.)
+ */
+export function formatKinhGuiLines(raw: string | string[]): string[] {
+  const lines: string[] = Array.isArray(raw) ? raw : (raw || '').split('\n');
+  const candidateRecipients: string[] = [];
+
+  const agencyLookahead = /(?:,\s*(?:và\s+)?|\s+và\s+)(?=(?:Sở|Ban|Phòng|UBND|Ủy\s*ban|HĐND|UBMTTQ|Chi\s*cục|Cục|Trung\s*tâm|Công\s*an|Quân\s*sự|Trường|Bệnh\s*viện|Công\s*ty|Đơn\s*vị|Các|Đồng\s*chí|Đ\/c|Ông|Bà|Chủ\s*tịch|Giám\s*đốc|Trưởng\s*phòng)\b)/i;
+
+  for (const line of lines) {
+    let l = line.trim();
+    if (!l) continue;
+    l = l.replace(/^Kính\s*(?:gửi|trình|chuyển):?\s*/i, '').trim();
+    if (!l) continue;
+
+    if (l.includes(';')) {
+      const parts = l.split(';').map(p => p.trim()).filter(Boolean);
+      for (const p of parts) {
+        const c = p.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        if (c) candidateRecipients.push(c);
+      }
+    } else if (agencyLookahead.test(l)) {
+      const parts = l.split(agencyLookahead).map(p => p.trim()).filter(Boolean);
+      for (const p of parts) {
+        const c = p.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        if (c) candidateRecipients.push(c);
+      }
+    } else {
+      const c = l.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+      if (c) candidateRecipients.push(c);
+    }
+  }
+
+  // Lọc trùng lặp giữ nguyên thứ tự
+  const uniqueRecipients: string[] = [];
+  for (const item of candidateRecipients) {
+    if (!uniqueRecipients.some(existing => existing.toLowerCase() === item.toLowerCase())) {
+      uniqueRecipients.push(item);
+    }
+  }
+
+  if (uniqueRecipients.length === 1) {
+    return [`Kính gửi: ${uniqueRecipients[0]}.`];
+  } else if (uniqueRecipients.length > 1) {
+    return [
+      'Kính gửi:',
+      ...uniqueRecipients.map((c, idx) => {
+        const isLast = idx === uniqueRecipients.length - 1;
+        return `- ${c}${isLast ? '.' : ';'}`;
+      })
+    ];
   }
   return [];
 }
@@ -314,6 +378,32 @@ export function isDocumentBodyStart(line: string): boolean {
     return true;
   }
 
+  return false;
+}
+
+/**
+ * Nhận diện ranh giới bắt đầu nội dung chính trong trường Kính gửi
+ * (Thực hiện..., Căn cứ..., UBND nhận được..., Nhận được..., Tiếp nhận..., Phúc đáp...)
+ */
+export function isKinhGuiBodyLeakLine(line: string): boolean {
+  if (!line) return false;
+  const clean = line.trim();
+  if (!clean) return false;
+
+  // Nếu dòng bắt đầu bằng tên cơ quan, hội đồng, ban bệ, đoàn thể, chức danh nhận văn bản:
+  // TUYỆT ĐỐI KHÔNG coi là nội dung thân bài (trừ khi có các động từ trần thuật của câu kể đầy đủ)
+  const isAgencyEntity = /^(?:Ban\s+Chỉ\s+đạo|Ban\s+Quản\s+lý|Ban\s+Cán\s+sự|Ban\s+Chấp\s+hành|Hội\s+đồng|Tổ\s+công\s+tác|Đoàn\s+kiểm\s+tra|Đoàn\s+công\s+tác|UBND|Ủy\s+ban\s+nhân\s+dân|Uỷ\s+ban\s+nhân\s+dân|HĐND|UBMTTQ|Sở|Phòng|Chi\s+cục|Cục|Trung\s+tâm|Công\s+an|Trạm|Bệnh\s+viện|Trường|Công\s+ty|Tổng\s+công\s+ty|Đồng\s+chí|Đ\/c|Ông|Bà|Chủ\s+tịch|Phó\s+Chủ\s+tịch|Giám\s+đốc|Phó\s+Giám\s+đốc|Trưởng\s+phòng|Phó\s+Trưởng\s+phòng|Thủ\s+trưởng)\b/i.test(clean);
+
+  if (isAgencyEntity) {
+    // Chỉ coi là body leak nếu có cụm động từ trần thuật rõ ràng của câu văn bản gửi đến
+    return /\b(?:nhận\s+được\s+(?:Công\s+văn|Tờ\s+trình|Báo\s+cáo|văn\s+bản|kế\s+hoạch)|tiếp\s+nhận\s+(?:Công\s+văn|văn\s+bản)|yêu\s+cầu\s+các\s+(?:phòng|ban|đơn\s+vị)|đề\s+nghị\s+các\s+(?:phòng|ban|đơn\s+vị)|chỉ\s+đạo\s+các)\b/i.test(clean);
+  }
+
+  if (isDocumentBodyStart(clean)) return true;
+  if (/^(?:Thực\s+hiện|thực\s+hiện)\b/i.test(clean)) return true;
+  if (/^(?:Căn\s+cứ|căn\s+cứ)\b/i.test(clean)) return true;
+  if (/^(?:Nhận\s+được|nhận\s+được|Tiếp\s+nhận|tiếp\s+nhận|Phúc\s+đáp|phúc\s+đáp|Xét\s+đề\s+nghị|xét\s+đề\s+nghị|Theo\s+đề\s+nghị|theo\s+đề\s+nghị|Trả\s+lời\s+công\s+văn)\b/i.test(clean)) return true;
+  if (clean.length > 55 && /\b(?:thực hiện\s+(?:Công\s+văn|Kế\s+hoạch|Nghị\s+quyết|Quyết\s+định|Chỉ\s+thị)|kính\s+đề\s+nghị|kính\s+báo\s+cáo)\b/i.test(clean)) return true;
   return false;
 }
 
@@ -937,7 +1027,22 @@ export function cleanAndDeduplicateRecipients(
     cleanedItems.push(luuItem);
   }
 
-  return cleanedItems;
+  // Chuẩn hóa dấu kết thúc nơi nhận chuẩn Nghị định 30/2020/NĐ-CP & Hướng dẫn 05:
+  // - Các nơi nhận trước kết thúc bằng dấu chấm phẩy (;)
+  // - Nơi nhận cuối cùng kết thúc bằng dấu chấm (.)
+  if (cleanedItems.length === 0) return [];
+  if (cleanedItems.length === 1) {
+    const single = cleanedItems[0].replace(/[;\.]+$/, '').trim();
+    const withDash = single.startsWith('-') ? single : `- ${single.replace(/^[-\u2013\u2014]\s*/, '')}`;
+    return [`${withDash}.`];
+  }
+
+  return cleanedItems.map((item, idx) => {
+    const isLast = idx === cleanedItems.length - 1;
+    const cleanItem = item.replace(/[;\.]+$/, '').trim();
+    const withDash = cleanItem.startsWith('-') ? cleanItem : `- ${cleanItem.replace(/^[-\u2013\u2014]\s*/, '')}`;
+    return `${withDash}${isLast ? '.' : ';'}`;
+  });
 }
 
 /**
@@ -968,7 +1073,7 @@ export function parseDocumentStructure(
   // A. Bảo vệ HTML tables (chuẩn hóa về khổ A4 chuẩn)
   tableProtectedText = tableProtectedText.replace(/<table\b[\s\S]*?<\/table>/gi, (match) => {
     const formatted = formatHtmlTableToFitA4(match);
-    const placeholder = `___DECREE30_ATOMIC_TABLE_${atomicTableBlocks.length}___`;
+    const placeholder = `{{DECREE30TABLETOKEN${atomicTableBlocks.length}}}`;
     atomicTableBlocks.push(formatted);
     return `\n\n${placeholder}\n\n`;
   });
@@ -977,12 +1082,17 @@ export function parseDocumentStructure(
   const mdTableRegex = /(?:^|\n)(\|[^\n]+\|\r?\n\|[\s:-|]+\|\r?\n(?:\|[^\n]+\|\r?\n?)+)/g;
   tableProtectedText = tableProtectedText.replace(mdTableRegex, (match) => {
     const formatted = convertMarkdownTableToHtml(match);
-    const placeholder = `___DECREE30_ATOMIC_TABLE_${atomicTableBlocks.length}___`;
+    const placeholder = `{{DECREE30TABLETOKEN${atomicTableBlocks.length}}}`;
     atomicTableBlocks.push(formatted);
     return `\n\n${placeholder}\n\n`;
   });
 
-  // Chuẩn hóa và làm sạch dòng thô
+  // Hỗ trợ cả placeholder cũ nếu có sẵn trong input
+  tableProtectedText = tableProtectedText.replace(/___(?:DECREE30_ATOMIC_TABLE|TABLE_BLOCK)_(\d+)___/g, (_, idx) => {
+    return `{{DECREE30TABLETOKEN${idx}}}`;
+  });
+
+  // Chuẩn hóa và làm sạch dòng thô (bảo vệ tuyệt đối các token bảng)
   const cleanInput = tableProtectedText.replace(/[\*_~`#]/g, '');
   const originalLines = cleanInput.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
@@ -1034,7 +1144,7 @@ export function parseDocumentStructure(
 
   let remainingLines: string[] = [];
   for (const line of originalLines) {
-    if (line.includes('___DECREE30_ATOMIC_TABLE_')) {
+    if (line.includes('DECREE30TABLETOKEN') || line.includes('___DECREE30_ATOMIC_TABLE_') || line.includes('___TABLE_BLOCK_') || line.includes('<table')) {
       remainingLines.push(line);
       continue;
     }
@@ -1702,30 +1812,40 @@ export function parseDocumentStructure(
     docTitle = '';
   }
 
-  // 7. Tìm và bóc tách Kính gửi 100% chính xác (kết thúc bằng dấu ".", không bao giờ dính vào nội dung chính)
-  const kgIndex = remainingLines.findIndex(l => /^Kính\s*(?:gửi|trình):?/i.test(l));
+  // 7. Tìm và bóc tách Kính gửi 100% chính xác chuẩn Nghị định 30/2020/NĐ-CP (kết thúc bằng dấu ".", không bao giờ dính vào nội dung chính)
+  const kgIndex = remainingLines.findIndex(l => /^Kính\s*(?:gửi|trình|chuyển):?/i.test(l));
   const rawKinhGuiFoundLines: string[] = [];
+  const agencyLookahead = /(?:,\s*(?:và\s+)?|\s+và\s+)(?=(?:Sở|Ban|Phòng|UBND|Ủy\s*ban|HĐND|UBMTTQ|Chi\s*cục|Cục|Trung\s*tâm|Công\s*an|Quân\s*sự|Trường|Bệnh\s*viện|Công\s*ty|Đơn\s*vị|Các|Toàn\s*thể|Đồng\s*chí|Đ\/c|Ông|Bà|Chủ\s*tịch|Giám\s*đốc|Trưởng\s*phòng)\b)/i;
+
   if (kgIndex !== -1) {
     const firstKg = remainingLines[kgIndex];
     remainingLines.splice(kgIndex, 1);
     rawKinhGuiFoundLines.push(firstKg);
 
-    const strippedFirst = firstKg.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
-    const hasMultipleInFirstLine = strippedFirst.includes(';') || strippedFirst.startsWith('-') || strippedFirst.includes('- ');
+    const strippedFirst = firstKg.replace(/^Kính\s*(?:gửi|trình|chuyển):?\s*/i, '').trim();
+    const hasMultipleInFirstLine = strippedFirst.includes(';') || strippedFirst.startsWith('-') || strippedFirst.includes('- ') || agencyLookahead.test(strippedFirst);
     const hasInlineRecipient = Boolean(strippedFirst);
 
     if (hasInlineRecipient) {
-      if (hasMultipleInFirstLine) {
+      if (strippedFirst.includes(';')) {
         const parts = strippedFirst.split(';').map(p => p.trim()).filter(Boolean);
         for (const p of parts) {
           const cleanP = p.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
-          if (cleanP) {
+          if (cleanP && !isDocumentBodyStart(cleanP) && !isKinhGuiBodyLeakLine(cleanP)) {
+            recipientsHeaderLines.push(cleanP);
+          }
+        }
+      } else if (agencyLookahead.test(strippedFirst)) {
+        const parts = strippedFirst.split(agencyLookahead).map(p => p.trim()).filter(Boolean);
+        for (const p of parts) {
+          const cleanP = p.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+          if (cleanP && !isDocumentBodyStart(cleanP) && !isKinhGuiBodyLeakLine(cleanP)) {
             recipientsHeaderLines.push(cleanP);
           }
         }
       } else {
         const cleanSingle = strippedFirst.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
-        if (cleanSingle) {
+        if (cleanSingle && !isDocumentBodyStart(cleanSingle) && !isKinhGuiBodyLeakLine(cleanSingle)) {
           recipientsHeaderLines.push(cleanSingle);
         }
       }
@@ -1751,7 +1871,7 @@ export function parseDocumentStructure(
 
         // 1. Nếu gặp ranh giới chuyển sang Thân / Nội dung chính văn bản -> DỪNG NGAY LẬP TỨC!
         // (Thực hiện..., Căn cứ..., UBND nhận được..., Tiếp nhận, Phúc đáp, Nhằm, Để, v.v.)
-        if (isDocumentBodyStart(nextL)) {
+        if (isDocumentBodyStart(nextL) || isKinhGuiBodyLeakLine(nextL)) {
           break;
         }
 
@@ -1767,18 +1887,38 @@ export function parseDocumentStructure(
         }
 
         const hasBullet = /^[-\u2013\u2014\*\+•●○■◆]\s+/.test(nextL);
-        const isOrgKeyword = /^(?:Ủy\s*ban|UBND|HĐND|Hội\s*đồng|Đảng\s*ủy|Chi\s*bộ|Ban|Sở|Phòng|Bộ|Cục|Chi\s*cục|Đoàn|Hội|Công\s*an|Quân\s*sự|Trường|Bệnh\s*viện|Trung\s*tâm|Đơn\s*vị|Các|Toàn\s*thể|Đồng\s*chí|Ông|Bà|Công\s*ty)\b/i.test(nextL.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim());
+        const hasSemicolonOrDot = /[;\.]$/.test(nextL);
+        const isOrgKeyword = /^(?:Ủy\s*ban|UBND|HĐND|Hội\s*đồng|Đảng\s*ủy|Chi\s*bộ|Ban|Sở|Phòng|Bộ|Cục|Chi\s*cục|Đoàn|Hội|Công\s*an|Quân\s*sự|Trường|Bệnh\s*viện|Trung\s*tâm|Đơn\s*vị|Các|Toàn\s*thể|Đồng\s*chí|Đ\/c|Ông|Bà|Công\s*ty)\b/i.test(nextL.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').trim());
 
-        if (hasBullet || (!hasInlineRecipient && isOrgKeyword && nextL.length < 90)) {
+        if (hasBullet || isOrgKeyword || (hasSemicolonOrDot && !isDocumentBodyStart(nextL))) {
           rawKinhGuiFoundLines.push(nextL);
-          const clean = nextL.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
-          if (clean) {
-            recipientsHeaderLines.push(clean);
-          }
           remainingLines.splice(kgIndex, 1);
 
-          // Nếu dòng này kết thúc bằng dấu chấm (.), đánh dấu kết thúc khối Kính gửi
-          if (nextL.endsWith('.')) {
+          if (nextL.includes(';')) {
+            const subParts = nextL.split(';').map(p => p.trim()).filter(Boolean);
+            for (const sp of subParts) {
+              const clean = sp.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+              if (clean && !isDocumentBodyStart(clean) && !isKinhGuiBodyLeakLine(clean)) {
+                recipientsHeaderLines.push(clean);
+              }
+            }
+          } else if (agencyLookahead.test(nextL)) {
+            const subParts = nextL.split(agencyLookahead).map(p => p.trim()).filter(Boolean);
+            for (const sp of subParts) {
+              const clean = sp.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+              if (clean && !isDocumentBodyStart(clean) && !isKinhGuiBodyLeakLine(clean)) {
+                recipientsHeaderLines.push(clean);
+              }
+            }
+          } else {
+            const clean = nextL.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+            if (clean && !isDocumentBodyStart(clean) && !isKinhGuiBodyLeakLine(clean)) {
+              recipientsHeaderLines.push(clean);
+            }
+          }
+
+          // Nếu dòng này kết thúc bằng dấu chấm (.), đánh dấu kết thúc khối Kính gửi (trừ viết tắt TP., TX., P.)
+          if (nextL.endsWith('.') && !/(?:TP|TX|TT|P|Q)\.$/i.test(nextL)) {
             break;
           }
         } else {
@@ -1826,24 +1966,30 @@ export function parseDocumentStructure(
     return true;
   });
 
-  // Chuẩn hóa dấu kết thúc của phần Kính gửi chuẩn Nghị định 30/2020/NĐ-CP:
-  // - Nếu 1 nơi nhận: Đặt trên 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm "."
-  // - Nếu nhiều nơi nhận: các dòng có dấu gạch đầu dòng (-), các dòng trước kết thúc bằng ";", dòng cuối kết thúc bằng "."
-  if (recipientsHeaderLines.length === 1) {
-    const single = recipientsHeaderLines[0]
-      .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
-      .replace(/[;\.]+$/, '')
-      .trim();
-    recipientsHeaderLines[0] = `${single}.`;
-  } else if (recipientsHeaderLines.length > 1) {
-    for (let idx = 0; idx < recipientsHeaderLines.length; idx++) {
-      const clean = recipientsHeaderLines[idx]
-        .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
-        .replace(/[;\.]+$/, '')
-        .trim();
-      const isLast = idx === recipientsHeaderLines.length - 1;
-      recipientsHeaderLines[idx] = `- ${clean}${isLast ? '.' : ';'}`;
+  // Lọc trùng lặp giữ nguyên thứ tự
+  const dedupedRecipientsHeader: string[] = [];
+  for (const r of recipientsHeaderLines) {
+    const clean = r.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+    if (clean && !dedupedRecipientsHeader.some(existing => existing.toLowerCase() === clean.toLowerCase())) {
+      dedupedRecipientsHeader.push(clean);
     }
+  }
+
+  // Chuẩn hóa dấu kết thúc của phần Kính gửi chuẩn Nghị định 30/2020/NĐ-CP:
+  // - Nếu 1 nơi nhận: Kính gửi và nơi nhận trên cùng 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm "."
+  // - Nếu nhiều nơi nhận: Dòng đầu "Kính gửi:", mỗi nơi nhận là 1 dòng bắt đầu bằng dấu gạch ngang (- ),
+  //   các dòng trước kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
+  if (dedupedRecipientsHeader.length === 1) {
+    recipientsHeaderLines = [`Kính gửi: ${dedupedRecipientsHeader[0]}.`];
+  } else if (dedupedRecipientsHeader.length > 1) {
+    const formatted: string[] = ['Kính gửi:'];
+    for (let idx = 0; idx < dedupedRecipientsHeader.length; idx++) {
+      const isLast = idx === dedupedRecipientsHeader.length - 1;
+      formatted.push(`- ${dedupedRecipientsHeader[idx]}${isLast ? '.' : ';'}`);
+    }
+    recipientsHeaderLines = formatted;
+  } else {
+    recipientsHeaderLines = [];
   }
 
   // 7.5. BÓC TÁCH PHỤ LỤC (Annex / Appendix) KÈM THEO VĂN BẢN (NẾU CÓ)
@@ -2017,7 +2163,7 @@ export function parseDocumentStructure(
     }
 
     // Với dòng nói chung trong phần còn lại, giữ nguyên vẹn các khối bảng biểu nguyên tử
-    if (rawL.includes('___DECREE30_ATOMIC_TABLE_')) {
+    if (rawL.includes('DECREE30TABLETOKEN') || rawL.includes('___DECREE30_ATOMIC_TABLE_') || rawL.includes('___TABLE_BLOCK_') || rawL.includes('<table')) {
       cleanRemainingLines.push(rawL);
       continue;
     }
@@ -2078,31 +2224,29 @@ export function parseDocumentStructure(
 
   // Khôi phục các khối Bảng biểu nguyên vẹn theo đúng vị trí ban đầu (không xóa, không đổi nội dung)
   if (atomicTableBlocks.length > 0) {
+    const restoreTablePlaceholder = (str: string): string => {
+      let res = str;
+      res = res.replace(/\{\{DECREE30TABLETOKEN(\d+)\}\}/g, (_, idxStr) => {
+        const tableIdx = parseInt(idxStr, 10);
+        return atomicTableBlocks[tableIdx] || '';
+      });
+      res = res.replace(/___(?:DECREE30_ATOMIC_TABLE|TABLE_BLOCK)_(\d+)___/g, (_, idxStr) => {
+        const tableIdx = parseInt(idxStr, 10);
+        return atomicTableBlocks[tableIdx] || '';
+      });
+      return res;
+    };
+
     for (let i = 0; i < bodyParagraphs.length; i++) {
-      if (bodyParagraphs[i].includes('___DECREE30_ATOMIC_TABLE_')) {
-        bodyParagraphs[i] = bodyParagraphs[i].replace(/___DECREE30_ATOMIC_TABLE_(\d+)___/g, (_, idxStr) => {
-          const tableIdx = parseInt(idxStr, 10);
-          return atomicTableBlocks[tableIdx] || '';
-        });
-      }
+      bodyParagraphs[i] = restoreTablePlaceholder(bodyParagraphs[i]);
     }
     for (let i = 0; i < legalBases.length; i++) {
-      if (legalBases[i].includes('___DECREE30_ATOMIC_TABLE_')) {
-        legalBases[i] = legalBases[i].replace(/___DECREE30_ATOMIC_TABLE_(\d+)___/g, (_, idxStr) => {
-          const tableIdx = parseInt(idxStr, 10);
-          return atomicTableBlocks[tableIdx] || '';
-        });
-      }
+      legalBases[i] = restoreTablePlaceholder(legalBases[i]);
     }
     if (appendices && appendices.length > 0) {
       for (const app of appendices) {
         for (let i = 0; i < app.paragraphs.length; i++) {
-          if (app.paragraphs[i].includes('___DECREE30_ATOMIC_TABLE_')) {
-            app.paragraphs[i] = app.paragraphs[i].replace(/___DECREE30_ATOMIC_TABLE_(\d+)___/g, (_, idxStr) => {
-              const tableIdx = parseInt(idxStr, 10);
-              return atomicTableBlocks[tableIdx] || '';
-            });
-          }
+          app.paragraphs[i] = restoreTablePlaceholder(app.paragraphs[i]);
         }
       }
     }
@@ -2244,6 +2388,7 @@ export function parseDocumentStructure(
 export interface SignatureLineCheck {
   isSingleLine: boolean;
   hasThreeLines?: boolean;
+  isDirectHeadLeader?: boolean;
   authorityLine: string;
   roleLine2?: string;
   titleLine: string;
@@ -2265,6 +2410,7 @@ export function checkSignatureLines(doc: {
   // Ví dụ: TM. ỦY BAN NHÂN DÂN / KT. CHỦ TỊCH / PHÓ CHỦ TỊCH
   // Hoặc: TM. BAN THƯỜNG VỤ / KT. BÍ THƯ / PHÓ BÍ THƯ
   // Hoặc: TM. BAN CHẤP HÀNH / T/M BAN THƯỜNG VỤ / BÍ THƯ
+  // Hoặc: TL. CHỦ TỊCH / KT. CHÁNH VĂN PHÒNG / PHÓ CHÁNH VĂN PHÒNG
   if (auth && role2 && title) {
     return {
       isSingleLine: false,
@@ -2290,8 +2436,24 @@ export function checkSignatureLines(doc: {
     };
   }
 
-  // Trường hợp chỉ có 1 dòng duy nhất
-  const singleLineText = auth || title || '';
+  // Trường hợp 1 dòng: Ký theo thẩm quyền cá nhân cấp trưởng (CHỦ TỊCH, GIÁM ĐỐC, TRƯỞNG PHÒNG, BÍ THƯ...)
+  const singleLineText = title || auth || '';
+  const isDirectHeadLeader = !role2 && (!auth || auth === title) && Boolean(title) && !/^(?:KT\.|TM\.|TL\.|TUQ\.|T\/M)/i.test(singleLineText);
+
+  if (isDirectHeadLeader) {
+    return {
+      isSingleLine: false,
+      hasThreeLines: false,
+      isDirectHeadLeader: true,
+      authorityLine: '',
+      roleLine2: '',
+      titleLine: singleLineText,
+      singleLineText,
+      reason: ''
+    };
+  }
+
+  // Trường hợp chỉ có 1 dòng duy nhất bị thiếu (ví dụ chỉ có KT. hoặc chỉ có TM. mà thiếu chức danh người ký)
   let reason = '';
   if (/^(?:KT\.|KT\s*CHỦ\s*TỊCH)/i.test(singleLineText)) {
     reason = 'Phần chữ ký ký thay (KT.) chỉ có 1 dòng thẩm quyền ký, thiếu dòng chức vụ người ký (ví dụ: PHÓ CHỦ TỊCH). Cần bổ sung để đúng thể thức.';
@@ -2826,9 +2988,11 @@ export function generateDecree30A4Html(
                   Nơi nhận:
                 </div>
                 <div style="font-size: 11pt; line-height: 1.35; font-family: 'Times New Roman', serif;">
-                  ${safeRecs.map(r => {
-                    const withDash = r.startsWith('-') ? r : `- ${r.replace(/^[-\u2013\u2014]\s*/, '')}`;
-                    return `<div style="margin-bottom: 1.5pt;">${withDash}</div>`;
+                  ${safeRecs.map((r, idx) => {
+                    const isLast = idx === safeRecs.length - 1;
+                    const cleanR = r.replace(/[;\.]+$/, '').trim();
+                    const withDash = cleanR.startsWith('-') ? cleanR : `- ${cleanR.replace(/^[-\u2013\u2014]\s*/, '')}`;
+                    return `<div style="margin-bottom: 1.5pt;">${withDash}${isLast ? '.' : ';'}</div>`;
                   }).join('')}
                 </div>
               `;
@@ -2871,12 +3035,22 @@ export function generateDecree30A4Html(
               }
 
               // Có đủ 2 dòng phân biệt: Thẩm quyền ký ở dòng 1 và Chức vụ người ký ở dòng 2
+              if (sigCheck.authorityLine && sigCheck.titleLine && sigCheck.authorityLine !== sigCheck.titleLine) {
+                return `
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${sigCheck.authorityLine}
+                  </div>
+                  <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin-top: 2pt; font-family: 'Times New Roman', serif; line-height: 1.25;">
+                    ${sigCheck.titleLine}
+                  </div>
+                `;
+              }
+
+              // 1 dòng: Ký theo thẩm quyền cá nhân cấp trưởng (CHỦ TỊCH, GIÁM ĐỐC, TRƯỞNG PHÒNG...)
+              const singleTitle = sigCheck.titleLine || sigCheck.authorityLine || 'CHỦ TỊCH';
               return `
                 <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; font-family: 'Times New Roman', serif; line-height: 1.25;">
-                  ${sigCheck.authorityLine}
-                </div>
-                <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin-top: 2pt; font-family: 'Times New Roman', serif; line-height: 1.25;">
-                  ${sigCheck.titleLine}
+                  ${singleTitle}
                 </div>
               `;
             })()}
@@ -2978,7 +3152,21 @@ export function generateDecree30A4Html(
     `).join('') : ''}
   `;
 
-  return highlightHtmlTextContent(rawHtml, highlightProposals);
+  const effectiveProposals = [...(highlightProposals || [])];
+  if (doc.illogicalFindings && doc.illogicalFindings.length > 0) {
+    for (const ill of doc.illogicalFindings) {
+      if (!effectiveProposals.some(p => p.wrong.toLowerCase() === ill.target.toLowerCase())) {
+        effectiveProposals.push({
+          id: ill.id || `ill_${effectiveProposals.length + 1}`,
+          wrong: ill.target,
+          right: '',
+          reason: ill.reason || 'Đoạn thiếu logic / có nguy cơ sai'
+        });
+      }
+    }
+  }
+
+  return highlightHtmlTextContent(rawHtml, effectiveProposals);
 }
 
 /**

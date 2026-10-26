@@ -136,6 +136,9 @@ export default function App() {
         selectedType.category,
         selectedType.name
       );
+      if (res.illogicalFindings && res.illogicalFindings.length > 0) {
+        initialDoc.illogicalFindings = res.illogicalFindings;
+      }
       setActiveStructuredDoc(initialDoc);
       setCurrentStep(3);
       setMaxAccessibleStep(5);

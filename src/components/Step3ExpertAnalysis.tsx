@@ -231,11 +231,23 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
     }
   };
 
+  // Tổng hợp các điểm bôi vàng đề xuất xóa (đoạn thiếu logic / có nguy cơ sai sót)
+  const highlightProposals = useMemo(() => {
+    if (!result.illogicalFindings || result.illogicalFindings.length === 0) return undefined;
+    return result.illogicalFindings.map((ill, idx) => ({
+      id: ill.id || `ill_${idx}_${ill.target.slice(0, 10)}`,
+      wrong: ill.target,
+      right: '', // Đề xuất xóa
+      reason: ill.reason || 'Đoạn thiếu logic / có nguy cơ sai'
+    }));
+  }, [result.illogicalFindings]);
+
   const renderedA4Html = generateDecree30A4Html(
     result.noiDungChuanHoa, 
     agencySettings, 
     selectedType.category,
-    selectedType.name
+    selectedType.name,
+    highlightProposals
   );
 
   return (
@@ -796,6 +808,33 @@ export const Step3ExpertAnalysis: React.FC<Step3ExpertAnalysisProps> = ({
                         <strong className="text-emerald-700 font-bold">{err.right}</strong>
                       </div>
                       <span className="text-[10px] text-slate-500 italic shrink-0">({err.reason})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {result.illogicalFindings && result.illogicalFindings.length > 0 && (
+              <div className="p-4 rounded-xl bg-amber-50/90 border border-amber-300">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <h4 className="font-bold text-amber-950 text-sm md:text-base">
+                    Phát hiện {result.illogicalFindings.length} đoạn thiếu logic / có nguy cơ sai sót (Đã bôi vàng đề xuất xóa - Tuyệt đối không tự ý xóa bỏ):
+                  </h4>
+                </div>
+                <p className="text-xs text-amber-800 mb-3 font-sans">
+                  Theo nguyên tắc bảo toàn nội dung, hệ thống giữ nguyên 100% vị trí các đoạn này và bôi vàng trên trang in A4. Bạn có thể xem xét và quyết định [Đồng ý xóa] hoặc [Bỏ qua] ở Bước 4.
+                </p>
+                <div className="space-y-2 font-sans">
+                  {result.illogicalFindings.map((ill, i) => (
+                    <div key={i} className="p-2.5 rounded-lg bg-white border border-amber-200 text-xs text-slate-800 flex flex-col gap-1 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-900">⚠️ {ill.reason}</span>
+                        <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-bold border border-amber-300">Đề xuất xóa</span>
+                      </div>
+                      <div className="p-1.5 bg-yellow-50 rounded border border-yellow-200 font-serif text-slate-900 italic">
+                        "{ill.target}"
+                      </div>
                     </div>
                   ))}
                 </div>

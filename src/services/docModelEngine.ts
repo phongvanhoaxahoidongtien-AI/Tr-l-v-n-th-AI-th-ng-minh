@@ -5,6 +5,7 @@ import {
 import { RuleLoader, DocumentRuleConfig } from './ruleLoader';
 import { isWarningOrInstructionLine } from '../utils/cleanAIText';
 import { formatDecree30TitleCase } from './decree30Formatter';
+import { convertTableToDocxTable } from './docxExporter';
 
 export interface DocModel {
   heThong: 'hanh_chinh' | 'dang' | 'academic';
@@ -446,7 +447,7 @@ export class DocModelEngine {
       ]
     });
 
-    const bodyParagraphs: Paragraph[] = [];
+    const bodyParagraphs: (Paragraph | Table)[] = [];
 
     // Tên loại văn bản & trích yếu (nếu không phải công văn)
     if (doc.tenLoai !== 'CÔNG VĂN') {
@@ -469,17 +470,69 @@ export class DocModelEngine {
       }
     }
 
-    // Kính gửi / Kính trình (Báo cáo KHÔNG CÓ phần Kính gửi theo NĐ 30)
-    const isReportType = doc.tenLoai === 'BÁO CÁO' || doc.tenLoai.startsWith('BÁO CÁO');
-    if (!isReportType && doc.kinhGuiHoacKinhTrinh) {
-      bodyParagraphs.push(
-        new Paragraph({
-          alignment: AlignmentType.LEFT,
-          indent: { firstLine: 567 },
-          spacing: { before: 120, after: 80, line: 300 },
-          children: [new TextRun({ text: doc.kinhGuiHoacKinhTrinh, font: 'Times New Roman', size: 28, bold: true })]
-        })
-      );
+    // Kính gửi / Kính trình (chuẩn Nghị định 30/2020/NĐ-CP: Báo cáo & Quyết định KHÔNG CÓ phần Kính gửi)
+    const isReportOrDecision = doc.tenLoai === 'BÁO CÁO' || doc.tenLoai.startsWith('BÁO CÁO') || doc.tenLoai === 'QUYẾT ĐỊNH';
+    if (!isReportOrDecision && doc.kinhGuiHoacKinhTrinh) {
+      const rawLines = doc.kinhGuiHoacKinhTrinh.split('\n').map(l => l.trim()).filter(Boolean);
+      const cleanedItems = rawLines.map(l => {
+        let item = l.replace(/^Kính\s*(?:gửi|trình):?\s*/i, '').trim();
+        item = item.replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '').replace(/[;\.]+$/, '').trim();
+        return item;
+      }).filter(Boolean);
+
+      if (cleanedItems.length === 1) {
+        // 1 nơi nhận: Kính gửi và nơi nhận cùng 1 hàng, không có dấu '-', kết thúc bằng '.'
+        bodyParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.LEFT,
+            indent: { left: 1757 }, // 3.1cm
+            spacing: { before: 180, after: 180, line: 300 },
+            children: [
+              new TextRun({
+                text: `Kính gửi: ${cleanedItems[0]}.`,
+                font: 'Times New Roman',
+                size: 28, // 14pt
+                bold: false,
+              }),
+            ],
+          })
+        );
+      } else if (cleanedItems.length > 1) {
+        // Nhiều nơi nhận: dòng đầu Kính gửi:, mỗi nơi nhận 1 dòng có gạch đầu dòng (- ), các dòng trước ';', dòng cuối '.'
+        bodyParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.LEFT,
+            indent: { left: 1757 },
+            spacing: { before: 160, after: 40, line: 280 },
+            children: [
+              new TextRun({
+                text: 'Kính gửi:',
+                font: 'Times New Roman',
+                size: 28,
+                bold: false,
+              }),
+            ],
+          })
+        );
+        cleanedItems.forEach((item, idx) => {
+          const isLast = idx === cleanedItems.length - 1;
+          bodyParagraphs.push(
+            new Paragraph({
+              alignment: AlignmentType.LEFT,
+              indent: { left: 2000 },
+              spacing: { before: 20, after: 30, line: 280 },
+              children: [
+                new TextRun({
+                  text: `- ${item}${isLast ? '.' : ';'}`,
+                  font: 'Times New Roman',
+                  size: 28,
+                  bold: false,
+                }),
+              ],
+            })
+          );
+        });
+      }
     }
 
     // Căn cứ pháp lý
@@ -494,9 +547,25 @@ export class DocModelEngine {
       );
     }
 
-    // Thân bài
+    // Thân bài (Bảo toàn 100% bảng biểu Word chuẩn)
     for (const b of doc.noiDungBlocks) {
       if (!b.text || isWarningOrInstructionLine(b.text)) continue;
+
+      const isTableBlock = b.type === 'table' || 
+        b.text.includes('<table') || 
+        b.text.includes('DECREE30TABLETOKEN') || 
+        (b.text.includes('|') && b.text.split('\n').filter(l => l.trim().startsWith('|')).length >= 2);
+
+      if (isTableBlock) {
+        const docxTbl = convertTableToDocxTable(b.tableHtml || b.text);
+        if (docxTbl) {
+          bodyParagraphs.push(new Paragraph({ spacing: { before: 140 } }));
+          bodyParagraphs.push(docxTbl);
+          bodyParagraphs.push(new Paragraph({ spacing: { after: 140 } }));
+          continue;
+        }
+      }
+
       bodyParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.JUSTIFIED,

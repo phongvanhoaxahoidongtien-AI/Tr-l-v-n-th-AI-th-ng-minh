@@ -4,12 +4,14 @@ import {
   parseDocumentStructure, 
   reconstructNormalizedText, 
   formatBulletLines, 
+  formatRecipientsLines,
   formatKinhGuiLines,
   boldBulletHeadings,
   unboldBulletHeadings,
   cleanAndDeduplicateRecipients,
   checkSignatureLines,
   isDocumentBodyStart,
+  isKinhGuiBodyLeakLine,
   StructuredDoc 
 } from '../services/decree30Formatter';
 import { 
@@ -17,7 +19,7 @@ import {
   formatCongVanSubject, 
   getCongVanSubject 
 } from '../services/Module_CongVan.js';
-import { cleanAIText, formatHtmlTableToFitA4 } from '../utils/cleanAIText';
+import { cleanAIText, formatHtmlTableToFitA4, convertMarkdownTableToHtml } from '../utils/cleanAIText';
 import { AGENCY_PRESETS } from '../utils/agencyPresets';
 import { 
   checkVietnameseSpelling, 
@@ -36,31 +38,6 @@ import {
   Table as TableIcon, AlignCenter, Plus, Home, Trash2, Paperclip, FilePlus
 } from 'lucide-react';
 
-/**
- * Nhận diện ranh giới bắt đầu nội dung chính trong trường Kính gửi
- * (Thực hiện..., Căn cứ..., UBND nhận được..., Nhận được..., Tiếp nhận..., Phúc đáp...)
- */
-export function isKinhGuiBodyLeakLine(line: string): boolean {
-  if (!line) return false;
-  const clean = line.trim();
-  if (!clean) return false;
-
-  // Nếu dòng bắt đầu bằng tên cơ quan, hội đồng, ban bệ, đoàn thể, chức danh nhận văn bản:
-  // TUYỆT ĐỐI KHÔNG coi là nội dung thân bài (trừ khi có các động từ trần thuật của câu kể đầy đủ)
-  const isAgencyEntity = /^(?:Ban\s+Chỉ\s+đạo|Ban\s+Quản\s+lý|Ban\s+Cán\s+sự|Ban\s+Chấp\s+hành|Hội\s+đồng|Tổ\s+công\s+tác|Đoàn\s+kiểm\s+tra|Đoàn\s+công\s+tác|UBND|Ủy\s+ban\s+nhân\s+dân|Uỷ\s+ban\s+nhân\s+dân|HĐND|UBMTTQ|Sở|Phòng|Chi\s+cục|Cục|Trung\s+tâm|Công\s+an|Trạm|Bệnh\s+viện|Trường|Công\s+ty|Tổng\s+công\s+ty|Đồng\s+chí|Đ\/c|Ông|Bà|Chủ\s+tịch|Phó\s+Chủ\s+tịch|Giám\s+đốc|Phó\s+Giám\s+đốc|Trưởng\s+phòng|Phó\s+Trưởng\s+phòng|Thủ\s+trưởng)\b/i.test(clean);
-
-  if (isAgencyEntity) {
-    // Chỉ coi là body leak nếu có cụm động từ trần thuật rõ ràng của câu văn bản gửi đến
-    return /\b(?:nhận\s+được\s+(?:Công\s+văn|Tờ\s+trình|Báo\s+cáo|văn\s+bản|kế\s+hoạch)|tiếp\s+nhận\s+(?:Công\s+văn|văn\s+bản)|yêu\s+cầu\s+các\s+(?:phòng|ban|đơn\s+vị)|đề\s+nghị\s+các\s+(?:phòng|ban|đơn\s+vị)|chỉ\s+đạo\s+các)\b/i.test(clean);
-  }
-
-  if (isDocumentBodyStart(clean)) return true;
-  if (/^(?:Thực\s+hiện|thực\s+hiện)\b/i.test(clean)) return true;
-  if (/^(?:Căn\s+cứ|căn\s+cứ)\b/i.test(clean)) return true;
-  if (/^(?:Nhận\s+được|nhận\s+được|Tiếp\s+nhận|tiếp\s+nhận|Phúc\s+đáp|phúc\s+đáp|Xét\s+đề\s+nghị|xét\s+đề\s+nghị|Theo\s+đề\s+nghị|theo\s+đề\s+nghị|Trả\s+lời\s+công\s+văn)\b/i.test(clean)) return true;
-  if (clean.length > 55 && /\b(?:thực hiện\s+(?:Công\s+văn|Kế\s+hoạch|Nghị\s+quyết|Quyết\s+định|Chỉ\s+thị)|kính\s+đề\s+nghị|kính\s+báo\s+cáo)\b/i.test(clean)) return true;
-  return false;
-}
 
 /**
  * Nâng cấp khả năng nhận diện các nơi kính gửi theo chuẩn Nghị định 30/2020/NĐ-CP:
@@ -178,14 +155,18 @@ export function processAndFormatKinhGui(raw: string | string[]): {
 
   let formattedLines: string[] = [];
   if (uniqueRecipients.length === 1) {
-    // 1 nơi nhận: trên 1 dòng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
-    formattedLines = [`${uniqueRecipients[0]}.`];
+    // 1 nơi nhận: Kính gửi và nơi nhận cùng 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
+    formattedLines = [`Kính gửi: ${uniqueRecipients[0]}.`];
   } else if (uniqueRecipients.length > 1) {
-    // Nhiều nơi nhận: mỗi dòng có gạch đầu dòng (- ), các dòng trước kết thúc bằng (;), dòng cuối kết thúc bằng (.)
-    formattedLines = uniqueRecipients.map((item, idx) => {
-      const isLast = idx === uniqueRecipients.length - 1;
-      return `- ${item}${isLast ? '.' : ';'}`;
-    });
+    // Nhiều nơi nhận: dòng đầu là "Kính gửi:", mỗi nơi nhận là 1 dòng bắt đầu bằng dấu gạch (- ),
+    // các dòng trước kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
+    formattedLines = [
+      'Kính gửi:',
+      ...uniqueRecipients.map((item, idx) => {
+        const isLast = idx === uniqueRecipients.length - 1;
+        return `- ${item}${isLast ? '.' : ';'}`;
+      })
+    ];
   }
 
   return {
@@ -238,7 +219,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   });
   const [noiNhanText, setNoiNhanText] = useState(() => {
     const raw = externalDoc?.recipients ?? doc.recipients ?? [];
-    return formatBulletLines(raw).join('\n');
+    return formatRecipientsLines(raw).join('\n');
   });
 
   // Trạng thái đã chốt kết thúc Kính gửi (dấu ".") và khóa chống trùng lặp vào văn bản chính (Yêu cầu 4)
@@ -264,7 +245,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
       setDoc(externalDoc);
       const kgResult = processAndFormatKinhGui(externalDoc.recipientsHeader || '');
       setKinhGuiText(kgResult.formattedText);
-      setNoiNhanText(formatBulletLines(externalDoc.recipients || []).join('\n'));
+      setNoiNhanText(formatRecipientsLines(externalDoc.recipients || []).join('\n'));
       if (externalDoc.signerRoleLine2) {
         setHasThreeSignerLines(true);
       }
@@ -295,7 +276,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
     const parsed = parseDocumentStructure(normalizedText, agencySettings, selectedType.category, selectedType.name);
     const kgResult = processAndFormatKinhGui(parsed.recipientsHeader || '');
     setKinhGuiText(kgResult.formattedText);
-    setNoiNhanText(formatBulletLines(parsed.recipients || []).join('\n'));
+    setNoiNhanText(formatRecipientsLines(parsed.recipients || []).join('\n'));
     if (kgResult.leakedBodyLines.length > 0) {
       const paras = [...(parsed.bodyParagraphs || [])];
       let hasNew = false;
@@ -836,7 +817,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
   };
 
   const isCongVan = isCongVanDocument(doc, selectedType);
-  const sigCheck = useMemo(() => checkSignatureLines(doc), [doc.signerAuthority, doc.quyenHanKy, doc.signerTitle]);
+  const sigCheck = useMemo(() => checkSignatureLines(doc), [doc.signerAuthority, doc.quyenHanKy, doc.signerRoleLine2, doc.signerTitle]);
 
   return (
     <div className="space-y-5 font-sans">
@@ -1529,14 +1510,17 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
                       let formattedLines: string[] = [];
                       if (cleanedItems.length === 1) {
-                        // 1 nơi nhận: đặt trên 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
-                        formattedLines = [`${cleanedItems[0]}.`];
+                        // 1 nơi nhận: Kính gửi và nơi nhận trên cùng 1 hàng, TUYỆT ĐỐI KHÔNG có dấu gạch (-), kết thúc bằng dấu chấm (.)
+                        formattedLines = [`Kính gửi: ${cleanedItems[0]}.`];
                       } else if (cleanedItems.length > 1) {
-                        // Nhiều nơi nhận: mỗi nơi nhận 1 dòng có gạch đầu dòng (- ), các dòng trước dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
-                        formattedLines = cleanedItems.map((item, idx) => {
-                          const isLast = idx === cleanedItems.length - 1;
-                          return `- ${item}${isLast ? '.' : ';'}`;
-                        });
+                        // Nhiều nơi nhận: dòng đầu là "Kính gửi:", mỗi nơi nhận là 1 dòng có gạch đầu dòng (- ), các dòng trước dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.)
+                        formattedLines = [
+                          'Kính gửi:',
+                          ...cleanedItems.map((item, idx) => {
+                            const isLast = idx === cleanedItems.length - 1;
+                            return `- ${item}${isLast ? '.' : ';'}`;
+                          })
+                        ];
                       }
 
                       const finalKinhGuiStr = formattedLines.join('\n');
@@ -2069,62 +2053,108 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   </div>
                 )}
 
-                {/* Khung hiển thị văn bản với các vị trí tô vàng */}
+                {/* Khung hiển thị văn bản với các vị trí tô vàng và bảo toàn bảng biểu */}
                 <div 
                   className="p-5 md:p-8 bg-slate-50 rounded-xl border border-slate-300 leading-relaxed font-serif text-[15px] max-h-[500px] overflow-y-auto space-y-3"
                   style={{ fontFamily: "'Times New Roman', Times, 'Tinos', serif" }}
                 >
-                  {normalizedText.split('\n').map((paragraph, pIdx) => {
-                    const trimmed = paragraph.trim();
-                    if (!trimmed) return <div key={pIdx} className="h-2" />;
+                  {(() => {
+                    // Tách các khối bảng biểu (HTML hoặc Markdown) để bảo toàn nguyên vẹn
+                    const blocks: Array<{ type: 'paragraph' | 'table'; content: string }> = [];
+                    const tableRegex = /<table\b[\s\S]*?<\/table>|(?:^|\n)(\|[^\n]+\|\r?\n\|[\s:-|]+\|\r?\n(?:\|[^\n]+\|\r?\n?)+)/gi;
+                    let lastIdx = 0;
+                    let match;
 
-                    // Căn giữa chỉ thị hành động QUYẾT ĐỊNH:
-                    if (/^(QUYẾT ĐỊNH|QUYẾT NGHỊ|CHỈ THỊ|KẾT LUẬN|YÊU CẦU)\s*[:\.]?$/i.test(trimmed)) {
-                      return (
-                        <p key={pIdx} className="text-center font-bold text-[16px] my-3 uppercase tracking-wider text-slate-900">
-                          {trimmed.toUpperCase().endsWith(':') ? trimmed.toUpperCase() : trimmed.toUpperCase() + ':'}
-                        </p>
-                      );
+                    while ((match = tableRegex.exec(normalizedText)) !== null) {
+                      const textBefore = normalizedText.substring(lastIdx, match.index);
+                      if (textBefore.trim()) {
+                        textBefore.split('\n').forEach(line => {
+                          if (line.trim()) blocks.push({ type: 'paragraph', content: line.trim() });
+                        });
+                      }
+                      blocks.push({ type: 'table', content: match[0].trim() });
+                      lastIdx = match.index + match[0].length;
                     }
 
-                    // Tiêu đề Điều khoản
-                    if (/^Điều\s+\d+/i.test(trimmed)) {
-                      return (
-                        <p key={pIdx} className="text-justify font-bold indent-6 text-slate-900">
-                          {trimmed}
-                        </p>
-                      );
+                    const remaining = normalizedText.substring(lastIdx);
+                    if (remaining.trim()) {
+                      remaining.split('\n').forEach(line => {
+                        if (line.trim()) blocks.push({ type: 'paragraph', content: line.trim() });
+                      });
                     }
 
-                    // Tô vàng các lỗi chính tả và chỗ trống trong đoạn từ bộ từ điển chuyên sâu NĐ 30
-                    const highlightKeywords = getSpellingHighlightPatterns();
+                    if (blocks.length === 0) {
+                      normalizedText.split('\n').forEach(line => {
+                        if (line.trim()) blocks.push({ type: 'paragraph', content: line.trim() });
+                      });
+                    }
 
-                    return (
-                      <p key={pIdx} className="text-justify indent-6 text-slate-800 leading-relaxed">
-                        {renderParagraphWithHighlights(
-                          trimmed,
-                          activeProposals,
-                          highlightKeywords,
-                          doc.illogicalFindings || [],
-                          (wrong, right, reason, prop) => {
-                            setActiveFix({ type: 'spelling', target: wrong, suggestion: right, reason, proposal: prop });
-                          },
-                          (blankStr) => {
-                            setActiveFix({ type: 'blank', target: blankStr });
-                          },
-                          (illogicalSeg) => {
-                            setActiveFix({
-                              type: 'illogical',
-                              target: illogicalSeg.target,
-                              suggestion: illogicalSeg.suggestion,
-                              reason: illogicalSeg.reason,
-                              category: illogicalSeg.category
-                            });
-                          }
-                        )}
-                      </p>
-                    );
-                  })}
+                    return blocks.map((block, bIdx) => {
+                      if (block.type === 'table') {
+                        const tableHtml = block.content.includes('<table')
+                          ? formatHtmlTableToFitA4(block.content)
+                          : formatHtmlTableToFitA4(convertMarkdownTableToHtml(block.content));
+                        return (
+                          <div key={bIdx} className="w-full my-4 overflow-x-auto rounded-lg border border-slate-300 p-2 bg-white shadow-2xs" style={{ textIndent: 0 }}>
+                            <div className="text-[10px] text-blue-700 font-sans font-bold mb-1.5 flex items-center justify-between">
+                              <span>📊 Bảng biểu đã chuẩn hóa vừa khít trang in A4:</span>
+                              <span className="text-[10px] text-slate-500 font-normal">Font Times New Roman 11pt, viền đơn</span>
+                            </div>
+                            <div dangerouslySetInnerHTML={{ __html: tableHtml }} />
+                          </div>
+                        );
+                      }
+
+                      const trimmed = block.content;
+
+                      // Căn giữa chỉ thị hành động QUYẾT ĐỊNH:
+                      if (/^(QUYẾT ĐỊNH|QUYẾT NGHỊ|CHỈ THỊ|KẾT LUẬN|YÊU CẦU)\s*[:\.]?$/i.test(trimmed)) {
+                        return (
+                          <p key={bIdx} className="text-center font-bold text-[16px] my-3 uppercase tracking-wider text-slate-900">
+                            {trimmed.toUpperCase().endsWith(':') ? trimmed.toUpperCase() : trimmed.toUpperCase() + ':'}
+                          </p>
+                        );
+                      }
+
+                      // Tiêu đề Điều khoản
+                      if (/^Điều\s+\d+/i.test(trimmed)) {
+                        return (
+                          <p key={bIdx} className="text-justify font-bold indent-6 text-slate-900">
+                            {trimmed}
+                          </p>
+                        );
+                      }
+
+                      // Tô vàng các lỗi chính tả và chỗ trống trong đoạn từ bộ từ điển chuyên sâu NĐ 30
+                      const highlightKeywords = getSpellingHighlightPatterns();
+
+                      return (
+                        <p key={bIdx} className="text-justify indent-6 text-slate-800 leading-relaxed">
+                          {renderParagraphWithHighlights(
+                            trimmed,
+                            activeProposals,
+                            highlightKeywords,
+                            doc.illogicalFindings || [],
+                            (wrong, right, reason, prop) => {
+                              setActiveFix({ type: 'spelling', target: wrong, suggestion: right, reason, proposal: prop });
+                            },
+                            (blankStr) => {
+                              setActiveFix({ type: 'blank', target: blankStr });
+                            },
+                            (illogicalSeg) => {
+                              setActiveFix({
+                                type: 'illogical',
+                                target: illogicalSeg.target,
+                                suggestion: illogicalSeg.suggestion,
+                                reason: illogicalSeg.reason,
+                                category: illogicalSeg.category
+                              });
+                            }
+                          )}
+                        </p>
+                      );
+                    });
+                  })()}
                 </div>
 
               </div>
@@ -2337,13 +2367,14 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         const formatted = sanitized.join('\n');
                         setNoiNhanText(formatted);
                         updateDocField('recipients', sanitized);
-                        setFixNotice('✓ Đã chuẩn hóa Nơi nhận và loại bỏ hoàn toàn trùng lặp với khối chữ ký!');
+                        setFixNotice('✓ Đã chuẩn hóa Nơi nhận: các nơi nhận kết thúc bằng ";" và dòng cuối kết thúc bằng "." theo chuẩn Nghị định 30!');
                         setTimeout(() => setFixNotice(null), 3000);
                       }}
                       className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded hover:bg-emerald-100 cursor-pointer font-bold flex items-center gap-1"
+                      title="Tự động thêm (-), kết thúc bằng ';' cho các dòng trước và '.' cho dòng cuối cùng theo chuẩn NĐ 30"
                     >
                       <Check className="w-3 h-3" />
-                      <span>Lọc trùng & thêm (-) chuẩn NĐ 30</span>
+                      <span>Chuẩn hóa Nơi nhận (;-.) chuẩn NĐ 30</span>
                     </button>
                   </div>
                 </div>
@@ -2393,34 +2424,60 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                   className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
                 <span className="text-[11px] text-slate-500 italic mt-0.5 block">
-                  Trình bày chữ in thường cỡ 11, các dòng kết thúc bằng dấu chấm phẩy (;), dòng cuối cùng kết thúc bằng dấu chấm (.). Tự động loại bỏ thành phần chữ ký khỏi nơi nhận.
+                  Trình bày chữ in thường cỡ 11, các nơi nhận trước kết thúc bằng dấu chấm phẩy (;), nơi nhận cuối cùng kết thúc bằng dấu chấm (.). Đầu dòng tự động có dấu gạch (-). Tự động loại bỏ thành phần chữ ký khỏi nơi nhận.
                 </span>
               </div>
 
-              {/* Cột 2: Quyền hạn ký, chức vụ & chữ ký (HỖ TRỢ CẢ 2 DÒNG VÀ 3 DÒNG VAI TRÒ KÝ CHUẨN NGHỊ ĐỊNH 30 & HD 05) */}
+              {/* Cột 2: Quyền hạn ký, chức vụ & chữ ký (HỖ TRỢ ĐẦY ĐỦ NHÓM A - CÁ NHÂN VÀ NHÓM B - TM. TẬP THỂ TỪ 1 ĐẾN 3 DÒNG) */}
               <div className="space-y-3">
                 
-                {/* DÒNG 1: QUYỀN HẠN KÝ & CHỨC VỤ NGƯỜI KÝ */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
-                  <div className="flex items-center justify-between flex-wrap gap-1">
-                    <label className="font-bold text-slate-800 block text-xs flex items-center gap-1.5">
+                {/* KHỐI ĐIỀU KHIỂN CHỌN THẨM QUYỀN KÝ & CHỨC DANH KÝ CHUẨN NGHỊ ĐỊNH 30 & HD 05 */}
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-200">
+                    <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-black">1</span>
-                      <span>Vai trò & Chức vụ ký ({hasThreeSignerLines ? '3 dòng vai trò ký' : '2 dòng vai trò ký'})</span>
+                      <span>Thẩm quyền ký & Chức danh ký ({hasThreeSignerLines ? '3 dòng vai trò' : (!doc.signerAuthority || doc.signerAuthority === doc.signerTitle ? '1 dòng chức danh' : '2 dòng vai trò')})</span>
                     </label>
 
-                    {/* Bộ chọn số dòng vai trò ký: 2 dòng vs 3 dòng */}
-                    <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 text-[10px] font-bold">
+                    {/* Bộ chuyển đổi nhanh số dòng: 1 dòng / 2 dòng / 3 dòng */}
+                    <div className="flex items-center bg-slate-200/90 p-0.5 rounded-lg border border-slate-300 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(false);
+                          updateDocField('signerAuthority', '');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('quyenHanKy', '');
+                          if (!doc.signerTitle) updateDocField('signerTitle', 'CHỦ TỊCH');
+                        }}
+                        className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                          !hasThreeSignerLines && (!doc.signerAuthority || doc.signerAuthority === doc.signerTitle)
+                            ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="1 dòng chức danh cấp trưởng (CHỦ TỊCH, GIÁM ĐỐC, TRƯỞNG PHÒNG...)"
+                      >
+                        1 dòng (Cấp trưởng)
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
                           setHasThreeSignerLines(false);
                           updateDocField('signerRoleLine2', '');
+                          if (!doc.signerAuthority) {
+                            updateDocField('quyenHanKy', 'KT.');
+                            updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
+                          }
+                          if (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH') {
+                            updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                          }
                         }}
                         className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                          !hasThreeSignerLines
+                          !hasThreeSignerLines && doc.signerAuthority && doc.signerAuthority !== doc.signerTitle
                             ? 'bg-white text-slate-900 shadow-2xs font-extrabold'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
+                        title="2 dòng vai trò chuẩn: KT./TL./TUQ. hoặc TM. (Cấp phó hoặc TM. Chủ tịch)"
                       >
                         2 dòng vai trò
                       </button>
@@ -2428,15 +2485,18 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         type="button"
                         onClick={() => {
                           setHasThreeSignerLines(true);
+                          if (!doc.signerAuthority) {
+                            const ubndName = agencySettings.agencyName
+                              ? `TM. ${agencySettings.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}`
+                              : 'TM. ỦY BAN NHÂN DÂN';
+                            updateDocField('quyenHanKy', 'TM.');
+                            updateDocField('signerAuthority', ubndName);
+                          }
                           if (!doc.signerRoleLine2) {
-                            if (/TM/i.test(doc.signerAuthority || doc.quyenHanKy)) {
-                              updateDocField('signerRoleLine2', 'KT. CHỦ TỊCH');
-                              if (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH') {
-                                updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
-                              }
-                            } else {
-                              updateDocField('signerRoleLine2', 'KT. CHỦ TỊCH');
-                            }
+                            updateDocField('signerRoleLine2', 'KT. CHỦ TỊCH');
+                          }
+                          if (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH') {
+                            updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
                           }
                         }}
                         className={`px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1 ${
@@ -2444,350 +2504,636 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                             ? 'bg-rose-700 text-white shadow-2xs font-extrabold'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
+                        title="3 dòng vai trò: TM. + KT. hoặc Phó của cấp phó"
                       >
-                        <span>3 dòng vai trò (TM. tập thể)</span>
+                        3 dòng vai trò
                       </button>
                     </div>
                   </div>
 
-                  {/* Nút chọn nhanh Quyền hạn & Thẩm quyền ký (Theo yêu cầu: TM. UBND / TM. BTV / TM. BCH) */}
+                  {/* NÚT CHỌN NHANH 1 CHẠM CÁC MẪU CHỮ KÝ PHỔ BIẾN NHẤT */}
                   <div className="space-y-1.5">
                     <div className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                      <span>Chọn nhanh thẩm quyền ký:</span>
-                      <span className="text-[10px] text-rose-700 font-semibold italic">Thay mặt tập thể / Ký thay</span>
+                      <span>Chọn nhanh mẫu chữ ký thông dụng:</span>
+                      <span className="text-[10px] text-rose-700 font-semibold italic">1 chạm tự động ghép</span>
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
-                      {/* Nút 1: TM. ỦY BAN NHÂN DÂN */}
+                      {/* 1. CHỦ TỊCH (1 dòng) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', '');
+                          updateDocField('signerAuthority', '');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'CHỦ TỊCH');
+                          setFixNotice('✓ Đã chọn: Cấp trưởng ký trực tiếp "CHỦ TỊCH" (1 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && !doc.signerAuthority && doc.signerTitle === 'CHỦ TỊCH'
+                            ? 'bg-slate-800 text-white border-slate-900 shadow-xs ring-2 ring-slate-400'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                        title="Nhóm A.1: Cấp trưởng ký theo thẩm quyền cá nhân (1 dòng duy nhất: CHỦ TỊCH)"
+                      >
+                        👑 CHỦ TỊCH (1 dòng)
+                      </button>
+
+                      {/* 2. KT. CHỦ TỊCH - PHÓ CHỦ TỊCH (2 dòng) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', 'KT.');
+                          updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                          setFixNotice('✓ Đã chọn: "KT. CHỦ TỊCH - PHÓ CHỦ TỊCH" (2 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && doc.signerAuthority === 'KT. CHỦ TỊCH' && doc.signerTitle === 'PHÓ CHỦ TỊCH'
+                            ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs ring-2 ring-emerald-400'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                        }`}
+                        title="Nhóm A.2: Cấp phó ký thay cấp trưởng (2 dòng: KT. CHỦ TỊCH / PHÓ CHỦ TỊCH)"
+                      >
+                        ✍️ KT. CHỦ TỊCH (2 dòng)
+                      </button>
+
+                      {/* 3. TM. UBND - CHỦ TỊCH (2 dòng) */}
                       <button
                         type="button"
                         onClick={() => {
                           const ubndName = agencySettings.agencyName
                             ? `TM. ${agencySettings.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}`
                             : (doc.agencyName ? `TM. ${doc.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}` : 'TM. ỦY BAN NHÂN DÂN');
+                          setHasThreeSignerLines(false);
                           updateDocField('quyenHanKy', 'TM.');
                           updateDocField('signerAuthority', ubndName.trim());
-                          if (hasThreeSignerLines) {
-                            updateDocField('signerRoleLine2', 'KT. CHỦ TỊCH');
-                            updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
-                          } else {
-                            updateDocField('signerRoleLine2', '');
-                            updateDocField('signerTitle', 'CHỦ TỊCH');
-                          }
-                          setFixNotice(`✓ Đã nạp thẩm quyền: "${ubndName}"`);
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'CHỦ TỊCH');
+                          setFixNotice(`✓ Đã chọn: TM. UBND - Chủ tịch ký (2 dòng)!`);
                           setTimeout(() => setFixNotice(null), 2500);
                         }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all border ${
-                          (doc.signerAuthority?.includes('TM. ỦY BAN NHÂN DÂN') || doc.signerAuthority?.includes('TM. UBND'))
-                            ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-400 ring-offset-1'
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && doc.signerAuthority?.startsWith('TM.') && doc.signerTitle === 'CHỦ TỊCH'
+                            ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-400'
                             : 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100'
                         }`}
-                        title="Thay mặt Ủy ban nhân dân (Chọn 3 dòng sẽ có: TM. UBND -> KT. CHỦ TỊCH -> PHÓ CHỦ TỊCH)"
+                        title="Nhóm B: Thay mặt UBND do Chủ tịch ký (2 dòng: TM. UBND / CHỦ TỊCH)"
                       >
-                        🏛️ TM. ỦY BAN NHÂN DÂN
+                        🏛️ TM. UBND (Chủ tịch - 2 dòng)
                       </button>
 
-                      {/* Nút 2: TM. BAN THƯỜNG VỤ */}
+                      {/* 4. TM. UBND - KT. CHỦ TỊCH - PHÓ CHỦ TỊCH (3 dòng) */}
                       <button
                         type="button"
                         onClick={() => {
+                          const ubndName = agencySettings.agencyName
+                            ? `TM. ${agencySettings.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}`
+                            : (doc.agencyName ? `TM. ${doc.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}` : 'TM. ỦY BAN NHÂN DÂN');
+                          setHasThreeSignerLines(true);
                           updateDocField('quyenHanKy', 'TM.');
-                          updateDocField('signerAuthority', 'TM. BAN THƯỜNG VỤ');
-                          if (hasThreeSignerLines) {
-                            updateDocField('signerRoleLine2', 'KT. BÍ THƯ');
-                            updateDocField('signerTitle', 'PHÓ BÍ THƯ');
-                          } else {
-                            updateDocField('signerRoleLine2', '');
-                            updateDocField('signerTitle', 'BÍ THƯ');
-                          }
-                          setFixNotice('✓ Đã nạp thẩm quyền: "TM. BAN THƯỜNG VỤ"');
+                          updateDocField('signerAuthority', ubndName.trim());
+                          updateDocField('signerRoleLine2', 'KT. CHỦ TỊCH');
+                          updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                          setFixNotice(`✓ Đã chọn: TM. UBND - Phó Chủ tịch ký KT (3 dòng)!`);
                           setTimeout(() => setFixNotice(null), 2500);
                         }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all border ${
-                          doc.signerAuthority === 'TM. BAN THƯỜNG VỤ'
-                            ? 'bg-rose-700 text-white border-rose-800 shadow-xs ring-2 ring-rose-400 ring-offset-1'
-                            : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          hasThreeSignerLines && doc.signerAuthority?.startsWith('TM.') && doc.signerRoleLine2?.includes('KT.') && doc.signerTitle === 'PHÓ CHỦ TỊCH'
+                            ? 'bg-blue-700 text-white border-blue-800 shadow-xs ring-2 ring-blue-400'
+                            : 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100'
                         }`}
-                        title="Thay mặt Ban Thường vụ (Chọn 3 dòng sẽ có: TM. BAN THƯỜNG VỤ -> KT. BÍ THƯ -> PHÓ BÍ THƯ)"
+                        title="Nhóm B: Thay mặt UBND do Phó Chủ tịch ký (3 dòng: TM. UBND / KT. CHỦ TỊCH / PHÓ CHỦ TỊCH)"
                       >
-                        🚩 TM. BAN THƯỜNG VỤ
+                        🏛️ TM. UBND (Phó Chủ tịch - 3 dòng)
                       </button>
 
-                      {/* Nút 3: TM. BAN CHẤP HÀNH */}
+                      {/* 5. TL. CHỦ TỊCH - CHÁNH VĂN PHÒNG (2 dòng) */}
                       <button
                         type="button"
                         onClick={() => {
-                          updateDocField('quyenHanKy', 'TM.');
-                          updateDocField('signerAuthority', 'TM. BAN CHẤP HÀNH');
-                          if (hasThreeSignerLines) {
-                            updateDocField('signerRoleLine2', 'T/M BAN THƯỜNG VỤ');
-                            updateDocField('signerTitle', 'BÍ THƯ');
-                          } else {
-                            updateDocField('signerRoleLine2', '');
-                            updateDocField('signerTitle', 'BÍ THƯ');
-                          }
-                          setFixNotice('✓ Đã nạp thẩm quyền: "TM. BAN CHẤP HÀNH"');
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', 'TL.');
+                          updateDocField('signerAuthority', 'TL. CHỦ TỊCH');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'CHÁNH VĂN PHÒNG');
+                          setFixNotice('✓ Đã chọn: "TL. CHỦ TỊCH - CHÁNH VĂN PHÒNG" (2 dòng)!');
                           setTimeout(() => setFixNotice(null), 2500);
                         }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all border ${
-                          doc.signerAuthority === 'TM. BAN CHẤP HÀNH'
-                            ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400 ring-offset-1'
-                            : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && doc.signerAuthority === 'TL. CHỦ TỊCH' && doc.signerTitle === 'CHÁNH VĂN PHÒNG'
+                            ? 'bg-teal-700 text-white border-teal-800 shadow-xs ring-2 ring-teal-400'
+                            : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
                         }`}
-                        title="Thay mặt Ban Chấp hành (Chọn 3 dòng sẽ có: TM. BAN CHẤP HÀNH -> T/M BAN THƯỜNG VỤ -> BÍ THƯ)"
+                        title="Nhóm A.2: Thừa lệnh cấp trưởng (2 dòng: TL. CHỦ TỊCH / CHÁNH VĂN PHÒNG)"
                       >
-                        ★ TM. BAN CHẤP HÀNH
+                        📜 TL. CHỦ TỊCH (Chánh VP - 2 dòng)
                       </button>
 
-                      {/* Nút 4: KT. CHỦ TỊCH (Phó Chủ tịch) */}
+                      {/* 6. TL. CHỦ TỊCH - KT. CHÁNH VP - PHÓ CHÁNH VP (3 dòng) */}
                       <button
                         type="button"
                         onClick={() => {
-                          updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
-                          updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
-                          updateDocField('signerRoleLine2', '');
-                          if (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH') {
-                            updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
-                          }
+                          setHasThreeSignerLines(true);
+                          updateDocField('quyenHanKy', 'TL.');
+                          updateDocField('signerAuthority', 'TL. CHỦ TỊCH');
+                          updateDocField('signerRoleLine2', 'KT. CHÁNH VĂN PHÒNG');
+                          updateDocField('signerTitle', 'PHÓ CHÁNH VĂN PHÒNG');
+                          setFixNotice('✓ Đã chọn: Phó của cấp phó "TL. CHỦ TỊCH - KT. CHÁNH VP - PHÓ CHÁNH VP" (3 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
                         }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all border ${
-                          (doc.quyenHanKy === 'KT. CHỦ TỊCH' || doc.signerAuthority === 'KT. CHỦ TỊCH') && !doc.signerRoleLine2
-                            ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs ring-2 ring-emerald-400 ring-offset-1'
-                            : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          hasThreeSignerLines && doc.signerAuthority === 'TL. CHỦ TỊCH' && doc.signerRoleLine2 === 'KT. CHÁNH VĂN PHÒNG'
+                            ? 'bg-teal-800 text-white border-teal-900 shadow-xs ring-2 ring-teal-400'
+                            : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
                         }`}
+                        title="Nhóm A.3: Phó của cấp phó (3 dòng: TL. CHỦ TỊCH / KT. CHÁNH VĂN PHÒNG / PHÓ CHÁNH VĂN PHÒNG)"
                       >
-                        KT. CHỦ TỊCH
+                        📜 TL. CHỦ TỊCH (Phó Chánh VP - 3 dòng)
                       </button>
 
-                      {/* Nút 5: T/M Chi bộ (Đảng) */}
+                      {/* 7. TUQ. CHỦ TỊCH - GIÁM ĐỐC (2 dòng) */}
                       <button
                         type="button"
                         onClick={() => {
-                          updateDocField('quyenHanKy', 'T/M');
-                          updateDocField('signerAuthority', 'T/M CHI BỘ');
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', 'TUQ.');
+                          updateDocField('signerAuthority', 'TUQ. CHỦ TỊCH');
                           updateDocField('signerRoleLine2', '');
-                          updateDocField('signerTitle', 'BÍ THƯ');
+                          updateDocField('signerTitle', 'GIÁM ĐỐC');
+                          setFixNotice('✓ Đã chọn: "TUQ. CHỦ TỊCH - GIÁM ĐỐC" (2 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
                         }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all border ${
-                          doc.signerAuthority === 'T/M CHI BỘ'
-                            ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && doc.signerAuthority === 'TUQ. CHỦ TỊCH'
+                            ? 'bg-indigo-700 text-white border-indigo-800 shadow-xs ring-2 ring-indigo-400'
+                            : 'bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100'
                         }`}
+                        title="Nhóm A.2: Thừa ủy quyền (2 dòng: TUQ. CHỦ TỊCH / GIÁM ĐỐC)"
                       >
-                        T/M CHI BỘ
+                        📋 TUQ. CHỦ TỊCH (2 dòng)
                       </button>
 
-                      {/* Nút 6: Q. (Quyền) */}
+                      {/* 8. BÍ THƯ (1 dòng Đảng) */}
                       <button
                         type="button"
                         onClick={() => {
-                          updateDocField('quyenHanKy', 'Q.');
-                          updateDocField('signerAuthority', 'Q. CHỦ TỊCH');
-                          updateDocField('signerRoleLine2', '');
-                          updateDocField('signerTitle', 'QUYỀN CHỦ TỊCH');
-                        }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-all border ${
-                          doc.quyenHanKy === 'Q.'
-                            ? 'bg-teal-700 text-white border-teal-800 shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        Q. (Quyền)
-                      </button>
-
-                      {/* Nút 7: Ký trực tiếp */}
-                      <button
-                        type="button"
-                        onClick={() => {
+                          setHasThreeSignerLines(false);
                           updateDocField('quyenHanKy', '');
                           updateDocField('signerAuthority', '');
                           updateDocField('signerRoleLine2', '');
-                          if (!doc.signerTitle) updateDocField('signerTitle', 'CHỦ TỊCH');
+                          updateDocField('signerTitle', 'BÍ THƯ');
+                          setFixNotice('✓ Đã chọn: "BÍ THƯ" (1 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
                         }}
-                        className={`px-2 py-1 rounded-md text-xs cursor-pointer transition-all border ${
-                          !doc.quyenHanKy && !doc.signerAuthority && !doc.signerRoleLine2
-                            ? 'bg-slate-700 text-white border-slate-800'
-                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && !doc.signerAuthority && doc.signerTitle === 'BÍ THƯ'
+                            ? 'bg-rose-800 text-white border-rose-900 shadow-xs ring-2 ring-rose-400'
+                            : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
                         }`}
+                        title="Nhóm A.1: Cấp trưởng Đảng ký trực tiếp (1 dòng: BÍ THƯ)"
                       >
-                        Ký trực tiếp
+                        🚩 BÍ THƯ (1 dòng)
+                      </button>
+
+                      {/* 9. TM. BAN THƯỜNG VỤ - BÍ THƯ (2 dòng) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', 'TM.');
+                          updateDocField('signerAuthority', 'TM. BAN THƯỜNG VỤ');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'BÍ THƯ');
+                          setFixNotice('✓ Đã chọn: "TM. BAN THƯỜNG VỤ - BÍ THƯ" (2 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && doc.signerAuthority === 'TM. BAN THƯỜNG VỤ' && doc.signerTitle === 'BÍ THƯ'
+                            ? 'bg-rose-700 text-white border-rose-800 shadow-xs ring-2 ring-rose-400'
+                            : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                        }`}
+                        title="Nhóm B: Thay mặt Ban Thường vụ do Bí thư ký (2 dòng)"
+                      >
+                        🚩 TM. BAN THƯỜNG VỤ (Bí thư - 2 dòng)
+                      </button>
+
+                      {/* 10. TM. BAN THƯỜNG VỤ - KT. BÍ THƯ - PHÓ BÍ THƯ (3 dòng) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(true);
+                          updateDocField('quyenHanKy', 'TM.');
+                          updateDocField('signerAuthority', 'TM. BAN THƯỜNG VỤ');
+                          updateDocField('signerRoleLine2', 'KT. BÍ THƯ');
+                          updateDocField('signerTitle', 'PHÓ BÍ THƯ');
+                          setFixNotice('✓ Đã chọn: "TM. BAN THƯỜNG VỤ - KT. BÍ THƯ - PHÓ BÍ THƯ" (3 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          hasThreeSignerLines && doc.signerAuthority === 'TM. BAN THƯỜNG VỤ' && doc.signerRoleLine2 === 'KT. BÍ THƯ'
+                            ? 'bg-rose-800 text-white border-rose-900 shadow-xs ring-2 ring-rose-400'
+                            : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                        }`}
+                        title="Nhóm B: Thay mặt Ban Thường vụ do Phó Bí thư ký thay (3 dòng)"
+                      >
+                        🚩 TM. BTV (Phó Bí thư - 3 dòng)
+                      </button>
+
+                      {/* 11. GIÁM ĐỐC (1 dòng) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', '');
+                          updateDocField('signerAuthority', '');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'GIÁM ĐỐC');
+                          setFixNotice('✓ Đã chọn: "GIÁM ĐỐC" (1 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && !doc.signerAuthority && doc.signerTitle === 'GIÁM ĐỐC'
+                            ? 'bg-amber-700 text-white border-amber-800 shadow-xs ring-2 ring-amber-400'
+                            : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                        }`}
+                        title="Nhóm A.1: Cấp trưởng Giám đốc ký trực tiếp (1 dòng)"
+                      >
+                        💼 GIÁM ĐỐC (1 dòng)
+                      </button>
+
+                      {/* 12. KT. GIÁM ĐỐC - PHÓ GIÁM ĐỐC (2 dòng) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHasThreeSignerLines(false);
+                          updateDocField('quyenHanKy', 'KT.');
+                          updateDocField('signerAuthority', 'KT. GIÁM ĐỐC');
+                          updateDocField('signerRoleLine2', '');
+                          updateDocField('signerTitle', 'PHÓ GIÁM ĐỐC');
+                          setFixNotice('✓ Đã chọn: "KT. GIÁM ĐỐC - PHÓ GIÁM ĐỐC" (2 dòng)!');
+                          setTimeout(() => setFixNotice(null), 2500);
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-bold cursor-pointer transition-all border ${
+                          !hasThreeSignerLines && doc.signerAuthority === 'KT. GIÁM ĐỐC'
+                            ? 'bg-amber-800 text-white border-amber-900 shadow-xs ring-2 ring-amber-400'
+                            : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                        }`}
+                        title="Nhóm A.2: Cấp phó Giám đốc ký thay (2 dòng)"
+                      >
+                        💼 KT. GIÁM ĐỐC (2 dòng)
                       </button>
                     </div>
                   </div>
 
-                  {/* BÔI VÀNG CẢNH BÁO NẾU PHẦN CHỮ KÝ CHỈ CÓ 1 DÒNG QUYỀN HẠN HOẶC CHỨC VỤ KÝ */}
+                  {/* BỘ DROPDOWN CHỌN NHANH VÀ TỰ ĐỘNG GHÉP THEO QUY TẮC CỦA NGƯỜI DÙNG */}
+                  <div className="pt-2 border-t border-slate-200 space-y-2.5">
+                    <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                      <span>Tuỳ chọn nhanh bằng Dropdown:</span>
+                      <span className="text-[10px] text-emerald-700 font-semibold">Tự động ghép đúng 1–3 dòng</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* DROPDOWN 1: HÌNH THỨC */}
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
+                          1. Hình thức ký:
+                        </label>
+                        <select
+                          value={(() => {
+                            const auth = (doc.signerAuthority || doc.quyenHanKy || '').trim().toUpperCase();
+                            if (/^TM\.|^T\/M/i.test(auth)) return 'TM.';
+                            if (/^KT\./i.test(auth)) return 'KT.';
+                            if (/^TL\./i.test(auth)) return 'TL.';
+                            if (/^TUQ\./i.test(auth)) return 'TUQ.';
+                            return 'KHONG';
+                          })()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'KHONG') {
+                              setHasThreeSignerLines(false);
+                              updateDocField('quyenHanKy', '');
+                              updateDocField('signerAuthority', '');
+                              updateDocField('signerRoleLine2', '');
+                              if (!doc.signerTitle) updateDocField('signerTitle', 'CHỦ TỊCH');
+                            } else if (val === 'TM.') {
+                              const ubndName = agencySettings.agencyName
+                                ? `TM. ${agencySettings.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}`
+                                : (doc.agencyName ? `TM. ${doc.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}` : 'TM. ỦY BAN NHÂN DÂN');
+                              updateDocField('quyenHanKy', 'TM.');
+                              updateDocField('signerAuthority', ubndName.trim());
+                              if (hasThreeSignerLines) {
+                                updateDocField('signerRoleLine2', 'KT. CHỦ TỊCH');
+                                updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                              } else {
+                                updateDocField('signerRoleLine2', '');
+                                updateDocField('signerTitle', 'CHỦ TỊCH');
+                              }
+                            } else {
+                              // KT., TL., TUQ.
+                              updateDocField('quyenHanKy', val);
+                              const cap = doc.signerAuthority?.replace(/^(?:KT\.|TL\.|TUQ\.|TM\.|T\/M)\s*/i, '').trim() || 'CHỦ TỊCH';
+                              updateDocField('signerAuthority', `${val} ${cap}`);
+                              if (!hasThreeSignerLines) {
+                                if (val === 'TL.' && (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH')) {
+                                  updateDocField('signerTitle', 'CHÁNH VĂN PHÒNG');
+                                } else if (val === 'TUQ.' && (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH')) {
+                                  updateDocField('signerTitle', 'GIÁM ĐỐC');
+                                } else if (!doc.signerTitle || doc.signerTitle === 'CHỦ TỊCH') {
+                                  updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                                }
+                              }
+                            }
+                          }}
+                          className="w-full p-2 rounded-lg border border-slate-300 font-sans text-xs bg-white text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none font-bold"
+                        >
+                          <option value="KHONG">Không (Cấp trưởng ký cá nhân - 1 dòng)</option>
+                          <option value="KT.">KT. (Ký thay)</option>
+                          <option value="TL.">TL. (Thừa lệnh)</option>
+                          <option value="TUQ.">TUQ. (Thừa uỷ quyền)</option>
+                          <option value="TM.">TM. (Ký thay mặt tập thể)</option>
+                        </select>
+                      </div>
+
+                      {/* DROPDOWN 2: CẤP ĐƯỢC ĐẠI DIỆN / TẬP THỂ */}
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
+                          {/^TM\.|^T\/M/i.test(doc.signerAuthority || doc.quyenHanKy || '')
+                            ? '2. Tập thể đại diện (TM.):'
+                            : '2. Cấp được đại diện:'}
+                        </label>
+                        {(() => {
+                          const isTM = /^TM\.|^T\/M/i.test(doc.signerAuthority || doc.quyenHanKy || '');
+                          if (isTM) {
+                            const currentTapThe = (doc.signerAuthority || '').replace(/^(?:TM\.|T\/M)\s*/i, '').trim();
+                            return (
+                              <select
+                                value={currentTapThe}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateDocField('quyenHanKy', 'TM.');
+                                  updateDocField('signerAuthority', `TM. ${val}`.trim());
+                                }}
+                                className="w-full p-2 rounded-lg border border-slate-300 font-sans text-xs bg-white text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                              >
+                                {agencySettings.agencyName && (
+                                  <option value={agencySettings.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')}>
+                                    {agencySettings.agencyName.replace(/^(?:ỦY\s+BAN\s+NHÂN\s+DÂN|UBND)\s*/i, 'ỦY BAN NHÂN DÂN ')} (Theo cài đặt)
+                                  </option>
+                                )}
+                                <option value="ỦY BAN NHÂN DÂN">ỦY BAN NHÂN DÂN</option>
+                                <option value="BAN THƯỜNG VỤ">BAN THƯỜNG VỤ</option>
+                                <option value="BAN CHẤP HÀNH">BAN CHẤP HÀNH</option>
+                                <option value="HỘI ĐỒNG NHÂN DÂN">HỘI ĐỒNG NHÂN DÂN</option>
+                                <option value="ỦY BAN MẶT TRẬN TỔ QUỐC VIỆT NAM">ỦY BAN MTTQ VIỆT NAM</option>
+                                <option value="CHI BỘ">CHI BỘ</option>
+                              </select>
+                            );
+                          }
+
+                          const isDirect = !doc.signerAuthority || doc.signerAuthority === doc.signerTitle;
+                          if (isDirect) {
+                            return (
+                              <input
+                                type="text"
+                                disabled
+                                value="(Ký theo thẩm quyền cá nhân)"
+                                className="w-full p-2 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 font-sans text-xs italic"
+                              />
+                            );
+                          }
+
+                          const currentPrefix = (doc.quyenHanKy || doc.signerAuthority?.split(/\s+/)[0] || 'KT.').toUpperCase();
+                          const currentCap = (doc.signerAuthority || '').replace(/^(?:KT\.|TL\.|TUQ\.)\s*/i, '').trim();
+
+                          return (
+                            <select
+                              value={currentCap}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const pfx = /^(?:KT\.|TL\.|TUQ\.)/i.test(currentPrefix) ? currentPrefix : 'KT.';
+                                updateDocField('quyenHanKy', pfx);
+                                updateDocField('signerAuthority', `${pfx} ${val}`.trim());
+                              }}
+                              className="w-full p-2 rounded-lg border border-slate-300 font-sans text-xs bg-white text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                            >
+                              <option value="CHỦ TỊCH">CHỦ TỊCH</option>
+                              <option value="GIÁM ĐỐC">GIÁM ĐỐC</option>
+                              <option value="CHÁNH VĂN PHÒNG">CHÁNH VĂN PHÒNG</option>
+                              <option value="TRƯỞNG PHÒNG">TRƯỞNG PHÒNG</option>
+                              <option value="BÍ THƯ">BÍ THƯ</option>
+                              <option value="HIỆU TRƯỞNG">HIỆU TRƯỞNG</option>
+                              <option value="TỔNG GIÁM ĐỐC">TỔNG GIÁM ĐỐC</option>
+                            </select>
+                          );
+                        })()}
+                      </div>
+
+                      {/* DROPDOWN 3: CHỨC DANH NGƯỜI KÝ */}
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
+                          3. Chức danh người ký:
+                        </label>
+                        <select
+                          value={doc.signerTitle || 'CHỦ TỊCH'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateDocField('signerTitle', val);
+                          }}
+                          className="w-full p-2 rounded-lg border border-slate-300 font-sans text-xs bg-white text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none font-bold"
+                        >
+                          <option value="CHỦ TỊCH">CHỦ TỊCH</option>
+                          <option value="PHÓ CHỦ TỊCH">PHÓ CHỦ TỊCH</option>
+                          <option value="GIÁM ĐỐC">GIÁM ĐỐC</option>
+                          <option value="PHÓ GIÁM ĐỐC">PHÓ GIÁM ĐỐC</option>
+                          <option value="CHÁNH VĂN PHÒNG">CHÁNH VĂN PHÒNG</option>
+                          <option value="PHÓ CHÁNH VĂN PHÒNG">PHÓ CHÁNH VĂN PHÒNG</option>
+                          <option value="TRƯỞNG PHÒNG">TRƯỞNG PHÒNG</option>
+                          <option value="PHÓ TRƯỞNG PHÒNG">PHÓ TRƯỞNG PHÒNG</option>
+                          <option value="BÍ THƯ">BÍ THƯ</option>
+                          <option value="PHÓ BÍ THƯ">PHÓ BÍ THƯ</option>
+                          <option value="QUYỀN CHỦ TỊCH">QUYỀN CHỦ TỊCH</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* LỰA CHỌN PHÓ CỦA CẤP PHÓ / TM. KT KHI Ở CHẾ ĐỘ 3 DÒNG */}
+                    {hasThreeSignerLines && (
+                      <div className="p-2 bg-rose-50/80 rounded-lg border border-rose-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="text-rose-900 font-semibold text-[11px]">
+                          ⭐ Dòng 2 (Cấp trung gian / Ký thay KT.):
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-1 max-w-sm">
+                          <select
+                            value={doc.signerRoleLine2 || 'KT. CHỦ TỊCH'}
+                            onChange={(e) => updateDocField('signerRoleLine2', e.target.value)}
+                            className="w-full p-1.5 rounded border border-rose-300 bg-white font-sans text-xs text-rose-950 font-bold focus:outline-none"
+                          >
+                            <option value="KT. CHỦ TỊCH">KT. CHỦ TỊCH (Thay mặt UBND do Phó CT ký)</option>
+                            <option value="KT. BÍ THƯ">KT. BÍ THƯ (Thay mặt Đảng do Phó BT ký)</option>
+                            <option value="KT. CHÁNH VĂN PHÒNG">KT. CHÁNH VĂN PHÒNG (Phó Chánh VP ký TL)</option>
+                            <option value="KT. GIÁM ĐỐC">KT. GIÁM ĐỐC (Phó Giám đốc ký)</option>
+                            <option value="KT. TRƯỞNG PHÒNG">KT. TRƯỞNG PHÒNG (Phó Trưởng phòng ký)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CẢNH BÁO NẾU THỰC SỰ THIẾU DÒNG (CHỈ ÁP DỤNG KHI CÓ KT/TM MÀ THIẾU CHỨC DANH) */}
                   {sigCheck.isSingleLine && (
-                    <div className="p-3 bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-100 border-2 border-amber-400 rounded-xl text-amber-950 text-xs flex items-start gap-2.5 animate-fade-in shadow-xs">
-                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                      <div className="space-y-1.5 flex-1">
-                        <div className="font-bold flex items-center justify-between gap-1 text-amber-950">
-                          <span>⚠️ Phần chữ ký hiện chỉ có 1 dòng ({sigCheck.singleLineText || 'Chưa đủ dữ liệu'})</span>
-                          <span className="text-[10px] bg-amber-300/90 text-amber-950 px-2 py-0.5 rounded font-bold uppercase border border-amber-400">
+                    <div className="p-2.5 bg-gradient-to-r from-amber-50 via-yellow-50 to-amber-100 border-2 border-amber-400 rounded-xl text-amber-950 text-xs flex items-start gap-2 animate-fade-in shadow-xs">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1 flex-1">
+                        <div className="font-bold flex items-center justify-between text-amber-950">
+                          <span>⚠️ Phần chữ ký thiếu chức vụ người ký ({sigCheck.singleLineText || 'Chưa đủ dữ liệu'})</span>
+                          <span className="text-[10px] bg-amber-300/90 text-amber-950 px-2 py-0.5 rounded font-bold uppercase">
                             Lưu ý bổ sung
                           </span>
                         </div>
                         <p className="text-[11px] leading-relaxed text-amber-900 font-sans">
-                          Theo Nghị định 30/2020/NĐ-CP, khi ký thay mặt (TM.) hoặc ký thay (KT.), phần chữ ký cần có đủ 2 hoặc 3 dòng riêng biệt:
-                          <br />• <strong>Dòng 1:</strong> Thẩm quyền / Thay mặt (ví dụ: <em>TM. ỦY BAN NHÂN DÂN</em> hoặc <em>KT. CHỦ TỊCH</em>)
-                          <br />• <strong>Dòng 2 (khi có 3 dòng):</strong> Quyền hạn ký thay (ví dụ: <em>KT. CHỦ TỊCH</em>)
-                          <br />• <strong>Dòng cuối:</strong> Chức vụ người ký (ví dụ: <em>PHÓ CHỦ TỊCH</em> hoặc <em>CHỦ TỊCH</em>)
+                          Theo Nghị định 30, khi ký thay (KT.) hoặc thay mặt (TM.), cần có thêm dòng chức vụ người ký cụ thể (ví dụ: PHÓ CHỦ TỊCH).
                         </p>
                         <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {/KT/i.test(sigCheck.singleLineText) && !doc.signerTitle && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
-                                updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
-                                updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
-                                setFixNotice('✓ Đã bổ sung Chức vụ người ký: "PHÓ CHỦ TỊCH"');
-                                setTimeout(() => setFixNotice(null), 2500);
-                              }}
-                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Bổ sung nhanh: "PHÓ CHỦ TỊCH"</span>
-                            </button>
-                          )}
-                          {/TM/i.test(sigCheck.singleLineText) && !doc.signerTitle && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                updateDocField('signerTitle', 'CHỦ TỊCH');
-                                setFixNotice('✓ Đã bổ sung Chức vụ người ký: "CHỦ TỊCH"');
-                                setTimeout(() => setFixNotice(null), 2500);
-                              }}
-                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Bổ sung nhanh: "CHỦ TỊCH"</span>
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateDocField('signerTitle', 'PHÓ CHỦ TỊCH');
+                              setFixNotice('✓ Đã bổ sung Chức vụ: "PHÓ CHỦ TỊCH"');
+                              setTimeout(() => setFixNotice(null), 2500);
+                            }}
+                            className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold cursor-pointer"
+                          >
+                            + Bổ sung "PHÓ CHỦ TỊCH"
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateDocField('signerTitle', 'CHỦ TỊCH');
+                              setFixNotice('✓ Đã bổ sung Chức vụ: "CHỦ TỊCH"');
+                              setTimeout(() => setFixNotice(null), 2500);
+                            }}
+                            className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold cursor-pointer"
+                          >
+                            + Bổ sung "CHỦ TỊCH"
+                          </button>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* KHUNG NHẬP LIỆU CÁC DÒNG VAI TRÒ KÝ (2 DÒNG HOẶC 3 DÒNG) */}
-                  {hasThreeSignerLines ? (
-                    /* CHẾ ĐỘ 3 DÒNG VAI TRÒ KÝ */
-                    <div className="space-y-2 pt-1 border-t border-slate-200">
-                      <div className="flex items-center justify-between text-[11px] text-rose-800 font-bold bg-rose-50 px-2 py-1 rounded border border-rose-200">
-                        <span>⭐ Đang ở chế độ 3 dòng vai trò ký (Thay mặt tập thể & Ký thay):</span>
-                        <span className="text-[10px] text-slate-500 font-normal">In hoa đậm 13pt cả 3 dòng</span>
-                      </div>
+                  {/* CÁC Ô NHẬP LIỆU TRỰC TIẾP TỪNG DÒNG ĐÃ GHÉP (CHO PHÉP CÁN BỘ GÕ TAY TINH CHỈNH TỰ DO) */}
+                  <div className="pt-2 border-t border-slate-200">
+                    <div className="text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                      <span>Các dòng chức danh ký đã ghép (có thể gõ tay chỉnh sửa):</span>
+                      <span className="text-[10px] text-slate-500 italic">In hoa, đậm cỡ 13pt chuẩn NĐ 30</span>
+                    </div>
 
+                    {hasThreeSignerLines ? (
+                      /* CHẾ ĐỘ 3 DÒNG: DÒNG 1 + DÒNG 2 + DÒNG 3 */
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {/* Dòng 1: Thẩm quyền / Thay mặt tập thể */}
                         <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
-                            Dòng 1: Thay mặt tập thể (TM.):
+                          <label className="text-[10px] font-bold text-slate-600 block mb-0.5 uppercase">
+                            Dòng 1: Thẩm quyền / TM. tập thể
                           </label>
                           <input
                             type="text"
-                            value={doc.signerAuthority || doc.quyenHanKy}
+                            value={doc.signerAuthority || doc.quyenHanKy || ''}
                             onChange={(e) => {
                               const val = e.target.value.toUpperCase();
-                              updateDocField('quyenHanKy', val.startsWith('TM') ? 'TM.' : doc.quyenHanKy);
+                              updateDocField('quyenHanKy', val.startsWith('TM') ? 'TM.' : val.split(/\s+/)[0] || '');
                               updateDocField('signerAuthority', val);
                             }}
                             placeholder="Ví dụ: TM. ỦY BAN NHÂN DÂN"
                             className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-900 bg-white"
                           />
                         </div>
-
-                        {/* Dòng 2: Quyền hạn ký thay */}
                         <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
-                            Dòng 2: Quyền hạn ký thay (KT./Vai trò):
+                          <label className="text-[10px] font-bold text-slate-600 block mb-0.5 uppercase">
+                            Dòng 2: Quyền hạn ký thay (KT.)
                           </label>
                           <input
                             type="text"
                             value={doc.signerRoleLine2 || ''}
-                            onChange={(e) => {
-                              const val = e.target.value.toUpperCase();
-                              updateDocField('signerRoleLine2', val);
-                            }}
-                            placeholder="Ví dụ: KT. CHỦ TỊCH hoặc KT. BÍ THƯ"
+                            onChange={(e) => updateDocField('signerRoleLine2', e.target.value.toUpperCase())}
+                            placeholder="Ví dụ: KT. CHỦ TỊCH"
                             className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-900 bg-white"
                           />
                         </div>
-
-                        {/* Dòng 3: Chức vụ người ký trực tiếp */}
                         <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
-                            Dòng 3: Chức vụ người ký (*):
+                          <label className="text-[10px] font-bold text-slate-600 block mb-0.5 uppercase">
+                            Dòng 3: Chức vụ người ký (*)
                           </label>
                           <input
                             type="text"
-                            value={doc.signerTitle}
-                            onChange={(e) => {
-                              const val = e.target.value.toUpperCase();
-                              updateDocField('signerTitle', val);
-                            }}
-                            placeholder="Ví dụ: PHÓ CHỦ TỊCH hoặc PHÓ BÍ THƯ"
+                            value={doc.signerTitle || ''}
+                            onChange={(e) => updateDocField('signerTitle', e.target.value.toUpperCase())}
+                            placeholder="Ví dụ: PHÓ CHỦ TỊCH"
                             className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-900 bg-white"
                           />
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    /* CHẾ ĐỘ 2 DÒNG VAI TRÒ KÝ (CHUẨN THÔNG THƯỜNG) */
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+                    ) : (!doc.signerAuthority || doc.signerAuthority === doc.signerTitle) ? (
+                      /* CHẾ ĐỘ 1 DÒNG: CHỈ CÓ CHỨC DANH CẤP TRƯỞNG */
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-600 block mb-0.5">
-                          Dòng 1: Quyền hạn ký:
+                        <label className="text-[10px] font-bold text-slate-600 block mb-0.5 uppercase">
+                          Dòng duy nhất: Chức danh cấp trưởng ký theo thẩm quyền cá nhân (*)
                         </label>
                         <input
                           type="text"
-                          value={doc.quyenHanKy || doc.signerAuthority}
-                          onChange={(e) => {
-                            const val = e.target.value.toUpperCase();
-                            updateDocField('quyenHanKy', val);
-                            updateDocField('signerAuthority', val);
-                          }}
-                          placeholder="Ví dụ: KT. CHỦ TỊCH hoặc TM. ỦY BAN NHÂN DÂN"
-                          className={`w-full p-2 rounded-lg border font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none ${
-                            sigCheck.isSingleLine && !doc.quyenHanKy && !doc.signerAuthority
-                              ? 'border-amber-400 bg-amber-50/60 text-amber-950'
-                              : 'border-slate-300 text-slate-900 bg-white'
-                          }`}
+                          value={doc.signerTitle || 'CHỦ TỊCH'}
+                          onChange={(e) => updateDocField('signerTitle', e.target.value.toUpperCase())}
+                          placeholder="Ví dụ: CHỦ TỊCH hoặc GIÁM ĐỐC"
+                          className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-900 bg-white"
                         />
                       </div>
-
-                      <div>
-                        <label className="text-[11px] font-semibold text-slate-600 block mb-0.5">
-                          Dòng 2: Chức vụ người ký (*):
-                        </label>
-                        <input
-                          type="text"
-                          value={doc.signerTitle}
-                          onChange={(e) => {
-                            const val = e.target.value.toUpperCase();
-                            updateDocField('signerTitle', val);
-                            if (/PHÓ/i.test(val) && doc.quyenHanKy !== 'KT. CHỦ TỊCH' && !doc.signerAuthority) {
-                              updateDocField('quyenHanKy', 'KT. CHỦ TỊCH');
-                              updateDocField('signerAuthority', 'KT. CHỦ TỊCH');
-                            }
-                          }}
-                          placeholder="Ví dụ: PHÓ CHỦ TỊCH hoặc CHỦ TỊCH"
-                          className={`w-full p-2 rounded-lg border font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none ${
-                            sigCheck.isSingleLine && !doc.signerTitle
-                              ? 'border-amber-400 bg-amber-50/60 text-amber-950 ring-1 ring-amber-300'
-                              : 'border-slate-300 text-slate-900 bg-white'
-                          }`}
-                        />
+                    ) : (
+                      /* CHẾ ĐỘ 2 DÒNG: DÒNG 1 + DÒNG 2 */
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-600 block mb-0.5 uppercase">
+                            Dòng 1: Thẩm quyền / Quyền hạn ký
+                          </label>
+                          <input
+                            type="text"
+                            value={doc.signerAuthority || doc.quyenHanKy || ''}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              updateDocField('quyenHanKy', val.split(/\s+/)[0] || '');
+                              updateDocField('signerAuthority', val);
+                            }}
+                            placeholder="Ví dụ: KT. CHỦ TỊCH hoặc TM. ỦY BAN NHÂN DÂN"
+                            className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-900 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-600 block mb-0.5 uppercase">
+                            Dòng 2: Chức vụ người ký (*)
+                          </label>
+                          <input
+                            type="text"
+                            value={doc.signerTitle || ''}
+                            onChange={(e) => updateDocField('signerTitle', e.target.value.toUpperCase())}
+                            placeholder="Ví dụ: PHÓ CHỦ TỊCH hoặc CHỦ TỊCH"
+                            className="w-full p-2 rounded-lg border border-slate-300 font-serif text-xs font-bold uppercase focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-900 bg-white"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
-                {/* DÒNG TIẾP THEO: HỌ VÀ TÊN NGƯỜI KÝ & KHOẢNG TRỐNG KÝ TÊN */}
+                {/* DÒNG TIẾP THEO: HỌ VÀ TÊN NGƯỜI KÝ (GIỮ Ô RIÊNG BIỆT) */}
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="font-bold text-slate-800 block text-xs flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-black">2</span>
-                      <span>Họ và tên người ký (Cỡ 14pt in đậm)</span>
+                      <span>Họ và tên người ký (Cỡ 14pt in đậm, ô riêng biệt)</span>
                     </label>
                     <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-200">
                       Khoảng trống ký: 75–85pt (720 dxa)
@@ -2796,86 +3142,83 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
                   <input
                     type="text"
-                    value={doc.signerName}
+                    value={doc.signerName || ''}
                     onChange={(e) => updateDocField('signerName', e.target.value)}
-                    placeholder="Ví dụ: Nguyễn Văn A (hoặc để trống nếu ký tay)"
+                    placeholder="Ví dụ: Nguyễn Văn A (để trống nếu văn bản ký tay sau khi in)"
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                   />
 
-                  {/* Trực quan hóa bố cục chữ ký xuất ra */}
-                  <div className="p-2.5 bg-white rounded-lg border border-dashed border-slate-300 text-center text-xs font-serif space-y-1">
-                    <div className="text-[10px] text-slate-400 uppercase font-sans tracking-wider font-bold">
-                      Bản xem trước bố cục chữ ký sẽ xuất ({hasThreeSignerLines ? '3 dòng vai trò ký' : '2 dòng vai trò ký'}):
+                  {/* LIVE PREVIEW RIÊNG BIỆT CỦA RIÊNG KHỐI CHỮ KÝ */}
+                  <div className="p-3 bg-white rounded-lg border border-dashed border-slate-300 text-center text-xs font-serif space-y-1">
+                    <div className="text-[10px] text-slate-400 uppercase font-sans tracking-wider font-bold flex items-center justify-between px-1">
+                      <span>Bản xem trước trực tiếp khối chữ ký:</span>
+                      <span className="text-emerald-700 font-mono font-bold">
+                        {hasThreeSignerLines ? '3 dòng chức danh' : (!doc.signerAuthority || doc.signerAuthority === doc.signerTitle ? '1 dòng chức danh' : '2 dòng chức danh')}
+                      </span>
                     </div>
-                    <div className="font-bold text-slate-900 text-xs">
+
+                    <div className="font-bold text-slate-900 text-xs pt-1">
                       {(() => {
+                        // 3 dòng
                         if (sigCheck.hasThreeLines && sigCheck.roleLine2) {
                           return (
                             <div className="space-y-0.5">
-                              <div>{sigCheck.authorityLine}</div>
-                              <div>{sigCheck.roleLine2}</div>
-                              <div>{sigCheck.titleLine}</div>
+                              <div className="uppercase">{sigCheck.authorityLine}</div>
+                              <div className="uppercase">{sigCheck.roleLine2}</div>
+                              <div className="uppercase">{sigCheck.titleLine}</div>
                             </div>
                           );
                         }
 
+                        // Cảnh báo thiếu dòng
                         if (sigCheck.isSingleLine) {
                           return (
-                            <div className="inline-block bg-yellow-200 border-2 border-yellow-400 p-2 rounded-lg text-yellow-950 shadow-xs">
+                            <div className="inline-block bg-yellow-100 border border-yellow-400 p-2 rounded-lg text-yellow-950 shadow-2xs">
                               <div className="font-bold uppercase underline decoration-amber-600">
                                 {sigCheck.singleLineText || 'CHƯA CÓ CHỨC VỤ / QUYỀN HẠN KÝ'}
                               </div>
-                              <div className="text-[10px] text-amber-900 font-sans mt-1 font-semibold italic flex items-center justify-center gap-1">
-                                <span>⚠️ Đang chỉ có 1 dòng (lưu ý bổ sung đủ Quyền hạn & Chức vụ)</span>
+                              <div className="text-[10px] text-amber-900 font-sans mt-1 font-semibold italic">
+                                ⚠️ Đang chỉ có 1 dòng: Lưu ý bổ sung chức danh người ký
                               </div>
                             </div>
                           );
                         }
 
+                        // 2 dòng
                         const auth = (doc.signerAuthority || doc.quyenHanKy || '').trim().toUpperCase();
                         const title = (doc.signerTitle || '').trim().toUpperCase();
-                        if (auth === 'KT. CHỦ TỊCH' || doc.quyenHanKy === 'KT. CHỦ TỊCH') {
+
+                        if (auth && title && auth !== title) {
                           return (
-                            <div>
-                              <div>KT. CHỦ TỊCH</div>
-                              <div className="mt-0.5">{title || 'PHÓ CHỦ TỊCH'}</div>
+                            <div className="space-y-0.5">
+                              <div className="uppercase">{auth}</div>
+                              <div className="uppercase">{title}</div>
                             </div>
                           );
                         }
-                        if (doc.quyenHanKy === 'Q.' || auth.startsWith('Q.')) {
-                          return <div>{auth || 'Q. CHỦ TỊCH'}</div>;
-                        }
-                        if (auth && title && auth === title) {
-                          return <div>{title}</div>;
-                        }
-                        if (auth && title) {
-                          return (
-                            <div>
-                              <div>{auth}</div>
-                              <div className="mt-0.5">{title}</div>
-                            </div>
-                          );
-                        }
-                        return <div>{auth || title || 'CHỦ TỊCH'}</div>;
+
+                        // 1 dòng: Ký theo thẩm quyền cá nhân (CHỦ TỊCH, GIÁM ĐỐC...)
+                        return <div className="uppercase">{title || auth || 'CHỦ TỊCH'}</div>;
                       })()}
                     </div>
 
-                    {/* Thêm khoảng trống 1 dòng giãn cách tiêu chuẩn ngay dưới chức năng/quyền ký hiệu */}
+                    {/* Thêm khoảng trống 1 dòng giãn cách tiêu chuẩn ngay dưới chức danh ký */}
                     <div className="h-4 text-[10px] text-slate-400 italic select-none my-0.5">
                       (1 dòng giãn cách tiêu chuẩn)
                     </div>
-                    {/* Thêm 1 dòng giãn cách bổ sung theo yêu cầu tăng khoảng cách tên người ký và chức danh */}
+                    {/* Thêm 1 dòng khoảng cách giữa chức danh và người ký */}
                     <div className="h-4 text-[10px] text-emerald-600 font-semibold italic select-none my-0.5">
                       (+ thêm 1 dòng khoảng cách giữa chức danh và người ký)
                     </div>
 
-                    {/* Mở rộng không gian ký tên (khoảng trống 85–95pt trong HTML và 840 dxa trong tệp Word Word) */}
-                    <div style={{ height: '85pt' }} className="flex items-center justify-center border-y border-dashed border-slate-200 my-1 bg-slate-50/50 rounded">
-                      <span className="text-[11px] text-slate-500 italic font-sans">
-                        [Khoảng trống ký rộng rãi 85–95pt (840 dxa) cho chữ ký tươi và ký số điện tử]
+                    {/* Khoảng trống ký tên 85pt */}
+                    <div style={{ height: '75pt' }} className="flex items-center justify-center border-y border-dashed border-slate-200 my-1 bg-slate-50/50 rounded">
+                      <span className="text-[11px] text-slate-400 italic font-sans">
+                        [Khoảng trống ký tên tươi & ký số điện tử: 75–85pt / 720 dxa]
                       </span>
                     </div>
 
+                    {/* Họ và tên người ký */}
                     <div className="font-bold text-slate-900 text-sm">
                       {doc.signerName || '(Họ và tên người ký)'}
                     </div>

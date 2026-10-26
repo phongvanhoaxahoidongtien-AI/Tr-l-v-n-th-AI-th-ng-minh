@@ -2,6 +2,7 @@ import { AgencySettings, NormalizeResult } from '../types';
 import { parseDocumentStructure, reconstructNormalizedText } from './decree30Formatter';
 import { analyzeDocumentText } from './documentAnalyzer';
 import { autoFixVietnameseSpelling, detectAllDocumentProposals } from '../utils/vietnameseSpellingChecker';
+import { detectIllogicalAdministrativeText } from '../utils/illogicalTextDetector';
 
 // Danh mục lỗi chính tả & văn phong hành chính tiếng Việt chuyên sâu theo chuẩn trolyvanthu.isavn.edu.vn
 const SPELLING_RULES: Array<{ pattern: RegExp; replacement: string; reason: string; category: 'chinh_ta' | 'van_phong' | 'the_thuc' }> = [
@@ -240,16 +241,24 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     warningAgency = null;
   }
 
-  // 2. Quét phát hiện lỗi chính tả, nhầm từ và văn phong (TUYỆT ĐỐI KHÔNG TỰ ĐỘNG SỬA NỘI DUNG GỐC)
-  // Chỉ phát hiện và đưa vào danh sách đề xuất để người dùng tự quyết định qua nút [Đồng ý sửa] / [Bỏ qua]
-  const detectedProposals = detectAllDocumentProposals(content);
-  for (const item of detectedProposals) {
-    errorList.push(item.reason);
+  // 2. TỰ ĐỘNG CHỈNH SỬA CÁC LỖI CHÍNH TẢ VIẾT SAI THÀNH VIẾT ĐÚNG
+  // (s/x, ch/tr, d/gi/r, i/y, hỏi/ngã, phụ âm cuối c/t, n/ng, từ lặp...)
+  // TUYỆT ĐỐI KHÔNG TỰ XÓA, THAY ĐỔI VỊ TRÍ CÁC ĐOẠN VĂN BẢN
+  const spellingFixResult = autoFixVietnameseSpelling(content);
+  content = spellingFixResult.fixedText;
+  for (const fix of spellingFixResult.appliedFixes) {
+    errorList.push(`Đã sửa chính tả: "${fix.wrong}" ➔ "${fix.right}" (${fix.reason})`);
     spellingFixes.push({
-      wrong: item.wrong,
-      right: item.right,
-      context: item.reason
+      wrong: fix.wrong,
+      right: fix.right,
+      context: fix.reason
     });
+  }
+
+  // 2b. Quét phát hiện các đoạn thiếu logic hoặc có nguy cơ sai -> BÔI VÀNG ĐỀ XUẤT XÓA chứ KHÔNG tự động xóa bỏ!
+  const illogicalFindings = detectIllogicalAdministrativeText(content, docType, agencySettings.roleBlock);
+  for (const ill of illogicalFindings) {
+    errorList.push(`⚠️ Đề xuất xóa (thiếu logic/nguy cơ sai): "${ill.target}" - Lý do: ${ill.reason}`);
   }
 
   // 3. Chuẩn hóa Quốc hiệu & Tiêu ngữ theo Nghị định 30/2020/NĐ-CP (nếu không phải văn bản Đảng)
@@ -318,6 +327,26 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
 
   const report = analyzeDocumentText(content, agencySettings);
 
+  const activeIllogicals = (structured.illogicalFindings && structured.illogicalFindings.length > 0)
+    ? structured.illogicalFindings
+    : illogicalFindings;
+
+  const defaultAdjustments = [
+    'Đã tách Quốc hiệu và Tiêu ngữ chuẩn 16.2cm (Cột trái 6.5cm - Cột phải 9.7cm)',
+    'Đường kẻ ngang dưới Tiêu ngữ nét liền, dài bằng đúng độ dài dòng chữ Độc lập - Tự do - Hạnh phúc',
+    'Bảo toàn 100% nội dung gốc được nhập vào, không tự ý xóa bỏ',
+    'Đã ngăn nội dung không bị đẩy vào ô Cơ quan ban hành',
+    'Đã hỗ trợ xuống dòng cho Kính gửi và Nơi nhận',
+    'Đã thêm trường Quyền hạn ký'
+  ];
+
+  if (spellingFixResult.fixedCount > 0) {
+    defaultAdjustments.unshift(`Đã tự động sửa ${spellingFixResult.fixedCount} lỗi chính tả viết sai thành viết đúng`);
+  }
+  if (activeIllogicals.length > 0) {
+    defaultAdjustments.unshift(`Đã phát hiện và bôi vàng ${activeIllogicals.length} đoạn thiếu logic (đề xuất xóa, giữ nguyên văn bản chờ bạn duyệt)`);
+  }
+
   return {
     diemTruoc: baseScore,
     diemSau: finalScore,
@@ -326,14 +355,7 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     canhBaoCoQuan: warningAgency,
     noiDungChuanHoa: content,
     goiY: suggestions,
-    cacMucDaChinh: structured.cacMucDaChinh || [
-      'Đã tách Quốc hiệu và Tiêu ngữ chuẩn 16.2cm (Cột trái 6.5cm - Cột phải 9.7cm)',
-      'Đường kẻ ngang dưới Tiêu ngữ nét liền, dài bằng đúng độ dài dòng chữ Độc lập - Tự do - Hạnh phúc',
-      'Bảo toàn 100% nội dung gốc được copy vào, không tự ý xóa bỏ',
-      'Đã ngăn nội dung không bị đẩy vào ô Cơ quan ban hành',
-      'Đã hỗ trợ xuống dòng cho Kính gửi và Nơi nhận',
-      'Đã thêm trường Quyền hạn ký'
-    ],
+    cacMucDaChinh: structured.cacMucDaChinh || defaultAdjustments,
     quocHieu: structured.countryHeader,
     tieuNgu: structured.motto,
     tenCoQuanChuQuan: structured.parentAgency,
@@ -350,7 +372,9 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     noiNhan: structured.recipients.join('\n'),
     detectedAgencyInDoc: agencyDiff.detectedAgency || undefined,
     detectedLocationInDoc: agencyDiff.detectedLocation || undefined,
-    analysisReport: report
+    analysisReport: report,
+    spellingFixes,
+    illogicalFindings: activeIllogicals
   };
 }
 

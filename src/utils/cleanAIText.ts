@@ -300,30 +300,73 @@ export function convertMarkdownTableToHtml(markdownTableText: string): string {
 }
 
 /**
- * Chuẩn hóa bảng biểu HTML để luôn vừa khít trang A4 nhưng BẢO TOÀN 100% THUỘC TÍNH Ô GỘP:
+ * Chuẩn hóa bảng biểu HTML để luôn vừa khít trang A4 nhưng BẢO TOÀN 100% THUỘC TÍNH Ô GỘP & CĂN LỀ:
  * - Bảo tồn tuyệt đối colspan, rowspan của từng ô <th> và <td>
- * - Giữ nguyên căn lề cột, phân cấp, chỉ chuẩn hóa font Times New Roman và viền đen chuẩn Nghị định 30
+ * - Giữ nguyên căn lề cột (center, right, left, justify), in đậm, in nghiêng bên trong ô
+ * - Chuẩn hóa font Times New Roman, cỡ 11-12pt, viền đen mảnh đơn chuẩn Nghị định 30/2020/NĐ-CP
+ * - Đảm bảo chiều rộng cân đối 100% trang in A4 (16.2cm), căn giữa trang, không bị tràn lề
  */
 export function formatHtmlTableToFitA4(tableHtml: string): string {
-  return tableHtml
-    .replace(/<table\b([^>]*)>/gi, (_match, attrs = '') => {
-      const cleanAttrs = attrs
-        .replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '')
-        .replace(/\bclass\s*=\s*["'][^"']*["']/gi, '')
-        .trim();
-      const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
-      return `<table class="decree30-table"${attrStr} style="width: 100% !important; max-width: 100%; border-collapse: collapse; margin: 12pt 0; table-layout: auto; word-break: break-word; font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.3;" border="1" cellpadding="5" cellspacing="0">`;
-    })
-    .replace(/<th\b([^>]*)>/gi, (_match, attrs = '') => {
-      const cleanAttrs = attrs.replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '').trim();
-      const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
-      return `<th${attrStr} style="border: 1px solid #000; padding: 5pt; font-weight: bold; text-align: center; background-color: #f1f5f9; font-family: 'Times New Roman', Times, serif; font-size: 11pt;">`;
-    })
-    .replace(/<td\b([^>]*)>/gi, (_match, attrs = '') => {
-      const cleanAttrs = attrs.replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '').trim();
-      const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
-      return `<td${attrStr} style="border: 1px solid #000; padding: 4pt 6pt; font-family: 'Times New Roman', Times, serif; font-size: 11pt; vertical-align: top;">`;
-    });
+  if (!tableHtml || !tableHtml.includes('<table')) return tableHtml;
+
+  // Thu nhỏ các khoảng trắng/xuống dòng thừa bên ngoài thẻ
+  let cleaned = tableHtml.trim();
+
+  // Chuẩn hóa thẻ <table>: căn giữa trang, chiều rộng 100% vùng in (16.2cm), viền đơn đen
+  cleaned = cleaned.replace(/<table\b([^>]*)>/gi, (_match, attrs = '') => {
+    // Giữ lại id, data-*, class cần thiết nhưng loại bỏ style cũ xung đột
+    const cleanAttrs = attrs
+      .replace(/\bstyle\s*=\s*["'][^"']*["']/gi, '')
+      .replace(/\bclass\s*=\s*["'][^"']*["']/gi, '')
+      .replace(/\bwidth\s*=\s*["'][^"']*["']/gi, '')
+      .replace(/\bborder\s*=\s*["'][^"']*["']/gi, '')
+      .trim();
+    const attrStr = cleanAttrs ? ` ${cleanAttrs}` : '';
+    return `<table class="decree30-table w-full"${attrStr} style="width: 100% !important; max-width: 100%; border-collapse: collapse; margin: 14pt auto; table-layout: auto; word-break: break-word; font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.35; background-color: #ffffff;" border="1" cellpadding="6" cellspacing="0">`;
+  });
+
+  // Chuẩn hóa thẻ <th>: giữ colspan, rowspan, align
+  cleaned = cleaned.replace(/<th\b([^>]*)>([\s\S]*?)<\/th>/gi, (_match, attrs = '', inner = '') => {
+    let textAlign = 'center';
+    if (/text-align:\s*left|align=["']left["']/i.test(attrs)) textAlign = 'left';
+    else if (/text-align:\s*right|align=["']right["']/i.test(attrs)) textAlign = 'right';
+
+    // Trích xuất colspan, rowspan
+    const colMatch = attrs.match(/colspan\s*=\s*["']?(\d+)["']?/i);
+    const rowMatch = attrs.match(/rowspan\s*=\s*["']?(\d+)["']?/i);
+    const spanAttrs = `${colMatch ? ` colspan="${colMatch[1]}"` : ''}${rowMatch ? ` rowspan="${rowMatch[1]}"` : ''}`;
+
+    return `<th${spanAttrs} style="border: 1px solid #000000; padding: 6pt 5pt; font-weight: bold; text-align: ${textAlign}; vertical-align: middle; background-color: #f8fafc; font-family: 'Times New Roman', Times, serif; font-size: 11.5pt; color: #0f172a;">${inner.trim()}</th>`;
+  });
+
+  // Chuẩn hóa thẻ <td>: giữ colspan, rowspan, align thông minh
+  cleaned = cleaned.replace(/<td\b([^>]*)>([\s\S]*?)<\/td>/gi, (_match, attrs = '', inner = '') => {
+    const rawText = inner.replace(/<[^>]+>/g, '').trim();
+
+    let textAlign = 'left';
+    if (/text-align:\s*center|align=["']center["']/i.test(attrs)) {
+      textAlign = 'center';
+    } else if (/text-align:\s*right|align=["']right["']/i.test(attrs)) {
+      textAlign = 'right';
+    } else if (/text-align:\s*justify|align=["']justify["']/i.test(attrs)) {
+      textAlign = 'justify';
+    } else {
+      // Tự động nhận diện căn lề thông minh theo dữ liệu
+      const isStt = /^(?:stt|\d+)$/i.test(rawText);
+      const isNumberOrMoney = /^[\d\.,\s]+(?:%|đ|đồng|triệu|tỷ|USD)?$/i.test(rawText);
+      if (isStt && rawText.length <= 4) textAlign = 'center';
+      else if (isNumberOrMoney && rawText.length <= 15) textAlign = 'right';
+    }
+
+    // Trích xuất colspan, rowspan
+    const colMatch = attrs.match(/colspan\s*=\s*["']?(\d+)["']?/i);
+    const rowMatch = attrs.match(/rowspan\s*=\s*["']?(\d+)["']?/i);
+    const spanAttrs = `${colMatch ? ` colspan="${colMatch[1]}"` : ''}${rowMatch ? ` rowspan="${rowMatch[1]}"` : ''}`;
+
+    return `<td${spanAttrs} style="border: 1px solid #000000; padding: 5pt 6pt; font-family: 'Times New Roman', Times, serif; font-size: 11pt; text-align: ${textAlign}; vertical-align: middle; color: #1e293b;">${inner.trim()}</td>`;
+  });
+
+  return cleaned;
 }
 
 /**

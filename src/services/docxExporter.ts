@@ -28,12 +28,26 @@ import { AgencySettings } from '../types';
  */
 export function convertTableToDocxTable(tableContent: string): Table | null {
   try {
+    const TOTAL_TABLE_WIDTH_DXA = 9185; // Chiều rộng chuẩn 16.2cm vừa khít khổ in A4 (lề trái 30mm, lề phải 15-20mm)
+
     // 1. Trường hợp bảng HTML (từ file Word, clipboard HTML hoặc mammoth)
     if (tableContent.includes('<table')) {
       const rowMatches = tableContent.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi);
       if (!rowMatches || rowMatches.length === 0) return null;
 
-      const docxRows: TableRow[] = [];
+      // Bước 1: Tính toán số lượng cột thực tế (bao gồm cả colspan) để phân bổ độ rộng cân đối trang A4
+      let maxCols = 1;
+      const parsedRowsData: Array<{
+        isHeaderRow: boolean;
+        cells: Array<{
+          cellHtml: string;
+          cellText: string;
+          paragraphs: string[];
+          colSpan?: number;
+          rowSpan?: number;
+          align: (typeof AlignmentType)[keyof typeof AlignmentType];
+        }>;
+      }> = [];
 
       for (let rIdx = 0; rIdx < rowMatches.length; rIdx++) {
         const rowHtml = rowMatches[rIdx];
@@ -42,37 +56,53 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
         const cellMatches = rowHtml.match(/<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi);
         if (!cellMatches || cellMatches.length === 0) continue;
 
-        const cells = cellMatches.map((cellHtml, cIdx) => {
-          // Trích xuất thuộc tính ô gộp ngang (colspan) và ô gộp dọc (rowspan)
+        let rowColCount = 0;
+        const cellsData = cellMatches.map((cellHtml, cIdx) => {
           const colspanMatch = cellHtml.match(/colspan\s*=\s*["']?(\d+)["']?/i);
           const rowspanMatch = cellHtml.match(/rowspan\s*=\s*["']?(\d+)["']?/i);
           const colSpanVal = colspanMatch ? parseInt(colspanMatch[1], 10) : undefined;
           const rowSpanVal = rowspanMatch ? parseInt(rowspanMatch[1], 10) : undefined;
 
-          const cellText = cellHtml
+          rowColCount += colSpanVal && colSpanVal > 1 ? colSpanVal : 1;
+
+          // Xử lý giữ nguyên các dòng con trong ô (hỗ trợ nhiều dòng, danh sách, ngắt đoạn <p>/<br>)
+          const cellContentHtml = cellHtml
+            .replace(/^<(?:td|th)\b[^>]*>/i, '')
+            .replace(/<\/(?:td|th)>$/i, '')
+            .trim();
+
+          const rawParagraphs = cellContentHtml
             .replace(/<br\s*\/?>/gi, '\n')
             .replace(/<\/p>/gi, '\n')
             .replace(/<\/div>/gi, '\n')
-            .replace(/<[^>]+>/g, '')
-            .replace(/&nbsp;/gi, ' ')
-            .replace(/&amp;/gi, '&')
-            .replace(/&quot;/gi, '"')
-            .replace(/&lt;/gi, '<')
-            .replace(/&gt;/gi, '>')
-            .trim();
+            .replace(/<\/li>/gi, '\n')
+            .split('\n')
+            .map(line => {
+              return line
+                .replace(/<[^>]+>/g, '')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/&amp;/gi, '&')
+                .replace(/&quot;/gi, '"')
+                .replace(/&lt;/gi, '<')
+                .replace(/&gt;/gi, '>')
+                .trim();
+            })
+            .filter(line => line.length > 0);
 
-          const isStt = cIdx === 0 && (isHeaderRow || /^\d+$/.test(cellText) || /^stt\b/i.test(cellText));
-          const isNumber = /^\d+(?:[.,]\d+)?%?$/.test(cellText);
+          const paragraphs = rawParagraphs.length > 0 ? rawParagraphs : [''];
+          const fullCellText = paragraphs.join(' ').trim();
 
-          let align: (typeof AlignmentType)[keyof typeof AlignmentType] = isHeaderRow 
-            ? AlignmentType.CENTER 
-            : isStt 
-            ? AlignmentType.CENTER 
-            : isNumber 
-            ? AlignmentType.RIGHT 
+          const isStt = cIdx === 0 && (isHeaderRow || /^(?:stt|\d+)$/i.test(fullCellText));
+          const isNumber = /^\d+(?:[.,]\d+)?%?$/.test(fullCellText) || /^[\d\.,\s]+(?:%|đ|đồng|USD)?$/i.test(fullCellText);
+
+          let align: (typeof AlignmentType)[keyof typeof AlignmentType] = isHeaderRow
+            ? AlignmentType.CENTER
+            : isStt
+            ? AlignmentType.CENTER
+            : isNumber
+            ? AlignmentType.RIGHT
             : AlignmentType.LEFT;
 
-          // Nếu có căn lề tường minh trong HTML style
           if (/text-align:\s*center|align=["']center["']/i.test(cellHtml)) {
             align = AlignmentType.CENTER;
           } else if (/text-align:\s*right|align=["']right["']/i.test(cellHtml)) {
@@ -81,45 +111,99 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
             align = AlignmentType.JUSTIFIED;
           }
 
-          return new TableCell({
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-              left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-              right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
-            },
-            columnSpan: (colSpanVal && colSpanVal > 1) ? colSpanVal : undefined,
-            rowSpan: (rowSpanVal && rowSpanVal > 1) ? rowSpanVal : undefined,
-            shading: isHeaderRow ? { fill: 'F8FAFC' } : undefined,
-            children: [
-              new Paragraph({
-                alignment: align,
-                spacing: { before: isHeaderRow ? 70 : 45, after: isHeaderRow ? 70 : 45, line: 240 },
-                children: [
-                  new TextRun({
-                    text: cellText,
-                    font: 'Times New Roman',
-                    size: isHeaderRow ? 24 : 22, // 12pt tiêu đề, 11pt nội dung
-                    bold: isHeaderRow,
-                  }),
-                ],
-              }),
-            ],
-          });
+          return {
+            cellHtml,
+            cellText: fullCellText,
+            paragraphs,
+            colSpan: colSpanVal,
+            rowSpan: rowSpanVal,
+            align,
+          };
         });
+
+        if (rowColCount > maxCols) maxCols = rowColCount;
+        parsedRowsData.push({ isHeaderRow, cells: cellsData });
+      }
+
+      if (parsedRowsData.length === 0) return null;
+
+      // Bước 2: Tính toán độ rộng từng cột chuẩn thể thức
+      // Nếu cột 0 là STT, dành 800 DXA (~1.4cm), các cột còn lại chia đều
+      const hasSttCol = maxCols >= 3;
+      const sttColWidth = hasSttCol ? 800 : Math.round(TOTAL_TABLE_WIDTH_DXA / maxCols);
+      const remainingWidth = hasSttCol ? TOTAL_TABLE_WIDTH_DXA - sttColWidth : TOTAL_TABLE_WIDTH_DXA;
+      const otherColWidth = hasSttCol ? Math.round(remainingWidth / (maxCols - 1)) : sttColWidth;
+
+      const docxRows: TableRow[] = [];
+
+      for (const rowData of parsedRowsData) {
+        const docxCells: TableCell[] = [];
+        let curColIdx = 0;
+
+        for (let cIdx = 0; cIdx < rowData.cells.length; cIdx++) {
+          const c = rowData.cells[cIdx];
+          const spanCount = c.colSpan && c.colSpan > 1 ? c.colSpan : 1;
+
+          // Tính độ rộng ô TableCell theo số cột gộp
+          let cellWidthDxa = 0;
+          for (let s = 0; s < spanCount; s++) {
+            const colPos = curColIdx + s;
+            cellWidthDxa += colPos === 0 && hasSttCol ? sttColWidth : otherColWidth;
+          }
+          curColIdx += spanCount;
+
+          // Tạo các Paragraphs cho ô: bảo toàn nhiều dòng
+          const cellParagraphs: Paragraph[] = c.paragraphs.map((lineText, pIdx) => {
+            const isFirst = pIdx === 0;
+            const isLast = pIdx === c.paragraphs.length - 1;
+            return new Paragraph({
+              alignment: c.align,
+              spacing: {
+                before: isFirst ? (rowData.isHeaderRow ? 70 : 45) : 20,
+                after: isLast ? (rowData.isHeaderRow ? 70 : 45) : 20,
+                line: 240,
+              },
+              children: [
+                new TextRun({
+                  text: lineText,
+                  font: 'Times New Roman',
+                  size: rowData.isHeaderRow ? 24 : 22, // 12pt tiêu đề, 11pt nội dung chuẩn NĐ 30
+                  bold: rowData.isHeaderRow,
+                }),
+              ],
+            });
+          });
+
+          docxCells.push(
+            new TableCell({
+              width: { size: cellWidthDxa, type: WidthType.DXA },
+              borders: {
+                top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+                right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+              },
+              columnSpan: c.colSpan && c.colSpan > 1 ? c.colSpan : undefined,
+              rowSpan: c.rowSpan && c.rowSpan > 1 ? c.rowSpan : undefined,
+              shading: rowData.isHeaderRow ? { fill: 'F8FAFC' } : undefined,
+              children: cellParagraphs.length > 0 ? cellParagraphs : [new Paragraph({ children: [] })],
+            })
+          );
+        }
 
         docxRows.push(
           new TableRow({
-            tableHeader: isHeaderRow,
+            tableHeader: rowData.isHeaderRow,
             cantSplit: true,
-            children: cells,
+            children: docxCells,
           })
         );
       }
 
       if (docxRows.length > 0) {
         return new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
+          width: { size: TOTAL_TABLE_WIDTH_DXA, type: WidthType.DXA },
+          alignment: AlignmentType.CENTER,
           rows: docxRows,
         });
       }
@@ -134,11 +218,17 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
         const dataLines = lines.slice(1).filter(l => !/^[|\s:-]+$/.test(l));
         const dataRows = dataLines.map(parseRow);
 
+        const colCount = Math.max(headerCells.length, 1);
+        const hasSttCol = colCount >= 3;
+        const sttColWidth = hasSttCol ? 800 : Math.round(TOTAL_TABLE_WIDTH_DXA / colCount);
+        const otherColWidth = hasSttCol ? Math.round((TOTAL_TABLE_WIDTH_DXA - sttColWidth) / (colCount - 1)) : sttColWidth;
+
         const docxRows: TableRow[] = [
           new TableRow({
             tableHeader: true,
             cantSplit: true,
-            children: headerCells.map(cellText => new TableCell({
+            children: headerCells.map((cellText, cIdx) => new TableCell({
+              width: { size: cIdx === 0 && hasSttCol ? sttColWidth : otherColWidth, type: WidthType.DXA },
               borders: {
                 top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
                 bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
@@ -170,6 +260,7 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
               const align = isStt ? AlignmentType.CENTER : isNumber ? AlignmentType.RIGHT : AlignmentType.LEFT;
 
               return new TableCell({
+                width: { size: cIdx === 0 && hasSttCol ? sttColWidth : otherColWidth, type: WidthType.DXA },
                 borders: {
                   top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
                   bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
@@ -195,7 +286,8 @@ export function convertTableToDocxTable(tableContent: string): Table | null {
         ];
 
         return new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
+          width: { size: TOTAL_TABLE_WIDTH_DXA, type: WidthType.DXA },
+          alignment: AlignmentType.CENTER,
           rows: docxRows,
         });
       }
@@ -1107,17 +1199,21 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       signerName: doc.signerName,
     }, true);
 
-    for (const r of safeRecs) {
+    for (let idx = 0; idx < safeRecs.length; idx++) {
+      const r = safeRecs[idx];
       const cleanR = r.trim();
       if (!cleanR) continue;
-      const rWithDash = cleanR.startsWith('-') ? cleanR : `- ${cleanR.replace(/^[-\u2013\u2014]\s*/, '')}`;
+      const isLast = idx === safeRecs.length - 1;
+      const withoutPunct = cleanR.replace(/[;\.]+$/, '').trim();
+      const rWithDash = withoutPunct.startsWith('-') ? withoutPunct : `- ${withoutPunct.replace(/^[-\u2013\u2014]\s*/, '')}`;
+      const formattedLine = `${rWithDash}${isLast ? '.' : ';'}`;
       leftFooterParagraphs.push(
         new Paragraph({
           alignment: AlignmentType.LEFT,
           spacing: { before: 20, after: 40, line: 220 },
           children: [
             new TextRun({
-              text: rWithDash,
+              text: formattedLine,
               font: 'Times New Roman',
               size: 22, // 11pt
             }),

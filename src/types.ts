@@ -133,8 +133,10 @@ export interface NormalizeResult {
   detectedAgencyInDoc?: string;
   detectedLocationInDoc?: string;
   spellingErrors?: Array<{ wrong: string; right: string; context?: string }>;
+  spellingFixes?: Array<{ wrong: string; right: string; context?: string }>;
   formatErrors?: string[];
   styleErrors?: string[];
+  illogicalFindings?: IllogicalSegment[];
   analysisReport?: DocumentAnalysisReport;
 }
 
