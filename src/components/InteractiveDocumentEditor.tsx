@@ -88,7 +88,7 @@ export function processAndFormatKinhGui(raw: string | string[]): {
       continue;
     }
 
-    // 1. Phân tách nếu dòng chứa dấu chấm phẩy ";"
+    // 1. Phân tách nếu dòng chứa dấu chấm phẩy ";" (Theo NĐ 30: các nơi nhận được phân cách bởi dấu chấm phẩy ";")
     if (clean.includes(';')) {
       const subParts = clean.split(';').map(p => p.trim()).filter(Boolean);
       for (const sub of subParts) {
@@ -107,32 +107,7 @@ export function processAndFormatKinhGui(raw: string | string[]): {
       continue;
     }
 
-    // 2. Phân tách nếu dòng chứa dấu phẩy "," phân cách các cơ quan/chức danh riêng biệt
-    // Ví dụ: "Sở Nội vụ, Sở Tài chính, UBND các huyện" hoặc "Đ/c Bí thư Đảng ủy, Đ/c Chủ tịch UBND"
-    const agencyLookahead = /(?:,\s*(?:và\s+)?|\s+và\s+)(?=(?:Sở|Ban|Phòng|UBND|Ủy\s+ban|HĐND|UBMTTQ|Chi\s+cục|Cục|Trung\s+tâm|Công\s+an|Trường|Bệnh\s+viện|Công\s+ty|Đồng\s+chí|Đ\/c|Ông|Bà|Chủ\s+tịch|Giám\s+đốc|Trưởng\s+phòng)\b)/i;
-    if (agencyLookahead.test(clean)) {
-      const subParts = clean.split(agencyLookahead).map(p => p.trim()).filter(Boolean);
-      let parsedAny = false;
-      for (const sub of subParts) {
-        if (isKinhGuiBodyLeakLine(sub)) {
-          foundBodyStart = true;
-          leakedBodyLines.push(sub);
-          continue;
-        }
-        const itemClean = sub
-          .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
-          .replace(/^\d+[\.\)]\s*/, '')
-          .replace(/[;\.]+$/, '')
-          .trim();
-        if (itemClean) {
-          candidateRecipients.push(itemClean);
-          parsedAny = true;
-        }
-      }
-      if (parsedAny) continue;
-    }
-
-    // 3. Dòng thông thường (1 cơ quan/đơn vị trên 1 dòng)
+    // 2. Dòng thông thường (1 cơ quan/đơn vị trên 1 dòng - TUYỆT ĐỐI KHÔNG tách theo dấu phẩy ",", dấu phẩy là một phần của tên cơ quan/chức danh)
     const itemClean = clean
       .replace(/^[-\u2013\u2014\*\+•●○■◆]\s*/, '')
       .replace(/^\d+[\.\)]\s*/, '')
@@ -519,6 +494,12 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
 
   const [blankInputVal, setBlankInputVal] = useState('');
   const [fixNotice, setFixNotice] = useState<string | null>(null);
+
+  // Danh sách đề xuất sửa lỗi (ưu tiên activeProposals từ cha, nếu không thì tự tính bằng detectAllDocumentProposals)
+  const effectiveProposals = useMemo(() => {
+    if (activeProposals !== undefined) return activeProposals;
+    return detectAllDocumentProposals(normalizedText, doc.illogicalFindings, agencySettings);
+  }, [activeProposals, normalizedText, doc.illogicalFindings, agencySettings]);
 
   // Danh sách lỗi chính tả phát hiện trong văn bản
   const spellingErrors: SpellingErrorMatch[] = useMemo(() => {
@@ -1136,19 +1117,19 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     <div className="p-3 rounded-lg border border-blue-300 bg-blue-50/70 text-blue-950 flex items-center justify-between">
                       <div>
                         <div className="font-bold text-xs uppercase text-blue-950 font-serif">
-                          CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM (Cỡ 12-13pt, in hoa, đậm, căn giữa, 1 dòng)
+                          CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM (Cỡ 13pt, in hoa, đậm, căn giữa, rộng ~9.57cm trên cột 10.0cm không xuống dòng)
                         </div>
                         <div className="font-bold text-xs text-blue-900 mt-1 font-serif">
                           <span className="inline-block border-b-[1.2px] border-blue-900 pb-0.5">
-                            Độc lập - Tự do - Hạnh phúc (Cỡ 13-14pt, đậm, căn giữa, 1 dòng)
+                            Độc lập - Tự do - Hạnh phúc (Cỡ 14pt, đậm, căn giữa, rộng ~6.00cm)
                           </span>
                         </div>
                         <div className="text-[11px] text-blue-700 mt-1">
-                          ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Tổng 16.2cm (Cột trái 6.5cm - Cột phải 9.7cm) • Phía dưới Tiêu ngữ có đường kẻ ngang, nét liền, có độ dài bằng đúng độ dài của dòng chữ Độc lập - Tự do - Hạnh phúc
+                          ✓ Chuẩn Nghị định 30/2020/NĐ-CP • Tổng 16.0cm (Cột trái 6.0cm - Cột phải 10.0cm) • Lề trái 30mm, lề phải 20mm • Phía dưới Tiêu ngữ có đường kẻ ngang nét liền 0.5pt đen dài đúng 6.0cm • Dưới tên cơ quan ban hành có đường kẻ dài 2.2cm
                         </div>
                       </div>
                       <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-md border border-blue-300">
-                        Cột phải 9.7cm
+                        Cột phải 10.0cm
                       </span>
                     </div>
                   )}
@@ -1251,7 +1232,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       className="w-full p-2.5 rounded-lg border border-blue-300 bg-white font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-2xs"
                     />
                     <p className="text-[10px] text-blue-800 mt-1 italic leading-relaxed">
-                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP (Ô số 5b): Vị trí ở <strong>ô bên trái, ngay dòng dưới Số ký hiệu văn bản</strong> (ô số 3), căn giữa trong khối 6,5cm. Bắt đầu bằng "V/v", chữ thường, kích thước 12–13, kiểu chữ đứng, không in đậm, kết thúc KHÔNG có dấu gạch ngang.
+                      ✓ Chuẩn Nghị định 30/2020/NĐ-CP (Ô số 5b): Vị trí ở <strong>ô bên trái, ngay dòng dưới Số ký hiệu văn bản</strong> (ô số 3), căn giữa trong khối 6,0cm. Bắt đầu bằng "V/v", chữ thường, kích thước 12–13, kiểu chữ đứng, không in đậm, kết thúc KHÔNG có dấu gạch ngang.
                     </p>
                   </div>
                 )}
@@ -1271,7 +1252,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                     className="w-full p-2.5 rounded-lg border border-slate-300 font-serif text-xs text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                   <p className="text-[10px] text-slate-500 mt-0.5 italic">
-                    Cỡ 13-14, chữ nghiêng, căn giữa cột phải 9.5-9.7cm, ngang hàng với Số ký hiệu văn bản.
+                    Cỡ 13-14, chữ nghiêng, căn giữa cột phải 10.0cm, ngang hàng với Số ký hiệu văn bản.
                   </p>
                 </div>
 
@@ -1765,7 +1746,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
-                {activeProposals && activeProposals.length > 0 ? (
+                {effectiveProposals && effectiveProposals.length > 0 ? (
                   <>
                     <button
                       type="button"
@@ -1774,7 +1755,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       title="Đồng ý sửa toàn bộ lỗi chính tả & văn phong đang được phát hiện"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>Đồng ý sửa tất cả ({activeProposals.length})</span>
+                      <span>Đồng ý sửa tất cả ({effectiveProposals.length})</span>
                     </button>
                     {onDismissAllProposals && (
                       <button
@@ -1860,7 +1841,11 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                       <div>
                         <div className="font-bold text-sm text-amber-950 font-serif flex items-center gap-1.5">
                           <Wand2 className="w-4 h-4 text-amber-700" />
-                          {activeFix.type === 'spelling' && 'Khắc phục lỗi chính tả / văn phong'}
+                          {activeFix.type === 'spelling' && (
+                            activeFix.proposal?.category === 'lech_don_vi'
+                              ? 'Phát hiện lệch đơn vị / địa danh so với Cài đặt mặc định'
+                              : 'Khắc phục lỗi chính tả / văn phong'
+                          )}
                           {activeFix.type === 'blank' && 'Điền thông tin vào chỗ trống'}
                           {activeFix.type === 'illogical' && 'Rà soát văn bản thiếu tính logic'}
                           {activeFix.type === 'abbr' && 'Bổ sung tên đầy đủ cho từ viết tắt'}
@@ -1888,6 +1873,8 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                               const isDeletionProposal = !activeFix.suggestion || 
                                 activeFix.suggestion.toLowerCase().includes('xóa bỏ') || 
                                 activeFix.suggestion.toLowerCase().includes('xóa căn cứ') || 
+                                activeFix.suggestion.toLowerCase().includes('loại bỏ') || 
+                                activeFix.suggestion.toLowerCase().includes('gỡ bỏ') || 
                                 (activeFix.proposal && (!activeFix.proposal.right || activeFix.proposal.right.trim() === ''));
 
                               return (
@@ -1895,7 +1882,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                                   <div className="text-xs">
                                     <span className="text-slate-600">Đề xuất xử lý: </span>
                                     <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 font-serif">
-                                      {isDeletionProposal ? 'Xóa bỏ đoạn thừa / lặp lại này' : activeFix.suggestion}
+                                      {isDeletionProposal ? 'Xóa bỏ đoạn thừa / lặp lại / đặt sai vị trí này' : activeFix.suggestion}
                                     </strong>
                                   </div>
 
@@ -1949,21 +1936,17 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         {/* Sửa chính tả */}
                         {activeFix.type === 'spelling' && activeFix.suggestion && (
                           <div className="mt-2 text-xs text-slate-800 space-y-1.5">
-                            {activeFix.reason && (
-                              <div className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                                💡 {activeFix.reason}
-                              </div>
-                            )}
-                            <div className="space-y-1">
-                              <div>
-                                <span className="text-slate-600">Đoạn bị lỗi (đã bôi vàng): </span>
-                                <mark className="bg-yellow-200 text-yellow-950 font-bold px-1.5 py-0.5 rounded border border-yellow-400 font-serif line-through decoration-rose-500 mr-2">
+                            <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              <div className="flex-1">
+                                <span className="block text-[11px] text-slate-500 mb-0.5 font-sans">Từ đang sai:</span>
+                                <span className="bg-yellow-100 text-yellow-950 font-bold px-2 py-0.5 rounded border border-yellow-300 font-serif inline-block">
                                   {activeFix.target}
-                                </mark>
+                                </span>
                               </div>
-                              <div>
-                                <span className="text-slate-600">Đề xuất cách viết đúng: </span>
-                                <strong className="text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 text-sm font-serif">
+                              <span className="text-slate-400 font-bold">➔</span>
+                              <div className="flex-1">
+                                <span className="block text-[11px] text-slate-500 mb-0.5 font-sans">Đề xuất viết đúng:</span>
+                                <strong className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 font-serif inline-block">
                                   {activeFix.suggestion}
                                 </strong>
                               </div>
@@ -2132,7 +2115,7 @@ export const InteractiveDocumentEditor: React.FC<InteractiveDocumentEditorProps>
                         <p key={bIdx} className="text-justify indent-6 text-slate-800 leading-relaxed">
                           {renderParagraphWithHighlights(
                             trimmed,
-                            activeProposals,
+                            effectiveProposals,
                             highlightKeywords,
                             doc.illogicalFindings || [],
                             (wrong, right, reason, prop) => {
@@ -3449,11 +3432,14 @@ function renderParagraphWithHighlights(
 ) {
   // 1. Nếu có activeProposals (dù rỗng), ưu tiên quét theo activeProposals
   if (activeProposals !== undefined) {
-    const matchedProps = activeProposals.filter(p => p.wrong && text.includes(p.wrong));
+    const textLower = text.toLowerCase();
+    const matchedProps = activeProposals.filter(p => p.wrong && textLower.includes(p.wrong.toLowerCase()));
 
     const regexTokens: string[] = [];
     matchedProps.forEach(p => {
-      regexTokens.push(escapeRegex(p.wrong));
+      const words = p.wrong.trim().split(/\s+/).filter(Boolean);
+      const escaped = words.map(escapeRegex).join('[\\s\\u00A0]+');
+      regexTokens.push(escaped);
     });
 
     // Blanks
@@ -3472,17 +3458,20 @@ function renderParagraphWithHighlights(
       if (!part) return null;
 
       // A. Kiểm tra proposal
-      const propMatch = matchedProps.find(p => p.wrong.toLowerCase() === part.trim().toLowerCase());
+      const propMatch = matchedProps.find(p => {
+        const pNorm = p.wrong.trim().toLowerCase().replace(/\s+/g, ' ');
+        const partNorm = part.trim().toLowerCase().replace(/\s+/g, ' ');
+        return pNorm === partNorm;
+      });
       if (propMatch) {
         return (
           <span
             key={`prop_${i}`}
             onClick={() => onSpellingClick(part, propMatch.right, propMatch.reason, propMatch)}
-            title={`Đề xuất sửa: Bấm để chọn [Đồng ý sửa] thành "${propMatch.right}" hoặc [Bỏ qua] (${propMatch.reason || ''})`}
-            className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1.5 py-0.5 rounded border border-yellow-400 font-bold cursor-pointer transition-colors inline-flex items-center gap-0.5 mx-0.5 shadow-2xs"
+            title="Bấm để chỉnh sửa"
+            className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1 py-0.5 rounded border-b-2 border-yellow-500 font-medium cursor-pointer transition-colors inline-block mx-0.5"
           >
-            <span className="text-[10px] text-yellow-800">⚠️</span>
-            <span>{part}</span>
+            {part}
           </span>
         );
       }
@@ -3507,15 +3496,20 @@ function renderParagraphWithHighlights(
   }
 
   // 2. Chế độ fallback nếu activeProposals không được truyền vào
-  const matchedIllogicals = illogicalFindings.filter(f => f.target && text.includes(f.target));
+  const textLowerFallback = text.toLowerCase();
+  const matchedIllogicals = illogicalFindings.filter(f => f.target && textLowerFallback.includes(f.target.toLowerCase()));
   const activeKeywords = keywords.filter(k => k.pattern.test(text));
 
   const regexTokens: string[] = [];
   matchedIllogicals.forEach(f => {
-    regexTokens.push(escapeRegex(f.target));
+    const words = f.target.trim().split(/\s+/).filter(Boolean);
+    const escaped = words.map(escapeRegex).join('[\\s\\u00A0]+');
+    regexTokens.push(escaped);
   });
   activeKeywords.forEach(k => {
-    regexTokens.push(escapeRegex(k.wrong));
+    const words = k.wrong.trim().split(/\s+/).filter(Boolean);
+    const escaped = words.map(escapeRegex).join('[\\s\\u00A0]+');
+    regexTokens.push(escaped);
   });
   regexTokens.push('…{2,}');
   regexTokens.push('\\.{3,}');
@@ -3532,7 +3526,11 @@ function renderParagraphWithHighlights(
     if (!part) return null;
 
     // A. Kiểm tra illogical segment
-    const illMatch = matchedIllogicals.find(f => f.target.toLowerCase() === part.toLowerCase());
+    const illMatch = matchedIllogicals.find(f => {
+      const fNorm = f.target.trim().toLowerCase().replace(/\s+/g, ' ');
+      const partNorm = part.trim().toLowerCase().replace(/\s+/g, ' ');
+      return fNorm === partNorm;
+    });
     if (illMatch) {
       return (
         <span
@@ -3563,17 +3561,20 @@ function renderParagraphWithHighlights(
     }
 
     // C. Kiểm tra lỗi chính tả
-    const matchedRule = activeKeywords.find(k => k.wrong.toLowerCase() === part.trim().toLowerCase());
+    const matchedRule = activeKeywords.find(k => {
+      const kNorm = k.wrong.trim().toLowerCase().replace(/\s+/g, ' ');
+      const partNorm = part.trim().toLowerCase().replace(/\s+/g, ' ');
+      return kNorm === partNorm;
+    });
     if (matchedRule) {
       return (
         <span
           key={`spell_${i}`}
           onClick={() => onSpellingClick(part, matchedRule.right, matchedRule.reason)}
-          title={`Gợi ý sửa chính tả: Bấm để sửa thành "${matchedRule.right}" (${matchedRule.reason || ''})`}
-          className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1 py-0.5 rounded border border-yellow-400 font-bold cursor-pointer transition-colors inline-flex items-center gap-0.5 mx-0.5 shadow-2xs"
+          title="Bấm để chỉnh sửa"
+          className="bg-yellow-200 hover:bg-yellow-300 text-yellow-950 px-1 py-0.5 rounded border-b-2 border-yellow-500 font-medium cursor-pointer transition-colors inline-block mx-0.5"
         >
           {part}
-          <span className="text-[10px] text-yellow-800">🪄</span>
         </span>
       );
     }

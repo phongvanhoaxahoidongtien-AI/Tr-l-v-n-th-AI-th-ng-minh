@@ -322,7 +322,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   // Phân chia theo hàng để đảm bảo Ô số 4 (Địa danh, ngày tháng) cùng hàng với Ô số 3 (Số công văn)
 
   // Khối tên cơ quan ban hành (Ô số 2)
-  const agencyParagraphs: Paragraph[] = [];
+  const agencyParagraphs: (Paragraph | Table)[] = [];
   const agencyParts = getStandardAgencyHeaderParts(doc.parentAgency, doc.agencyName);
   const agencyNameText = agencyParts.hasLine2 ? agencyParts.line2 : agencyParts.line1;
   const isLongAgency = agencyNameText.length > 28;
@@ -362,19 +362,37 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     })
   );
 
-  // Dòng 3: Đường kẻ ngang dưới tên cơ quan (độ đậm bằng 100% với tiêu ngữ, cùng ngang 1 hàng)
+  // Dòng 3: Đường kẻ ngang dưới tên cơ quan ban hành: 2.2 cm (1247 dxa), căn giữa cột trái, nét liền 0.5pt, đen
+  const agencyUnderlineTable = new Table({
+    alignment: AlignmentType.CENTER,
+    width: { size: 1247, type: WidthType.DXA },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 1247, type: WidthType.DXA },
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+              left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+              right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+              bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+            },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 0, line: 20 },
+                children: [],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+  agencyParagraphs.push(agencyUnderlineTable);
   agencyParagraphs.push(
     new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 20, after: 60, line: 160 },
-      children: [
-        new TextRun({
-          text: '─────────', // 9 ký tự '─' font size 22, độ đậm bằng 100% với tiêu ngữ
-          font: 'Times New Roman',
-          size: 22,
-          bold: false,
-        }),
-      ],
+      spacing: { before: 20, after: 40, line: 60 },
+      children: [],
     })
   );
 
@@ -458,23 +476,21 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
       })
     );
 
-    // NÂNG CẤP DỨT ĐIỂM: Đường kẻ ngang dưới tiêu ngữ có độ dài BẰNG ĐÚNG ĐỘ DÀI CỦA DÒNG CHỮ
-    // Độ dài in ấn thực tế của dòng chữ "Độc lập - Tự do - Hạnh phúc" 14pt bold trong Word là đúng 5.3 cm (3000 dxa).
-    // Dùng Table con (Nested Table) căn giữa có viền bottom nét đơn 0.75pt (size 6) màu đen chuẩn NĐ 30.
-    // Đảm bảo không bị phụ thuộc font glyph '─', không vượt quá và không ngắn hơn trên mọi máy tính.
+    // Đường kẻ ngang dưới tiêu ngữ: Độ dài 6,0 cm (3402 dxa, bằng độ dài dòng chữ "Độc lập - Tự do - Hạnh phúc" cỡ 14)
+    // Căn giữa cột phải, nét liền 0.5pt (size 4), màu đen 000000
     const mottoUnderlineTable = new Table({
       alignment: AlignmentType.CENTER,
-      width: { size: 3000, type: WidthType.DXA },
+      width: { size: 3402, type: WidthType.DXA },
       rows: [
         new TableRow({
           children: [
             new TableCell({
-              width: { size: 3000, type: WidthType.DXA },
+              width: { size: 3402, type: WidthType.DXA },
               borders: {
                 top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
                 left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
                 right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-                bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
+                bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
               },
               children: [
                 new Paragraph({
@@ -579,9 +595,9 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
     ],
   });
 
-  // Bảng Header 2 cột tổng chiều dài 16.2cm (9185 dxa):
-  // Cột trái: 6.5 cm = 3685 dxa
-  // Cột phải: 9.7 cm = 5500 dxa
+  // Bảng Header 2 cột tổng chiều dài 16.0cm (9071 dxa):
+  // Cột trái: 6.0 cm = 3402 dxa
+  // Cột phải: 10.0 cm = 5669 dxa
   // NẾU LÀ CÔNG VĂN: GỌI MODULE_CONG_VAN CHUYÊN TRÁCH ĐỂ ĐẢM BẢO TRÍCH YẾU NẰM ĐÚNG Ô BÊN TRÁI DƯỚI SỐ KÝ HIỆU
   const headerTableRows: TableRow[] = isCongVan
     ? buildCongVanDocxHeaderRows(
@@ -594,12 +610,12 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         new TableRow({
           children: [
             new TableCell({
-              width: { size: 3685, type: WidthType.DXA },
+              width: { size: 3402, type: WidthType.DXA },
               borders: hiddenBorders,
               children: agencyParagraphs,
             }),
             new TableCell({
-              width: { size: 5500, type: WidthType.DXA },
+              width: { size: 5669, type: WidthType.DXA },
               borders: hiddenBorders,
               children: nationalHeaderParagraphs,
             }),
@@ -608,12 +624,12 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         new TableRow({
           children: [
             new TableCell({
-              width: { size: 3685, type: WidthType.DXA },
+              width: { size: 3402, type: WidthType.DXA },
               borders: hiddenBorders,
               children: [docCodeParagraph],
             }),
             new TableCell({
-              width: { size: 5500, type: WidthType.DXA },
+              width: { size: 5669, type: WidthType.DXA },
               borders: hiddenBorders,
               children: [locationDateParagraph],
             }),
@@ -621,17 +637,18 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
         }),
       ];
 
-  if (!isCongVan && doc.docTypeName !== 'QUYẾT ĐỊNH' && subjectParagraphs.length > 0) {
+  const isReport = doc.docTypeName === 'BÁO CÁO' || doc.docTypeName?.startsWith('BÁO CÁO');
+  if (!isCongVan && !isReport && doc.docTypeName !== 'QUYẾT ĐỊNH' && subjectParagraphs.length > 0) {
     headerTableRows.push(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 3685, type: WidthType.DXA },
+            width: { size: 3402, type: WidthType.DXA },
             borders: hiddenBorders,
             children: subjectParagraphs,
           }),
           new TableCell({
-            width: { size: 5500, type: WidthType.DXA },
+            width: { size: 5669, type: WidthType.DXA },
             borders: hiddenBorders,
             children: [new Paragraph({ children: [] })],
           }),
@@ -641,7 +658,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
   }
 
   const headerTable = new Table({
-    width: { size: 9185, type: WidthType.DXA },
+    width: { size: 9071, type: WidthType.DXA },
     borders: hiddenBorders,
     rows: headerTableRows,
   });
@@ -705,6 +722,41 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
             children: [
               new TextRun({
                 text: doc.issuingAuthority.toUpperCase(),
+                font: 'Times New Roman',
+                size: 28, // 14pt
+                bold: true,
+              }),
+            ],
+          })
+        );
+      }
+    } else if (isReport) {
+      // Tiêu đề báo cáo chuẩn Nghị định 30 & HD 05:
+      // Dòng 1: Chữ "BÁO CÁO" in hoa đậm, cỡ 15pt, căn giữa trang
+      titleParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 240, after: 80, line: 240 },
+          children: [
+            new TextRun({
+              text: doc.docTypeName.toUpperCase().startsWith('BÁO CÁO') ? doc.docTypeName.toUpperCase() : 'BÁO CÁO',
+              font: 'Times New Roman',
+              size: 30, // 15pt
+              bold: true,
+            }),
+          ],
+        })
+      );
+
+      // Dòng 2: Tiêu đề chi tiết của báo cáo, in đậm thường (sentence case / in thường đậm), cỡ 14pt, căn giữa trang
+      if (doc.docTitle) {
+        titleParagraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 40, after: 200, line: 240 },
+            children: [
+              new TextRun({
+                text: doc.docTitle,
                 font: 'Times New Roman',
                 size: 28, // 14pt
                 bold: true,
@@ -1581,7 +1633,7 @@ export async function exportToDocxBlob(doc: StructuredDoc, settings: AgencySetti
               top: 1134, // 20mm
               bottom: 1134, // 20mm
               left: 1701, // 30mm
-              right: 1020, // 18mm (Nghị định 30: lề phải 15-20mm; trái 30mm + phải 18mm => chiều rộng văn bản đúng 16.2cm)
+              right: 1134, // 20mm (Nghị định 30: lề trái 30mm + lề phải 20mm => chiều rộng vùng in đúng 160mm = 16.0cm)
             },
             pageNumbers: {
               start: 1,

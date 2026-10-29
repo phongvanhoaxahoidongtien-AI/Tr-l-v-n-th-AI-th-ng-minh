@@ -241,13 +241,12 @@ export function normalizeOfflineEngine(params: RunNormalizeParams): NormalizeRes
     warningAgency = null;
   }
 
-  // 2. TỰ ĐỘNG CHỈNH SỬA CÁC LỖI CHÍNH TẢ VIẾT SAI THÀNH VIẾT ĐÚNG
-  // (s/x, ch/tr, d/gi/r, i/y, hỏi/ngã, phụ âm cuối c/t, n/ng, từ lặp...)
-  // TUYỆT ĐỐI KHÔNG TỰ XÓA, THAY ĐỔI VỊ TRÍ CÁC ĐOẠN VĂN BẢN
+  // 2. PHÁT HIỆN LỖI CHÍNH TẢ & ĐÁNH MÁY NHẦM (NGUYÊN TẮC VÀNG: CHỈ PHÁT HIỆN ➔ BÔI VÀNG ➔ ĐỀ XUẤT)
+  // TUYỆT ĐỐI KHÔNG tự động sửa nội dung gốc khi người dùng chưa bấm [Đồng ý sửa]
   const spellingFixResult = autoFixVietnameseSpelling(content);
-  content = spellingFixResult.fixedText;
+  // KHÔNG gán content = spellingFixResult.fixedText để bảo toàn 100% nội dung gốc cho việc hiển thị bôi vàng
   for (const fix of spellingFixResult.appliedFixes) {
-    errorList.push(`Đã sửa chính tả: "${fix.wrong}" ➔ "${fix.right}" (${fix.reason})`);
+    errorList.push(`Phát hiện lỗi chính tả: "${fix.wrong}" ➔ Đề xuất: "${fix.right}" (${fix.reason})`);
     spellingFixes.push({
       wrong: fix.wrong,
       right: fix.right,
@@ -388,21 +387,30 @@ export async function runDocumentNormalization(params: RunNormalizeParams): Prom
   const agencyDiff = detectAgencyDifference(rawText, agencySettings);
 
   try {
-    const response = await fetch('/api/normalize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: rawText,
-        docType,
-        docCategory,
-        configuredAgency: agencySettings.agencyName,
-        configuredLocation: agencySettings.shortLocation,
-        shouldApplyAgency: userAcceptedAgencyOverride || false,
-        apiKey: agencySettings.geminiApiKey || undefined
-      })
-    });
+    const controller = new AbortController();
+    const timeoutTimer = setTimeout(() => controller.abort(), 35000);
+
+    let response: Response;
+    try {
+      response = await fetch('/api/normalize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: rawText,
+          docType,
+          docCategory,
+          configuredAgency: agencySettings.agencyName,
+          configuredLocation: agencySettings.shortLocation,
+          shouldApplyAgency: userAcceptedAgencyOverride || false,
+          apiKey: agencySettings.geminiApiKey || undefined
+        }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutTimer);
+    }
 
     if (response.ok) {
       const data = await response.json();

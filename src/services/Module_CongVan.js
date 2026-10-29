@@ -26,12 +26,12 @@
  * Thông số kỹ thuật chuẩn Nghị định 30/2020/NĐ-CP cho Công văn
  */
 export const CONG_VAN_SPECS = {
-  TOTAL_WIDTH_CM: 16.2,
-  LEFT_COL_WIDTH_CM: 6.5,     // Ô số 2 (cơ quan), Ô số 3 (số ký hiệu), Ô số 5b (trích yếu)
-  RIGHT_COL_WIDTH_CM: 9.7,    // Ô số 1 (quốc hiệu, tiêu ngữ), Ô số 4 (địa danh ngày tháng)
-  LEFT_COL_DXA: 3685,
-  RIGHT_COL_DXA: 5500,
-  TOTAL_DXA: 9185,
+  TOTAL_WIDTH_CM: 16.0,
+  LEFT_COL_WIDTH_CM: 6.0,     // Ô số 2 (cơ quan), Ô số 3 (số ký hiệu), Ô số 5b (trích yếu)
+  RIGHT_COL_WIDTH_CM: 10.0,   // Ô số 1 (quốc hiệu, tiêu ngữ), Ô số 4 (địa danh ngày tháng)
+  LEFT_COL_DXA: 3402,         // 6.0 cm
+  RIGHT_COL_DXA: 5669,        // 10.0 cm
+  TOTAL_DXA: 9071,            // 16.0 cm (160 mm)
   FONT_FAMILY: "Times New Roman",
   SUBJECT_FONT_SIZE_PT: 12.5, // 12 - 13pt
   SUBJECT_FONT_SIZE_HALF_PT: 25, // 25 half-pts cho docx
@@ -223,10 +223,10 @@ export function renderCongVanHeaderTableHtml(doc, settings, helpers) {
     .replace(/[\.…]{2,}/g, '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;');
 
   return `
-    <table class="congvan-header-table" style="width: 16.2cm; max-width: 100%; border-collapse: collapse; border: none; margin: 0 auto 14pt auto; font-family: 'Times New Roman', Times, serif;">
-      <!-- HÀNG 1: CƠ QUAN CẤP TRÊN (TRÁI 6.5CM) & QUỐC HIỆU (PHẢI 9.7CM) -->
+    <table class="congvan-header-table" style="width: 16.0cm; max-width: 100%; border-collapse: collapse; border: none; margin: 0 auto 14pt auto; font-family: 'Times New Roman', Times, serif;">
+      <!-- HÀNG 1: CƠ QUAN CẤP TRÊN (TRÁI 6.0CM) & QUỐC HIỆU (PHẢI 10.0CM) -->
       <tr style="vertical-align: top;">
-        <td style="width: 6.5cm; max-width: 6.5cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
+        <td style="width: 6.0cm; max-width: 6.0cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
           ${parentAgencyText ? `
             <div style="font-size: 12.5pt; text-transform: uppercase; font-weight: normal; letter-spacing: -0.1px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt;">
               ${parentAgencyText}
@@ -236,7 +236,8 @@ export function renderCongVanHeaderTableHtml(doc, settings, helpers) {
           `}
         </td>
 
-        <td style="width: 9.7cm; max-width: 9.7cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
+        <!-- Cột phải (Ô số 1): Quốc hiệu (cỡ 13pt, in hoa, đậm, căn giữa, chỉ 1 dòng, độ rộng ~9.57cm trên cột 10.0cm không xuống dòng) -->
+        <td style="width: 10.0cm; max-width: 10.0cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
           ${!doc.isPartyDoc ? `
             <div style="font-size: 13pt; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt; white-space: nowrap; text-align: center;">
               CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
@@ -249,28 +250,28 @@ export function renderCongVanHeaderTableHtml(doc, settings, helpers) {
         </td>
       </tr>
 
-      <!-- HÀNG 2: CƠ QUAN BAN HÀNH (TRÁI) & TIÊU NGỮ KÈM ĐƯỜNG KẺ (PHẢI) -->
+      <!-- HÀNG 2: CƠ QUAN BAN HÀNH (TRÁI 6.0CM) & TIÊU NGỮ KÈM ĐƯỜNG KẺ (PHẢI 10.0CM) -->
       <tr style="vertical-align: top;">
-        <td style="width: 6.5cm; max-width: 6.5cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
+        <td style="width: 6.0cm; max-width: 6.0cm; vertical-align: top; text-align: center; padding: 0 4pt 0 0; border: none;">
           <div style="display: inline-block; text-align: center;">
             <div style="font-size: ${agencyFontSize}; text-transform: uppercase; font-weight: bold; letter-spacing: -0.2px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2.5pt;">
               ${agencyNameText}
             </div>
-            <!-- Đường kẻ ngang dưới tên cơ quan ban hành: 1/3 đến 1/2 độ dài dòng chữ -->
-            <div style="display: block; width: 42%; min-width: 65px; max-width: 90px; border-bottom: 1.2pt solid #000; margin: 0 auto 4pt auto;"></div>
+            <!-- Đường kẻ ngang dưới tên cơ quan ban hành: 2.2 cm, căn giữa cột trái, nét liền 0.5pt, đen -->
+            <div style="display: block; width: 2.2cm; max-width: 2.2cm; border-bottom: 0.75pt solid #000000; margin: 0 auto 4pt auto;"></div>
           </div>
         </td>
 
-        <td style="width: 9.7cm; max-width: 9.7cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
+        <td style="width: 10.0cm; max-width: 10.0cm; vertical-align: top; text-align: center; padding: 0 0 0 4pt; border: none;">
           ${!doc.isPartyDoc ? `
             <div style="display: inline-block; text-align: center; margin: 0 auto;">
               <div style="font-size: 14pt; font-weight: bold; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2pt; white-space: nowrap; text-align: center;">
                 ${doc.motto?.trim() || 'Độc lập - Tự do - Hạnh phúc'}
               </div>
-              <!-- Đường kẻ ngang nét liền, dài đúng 100% bằng độ dài dòng chữ (5.3cm), căn giữa -->
-              <table align="center" style="width: 5.3cm; max-width: 5.3cm; margin: 0 auto; border-collapse: collapse; border: none;">
+              <!-- Đường kẻ ngang nét liền, dài đúng 6.0cm (bằng độ dài dòng Tiêu ngữ cỡ 14), căn giữa cột phải, 0.5pt đen -->
+              <table align="center" style="width: 6.0cm; max-width: 6.0cm; margin: 0 auto; border-collapse: collapse; border: none;">
                 <tr>
-                  <td style="border-bottom: 1.2pt solid #000000; border-top: none; border-left: none; border-right: none; height: 1pt; font-size: 1pt; line-height: 1pt; padding: 0;">
+                  <td style="border-bottom: 0.75pt solid #000000; border-top: none; border-left: none; border-right: none; height: 1pt; font-size: 1pt; line-height: 1pt; padding: 0;">
                     &nbsp;
                   </td>
                 </tr>
@@ -281,7 +282,7 @@ export function renderCongVanHeaderTableHtml(doc, settings, helpers) {
               <div style="font-size: 14pt; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; font-family: 'Times New Roman', serif; line-height: 1.25; margin-bottom: 2.5pt; white-space: nowrap; text-align: center;">
                 ĐẢNG CỘNG SẢN VIỆT NAM
               </div>
-              <div style="display: block; width: 50%; border-bottom: 1.2pt solid #000; margin: 0 auto 4pt auto;"></div>
+              <div style="display: block; width: 2.8cm; max-width: 2.8cm; border-bottom: 0.75pt solid #000000; margin: 0 auto 4pt auto;"></div>
             </div>
           `}
         </td>
@@ -289,14 +290,14 @@ export function renderCongVanHeaderTableHtml(doc, settings, helpers) {
 
       <!-- HÀNG 3: Ô SỐ 3 (SỐ KÝ HIỆU VĂN BẢN) & Ô SỐ 4 (ĐỊA DANH, NGÀY THÁNG NĂM) -->
       <tr style="vertical-align: top;">
-        <td style="width: 6.5cm; max-width: 6.5cm; vertical-align: top; text-align: center; padding: 4pt 4pt 0 0; border: none;">
+        <td style="width: 6.0cm; max-width: 6.0cm; vertical-align: top; text-align: center; padding: 4pt 4pt 0 0; border: none;">
           <!-- Ô số 3: Số, ký hiệu (Cách nhau 1cm, không sử dụng dấu .....) -->
           <div style="font-size: 13pt; font-weight: normal; font-family: 'Times New Roman', serif; text-align: center;">
             ${formatDocCodeForDisplay(doc.docCode, true)}
           </div>
         </td>
 
-        <td style="width: 9.7cm; max-width: 9.7cm; vertical-align: top; text-align: center; padding: 4pt 0 0 4pt; border: none;">
+        <td style="width: 10.0cm; max-width: 10.0cm; vertical-align: top; text-align: center; padding: 4pt 0 0 4pt; border: none;">
           <!-- Ô số 4: Địa danh, ngày tháng năm (Cỡ 13.5pt, nghiêng, căn giữa) -->
           <div style="font-size: 13.5pt; font-style: italic; font-family: 'Times New Roman', serif; text-align: center;">
             ${formattedLocDate}
@@ -306,14 +307,14 @@ export function renderCongVanHeaderTableHtml(doc, settings, helpers) {
 
       <!-- HÀNG 4: Ô SỐ 5b (TRÍCH YẾU CÔNG VĂN - NẰM Ở Ô BÊN TRÁI, DÒNG DƯỚI SỐ KÝ HIỆU VĂN BẢN) -->
       <tr style="vertical-align: top;">
-        <td style="width: 6.5cm; max-width: 6.5cm; vertical-align: top; text-align: center; padding: 4pt 4pt 0 0; border: none;">
+        <td style="width: 6.0cm; max-width: 6.0cm; vertical-align: top; text-align: center; padding: 4pt 4pt 0 0; border: none;">
           ${subjectText ? renderCongVanSubjectHtml(subjectText) : `
             <div style="font-size: 12.5pt; font-style: italic; color: #94a3b8; text-align: center; margin-top: 4pt;">
               [V/v trích yếu nội dung công văn]
             </div>
           `}
         </td>
-        <td style="width: 9.7cm; max-width: 9.7cm; vertical-align: top; border: none; padding: 0;">
+        <td style="width: 10.0cm; max-width: 10.0cm; vertical-align: top; border: none; padding: 0;">
           <!-- Cột phải hàng 4 để trống hoàn toàn -->
           &nbsp;
         </td>
@@ -375,17 +376,35 @@ export function buildCongVanDocxHeaderRows(doc, settings, docxModule, helpers) {
         }),
       ],
     }),
-    new Paragraph({
+    // Đường kẻ ngang dưới tên cơ quan ban hành: 2.2 cm (1247 dxa), căn giữa cột trái, nét liền 0.5pt, đen
+    new docxModule.Table({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 20, after: 60, line: 160 },
-      children: [
-        new TextRun({
-          text: '─────────', // 9 gạch tương đương 1/3-1/2 độ dài tên cơ quan
-          font: 'Times New Roman',
-          size: 22,
-          bold: false,
+      width: { size: 1247, type: WidthType.DXA },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 1247, type: WidthType.DXA },
+              borders: {
+                top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+                bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+              },
+              children: [
+                new Paragraph({
+                  spacing: { before: 0, after: 0, line: 20 },
+                  children: [],
+                }),
+              ],
+            }),
+          ],
         }),
       ],
+    }),
+    new Paragraph({
+      spacing: { before: 20, after: 40, line: 60 },
+      children: [],
     }),
   ];
 
@@ -417,20 +436,20 @@ export function buildCongVanDocxHeaderRows(doc, settings, docxModule, helpers) {
           }),
         ],
       }),
-      // Đường kẻ ngang dưới tiêu ngữ bằng Nested Table căn giữa rộng 3000 dxa (5.3cm)
+      // Đường kẻ ngang dưới tiêu ngữ bằng Nested Table căn giữa rộng 3402 dxa (6.0cm), nét 0.5pt (size 4) đen
       new docxModule.Table({
         alignment: AlignmentType.CENTER,
-        width: { size: 3000, type: WidthType.DXA },
+        width: { size: 3402, type: WidthType.DXA },
         rows: [
           new TableRow({
             children: [
               new TableCell({
-                width: { size: 3000, type: WidthType.DXA },
+                width: { size: 3402, type: WidthType.DXA },
                 borders: {
                   top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
                   left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
                   right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
-                  bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
                 },
                 children: [
                   new Paragraph({

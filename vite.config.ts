@@ -40,7 +40,15 @@ export default defineConfig(() => {
                   );
                   return;
                 }
-                const ai = new GoogleGenAI({apiKey});
+                const ai = new GoogleGenAI({
+                  apiKey,
+                  httpOptions: {
+                    headers: {
+                      'User-Agent': 'aistudio-build',
+                    },
+                    timeout: 30000,
+                  },
+                });
                 const {
                   text,
                   docType,
@@ -127,22 +135,36 @@ Bước 3: Tách các trường còn lại:
 Cài đặt cơ quan người dùng: Cơ quan: "${configuredAgency || 'Chưa cài'}", Địa danh: "${configuredLocation || 'Chưa cài'}". Áp dụng thay thế: ${shouldApplyAgency ? 'CÓ (thay thế theo cài đặt)' : 'KHÔNG (giữ nguyên cơ quan trong văn bản)'}.
 Chỉ trả về JSON thuần túy, không có markdown hoặc giải thích thêm.`;
 
-                const response = await ai.models.generateContent({
-                  model: 'gemini-3.8-flash',
-                  contents: `Văn bản cần rà soát và chuẩn hóa (${docCategory || 'Nghị định 30/2020/NĐ-CP'} - Loại: ${docType}):\n\n${text}`,
-                  config: {
-                    systemInstruction: systemPrompt,
-                    responseMimeType: 'application/json',
-                    temperature: 0.2,
-                  },
-                });
+                let content = '';
+                try {
+                  const response = await ai.models.generateContent({
+                    model: 'gemini-3.8-flash',
+                    contents: `Văn bản cần rà soát và chuẩn hóa (${docCategory || 'Nghị định 30/2020/NĐ-CP'} - Loại: ${docType}):\n\n${text}`,
+                    config: {
+                      systemInstruction: systemPrompt,
+                      responseMimeType: 'application/json',
+                      temperature: 0.2,
+                    },
+                  });
+                  content = response.text || '';
+                } catch (apiErr: any) {
+                  console.warn('[Normalize API] Network/Gemini API timeout or unavailable, using offline fallback:', apiErr?.message || apiErr);
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(
+                    JSON.stringify({
+                      useOfflineFallback: true,
+                      message: 'Kích hoạt bộ quy tắc Offline chuyên sâu theo Nghị định 30 & Hướng dẫn 05',
+                    })
+                  );
+                  return;
+                }
 
-                const content = response.text || '';
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(content);
               } catch (err: any) {
-                console.error('Gemini API Error:', err);
+                console.warn('[Normalize API] Handler notice:', err?.message || err);
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(
@@ -257,10 +279,13 @@ Chỉ trả về JSON thuần túy, không có markdown hoặc giải thích th�
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve('.'),
       },
     },
     server: {
+      port: 3000,
+      host: '0.0.0.0',
+      strictPort: true,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

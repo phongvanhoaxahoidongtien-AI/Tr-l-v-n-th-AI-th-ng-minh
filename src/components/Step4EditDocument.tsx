@@ -190,14 +190,15 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
   const [selectedProposal, setSelectedProposal] = useState<SpellingProposal | null>(null);
   const [showProposalsPanel, setShowProposalsPanel] = useState<boolean>(true);
 
-  // Phát hiện danh sách đề xuất sửa lỗi từ nội dung văn bản hiện tại
+  // Phát hiện danh sách đề xuất sửa lỗi từ nội dung văn bản hiện tại (bao gồm lỗi chính tả và lệch đơn vị mặc định)
   const allProposals = useMemo(() => {
-    return detectAllDocumentProposals(normalizedText, activeDoc.illogicalFindings);
-  }, [normalizedText, activeDoc.illogicalFindings]);
+    return detectAllDocumentProposals(normalizedText, activeDoc.illogicalFindings, agencySettings);
+  }, [normalizedText, activeDoc.illogicalFindings, agencySettings]);
 
   // Các đề xuất còn đang chờ người dùng quyết định (chưa bấm Bỏ qua và còn tồn tại trong text)
   const pendingProposals = useMemo(() => {
-    return allProposals.filter(p => !dismissedProposalIds.has(p.id) && normalizedText.includes(p.wrong));
+    const textLower = normalizedText.toLowerCase();
+    return allProposals.filter(p => !dismissedProposalIds.has(p.id) && textLower.includes(p.wrong.toLowerCase()));
   }, [allProposals, dismissedProposalIds, normalizedText]);
 
   // Đồng ý sửa 1 lỗi cụ thể
@@ -211,7 +212,10 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
 
   // Bỏ qua 1 lỗi cụ thể -> Giữ nguyên 100% nội dung gốc, bỏ vệt bôi vàng
   const handleDismissProposal = (proposal: SpellingProposal) => {
-    setDismissedProposalIds(prev => new Set([...prev, proposal.id]));
+    const matchingIds = pendingProposals
+      .filter(p => p.wrong.toLowerCase() === proposal.wrong.toLowerCase() || p.id === proposal.id)
+      .map(p => p.id);
+    setDismissedProposalIds(prev => new Set([...prev, ...matchingIds]));
     setSelectedProposal(null);
     setSyncNotice(`Đã giữ nguyên "${proposal.wrong}" theo văn bản gốc.`);
     setTimeout(() => setSyncNotice(null), 3000);
@@ -223,7 +227,7 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
     let updatedText = normalizedText;
     let count = 0;
     for (const p of pendingProposals) {
-      if (updatedText.includes(p.wrong)) {
+      if (updatedText.toLowerCase().includes(p.wrong.toLowerCase())) {
         updatedText = fixSingleSpellingMatch(updatedText, p.wrong, p.right);
         count++;
       }
@@ -526,163 +530,74 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
         </div>
       )}
 
-      {/* 2.5. BẢNG SOÁT LỖI CHÍNH TẢ & ĐOẠN KHÔNG LOGIC (ĐỀ XUẤT CHỈNH SỬA) */}
-      <div className={`p-4 md:p-5 rounded-2xl border transition-all ${
+      {/* THANH THÔNG BÁO VÀ THAO TÁC NHANH ĐỀ XUẤT CHỈNH SỬA (GỌN GÀNG, HIỆN ĐẠI, KHÔNG RƯỜM RÀ) */}
+      <div className={`rounded-2xl p-3 sm:p-4 border transition-all ${
         pendingProposals.length > 0 
-          ? 'bg-gradient-to-r from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-2 border-amber-400 text-amber-950 shadow-sm' 
-          : 'bg-emerald-50/90 border border-emerald-300 text-emerald-950 shadow-xs'
+          ? 'bg-gradient-to-r from-amber-50/90 via-yellow-50/80 to-amber-50/90 border-amber-300 shadow-2xs' 
+          : 'bg-emerald-50/80 border-emerald-200'
       }`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shadow-xs ${
-              pendingProposals.length > 0 ? 'bg-amber-500 text-white animate-pulse' : 'bg-emerald-600 text-white'
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm shadow-2xs ${
+              pendingProposals.length > 0 ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'
             }`}>
-              {pendingProposals.length > 0 ? <Wand2 className="w-5 h-5" /> : <Check className="w-5 h-5" />}
+              {pendingProposals.length > 0 ? <Wand2 className="w-4 h-4" /> : <Check className="w-4 h-4" />}
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base font-serif">
+                <h3 className="font-bold text-xs sm:text-sm text-slate-900 font-serif">
                   {pendingProposals.length > 0 
-                    ? `Phát hiện ${pendingProposals.length} đề xuất sửa lỗi chính tả & đoạn không logic` 
-                    : '✓ Không có lỗi chính tả hoặc đoạn không logic nào chưa xử lý'}
+                    ? `Phát hiện ${pendingProposals.length} vị trí cần chỉnh sửa (đã tô vàng trực tiếp trên văn bản)` 
+                    : 'Văn bản đã sạch lỗi chính tả & chuẩn khớp đơn vị mặc định'}
                 </h3>
-                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                  pendingProposals.length > 0 ? 'bg-amber-200 text-amber-900 border border-amber-300' : 'bg-emerald-200 text-emerald-900'
-                }`}>
-                  {pendingProposals.length > 0 ? `${pendingProposals.length} vị trí đã bôi vàng` : 'Văn bản chuẩn mực'}
-                </span>
+                {pendingProposals.length > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
+                    Bấm vào từ tô vàng để sửa
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-600 mt-1 leading-relaxed max-w-4xl">
+              <p className="text-[11px] text-slate-500 mt-0.5">
                 {pendingProposals.length > 0
-                  ? 'Quy tắc vàng: Hệ thống tuyệt đối KHÔNG tự động sửa nội dung gốc (đặc biệt là phần Kính gửi và nội dung chính). Tất cả lỗi được bôi vàng trực quan trên Khung chỉnh sửa và Live Preview A4. Đồng chí bấm [Đồng ý sửa] để áp dụng hoặc [Bỏ qua] để giữ nguyên văn bản gốc.'
-                  : 'Nội dung văn bản sạch lỗi chính tả và các cặp từ nhầm lẫn thông dụng theo đúng Nghị định 30/2020/NĐ-CP.'}
+                  ? 'Toàn bộ nội dung văn bản vẫn hiển thị nguyên vẹn để đồng chí đọc trôi chảy. Chỉ cần bấm trực tiếp vào từ tô vàng để chỉnh sửa.'
+                  : 'Đồng chí có thể kiểm tra trực tiếp trên Live Preview bên phải và tải văn bản chuẩn Microsoft Word.'}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {pendingProposals.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleAcceptAllProposals}
-                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95"
-                  title="Đồng ý sửa tất cả các lỗi chính tả và đoạn không logic đang phát hiện"
-                >
-                  <Check className="w-4 h-4 text-emerald-200" />
-                  <span>Đồng ý sửa tất cả ({pendingProposals.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDismissAllProposals}
-                  className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
-                  title="Bỏ qua tất cả các đề xuất, bảo toàn nguyên vẹn 100% nội dung gốc"
-                >
-                  <X className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Bỏ qua tất cả</span>
-                </button>
-              </>
-            )}
-
-            {pendingProposals.length > 0 && (
+          {pendingProposals.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setShowProposalsPanel(!showProposalsPanel)}
-                className="p-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl border border-slate-200 cursor-pointer transition-colors"
-                title={showProposalsPanel ? 'Thu gọn danh sách đề xuất' : 'Mở rộng danh sách đề xuất'}
+                onClick={handleAcceptAllProposals}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                title="Đồng ý sửa toàn bộ từ tô vàng sang từ chuẩn"
               >
-                {showProposalsPanel ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                <Check className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Đồng ý sửa tất cả ({pendingProposals.length})</span>
               </button>
-            )}
-          </div>
-        </div>
 
-        {/* Danh sách chi tiết các đề xuất */}
-        {showProposalsPanel && pendingProposals.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-amber-300/80 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {pendingProposals.map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-white/95 rounded-xl p-3 border border-amber-300/90 shadow-2xs flex flex-col justify-between gap-2.5 transition-all hover:border-amber-500 hover:shadow-xs"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-1 mb-1.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        p.category === 'nham_tu' ? 'bg-orange-100 text-orange-800' :
-                        p.category === 'logic' ? 'bg-rose-100 text-rose-800' :
-                        p.category === 'lap_tu' ? 'bg-purple-100 text-purple-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {p.category === 'nham_tu' ? 'Viết nhầm từ' :
-                         p.category === 'logic' ? 'Đoạn không logic' :
-                         p.category === 'lap_tu' ? 'Lặp từ bất thường' :
-                         'Lỗi chính tả'}
-                      </span>
-                      <span className="text-[10px] text-slate-400 italic truncate max-w-[150px]">
-                        {p.reason}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1 text-xs">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-slate-500 text-[11px] shrink-0">Đoạn lỗi:</span>
-                        <mark className="bg-yellow-200 text-yellow-950 font-bold px-1.5 py-0.5 rounded border border-yellow-400 font-serif line-through decoration-rose-500">
-                          {p.wrong}
-                        </mark>
-                      </div>
-
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-slate-500 text-[11px] shrink-0">Đề xuất:</span>
-                        <strong className={`px-1.5 py-0.5 rounded border font-serif ${
-                          !p.right ? 'text-rose-800 bg-rose-50 border-rose-300' : 'text-emerald-800 bg-emerald-50 border-emerald-300'
-                        }`}>
-                          {p.right ? p.right : 'Xóa bỏ đoạn thừa / lặp lại này'}
-                        </strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => handleAcceptProposal(p)}
-                      className={`flex-1 py-1 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-2xs text-white ${
-                        !p.right ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                      }`}
-                      title={p.right ? `Đồng ý sửa "${p.wrong}" thành "${p.right}"` : `Đồng ý xóa bỏ "${p.wrong}"`}
-                    >
-                      {!p.right ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-                      <span>{!p.right ? 'Đồng ý xóa' : 'Đồng ý sửa'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDismissProposal(p)}
-                      className="py-1 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium border border-slate-200 cursor-pointer transition-colors"
-                      title={`Bỏ qua, giữ nguyên "${p.wrong}"`}
-                    >
-                      <span>{!p.right ? 'Giữ lại' : 'Bỏ qua'}</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <button
+                type="button"
+                onClick={handleDismissAllProposals}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
+                title="Bỏ qua tất cả các đề xuất, bảo toàn 100% nội dung gốc"
+              >
+                <X className="w-3.5 h-3.5 text-slate-500" />
+                <span>Bỏ qua tất cả</span>
+              </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* MODAL POPOVER KHI NGƯỜI DÙNG CLICK VÀO TỪ BÔI VÀNG TRÊN LIVE PREVIEW HOẶC EDITOR */}
+      {/* MODAL POPOVER HIỆN ĐẠI KHI CLICK VÀO TỪ TÔ VÀNG (GỌN GÀNG, KHÔNG RƯỜM RÀ LÝ DO) */}
       {selectedProposal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in font-sans">
-          <div className="bg-white rounded-2xl max-w-md w-full border-2 border-amber-400 shadow-2xl p-5 space-y-4 animate-scale-up">
-            <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm sm:text-base font-serif">
-                <div className="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center text-xs">
-                  <Wand2 className="w-4 h-4" />
-                </div>
-                <span>Đề xuất sửa lỗi chính tả / đoạn không logic</span>
+          <div className="bg-white rounded-2xl max-w-sm w-full border border-amber-300 shadow-2xl p-5 space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm font-serif">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                <span>Chỉnh sửa từ tô vàng</span>
               </div>
               <button
                 type="button"
@@ -693,47 +608,45 @@ export const Step4EditDocument: React.FC<Step4EditDocumentProps> = ({
               </button>
             </div>
 
-            <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-2">
-              <p className="font-semibold text-amber-900">💡 Lý do nhận diện: {selectedProposal.reason}</p>
-              <div className="space-y-1.5 pt-1">
-                <div>
-                  <span className="text-slate-600">Đoạn bị lỗi (đã bôi vàng): </span>
-                  <mark className="bg-yellow-200 text-yellow-950 font-bold px-2 py-0.5 rounded border border-yellow-400 font-serif">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Từ hiện tại:</div>
+                  <mark className="bg-amber-100 text-amber-950 font-bold px-2 py-1 rounded border border-amber-300 font-serif text-sm block text-center">
                     {selectedProposal.wrong}
                   </mark>
                 </div>
-                <div>
-                  <span className="text-slate-600">Đề xuất xử lý: </span>
-                  <strong className={`px-2 py-0.5 rounded border font-serif text-sm ${
-                    !selectedProposal.right ? 'text-rose-800 bg-rose-50 border-rose-300' : 'text-emerald-800 bg-white border-emerald-300'
+
+                <div className="text-slate-400 font-bold text-base px-1">➔</div>
+
+                <div className="flex-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Đề xuất sửa:</div>
+                  <strong className={`px-2 py-1 rounded border font-serif text-sm block text-center ${
+                    !selectedProposal.right ? 'text-rose-800 bg-rose-50 border-rose-300' : 'text-emerald-800 bg-emerald-50 border-emerald-300'
                   }`}>
-                    {selectedProposal.right ? selectedProposal.right : 'Xóa bỏ đoạn thừa / lặp lại này'}
+                    {selectedProposal.right ? selectedProposal.right : '(Xóa bỏ)'}
                   </strong>
                 </div>
               </div>
             </div>
 
-            <p className="text-[11px] text-slate-500 italic">
-              Nội dung gốc chỉ được thay đổi khi bạn bấm [{!selectedProposal.right ? 'Đồng ý xóa ngay' : 'Đồng ý sửa ngay'}]. Nếu bấm [Bỏ qua (Giữ nguyên)], nội dung gốc được giữ nguyên 100% và màu bôi vàng sẽ biến mất.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => handleDismissProposal(selectedProposal)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 cursor-pointer transition-colors"
+                className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 cursor-pointer transition-colors text-center"
               >
-                Bỏ qua (Giữ nguyên)
+                Bỏ qua
               </button>
               <button
                 type="button"
                 onClick={() => handleAcceptProposal(selectedProposal)}
-                className={`px-4 py-2 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors text-white ${
+                className={`flex-1 py-2 px-3 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all text-white hover:scale-105 active:scale-95 ${
                   !selectedProposal.right ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
               >
-                {!selectedProposal.right ? <Trash2 className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                <span>{!selectedProposal.right ? 'Đồng ý xóa ngay' : 'Đồng ý sửa ngay'}</span>
+                <Check className="w-4 h-4" />
+                <span>Đồng ý sửa</span>
               </button>
             </div>
           </div>

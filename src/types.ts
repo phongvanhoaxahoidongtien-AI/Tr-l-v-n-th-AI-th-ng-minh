@@ -50,7 +50,7 @@ export interface SpellingProposal {
   wrong: string;
   right: string;
   reason: string;
-  category: 'chinh_ta' | 'nham_tu' | 'logic' | 'van_phong' | 'lap_tu';
+  category: 'chinh_ta' | 'nham_tu' | 'logic' | 'van_phong' | 'lap_tu' | 'lech_don_vi';
   snippet: string;
   index: number;
 }

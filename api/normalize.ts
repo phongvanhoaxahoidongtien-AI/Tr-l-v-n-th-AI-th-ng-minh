@@ -98,22 +98,40 @@ export default async function handler(req: any, res: any) {
     } = data;
 
     const systemPrompt = getSystemPrompt(docType, docCategory, configuredAgency, configuredLocation, shouldApplyAgency);
-    const ai = new GoogleGenAI({ apiKey });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Văn bản cần rà soát và chuẩn hóa (${docCategory} - Loại: ${docType}):\n\n${text}`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        temperature: 0.2
-      }
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+        timeout: 30000,
+      },
     });
 
-    const content = response.text || '';
+    let content = '';
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: `Văn bản cần rà soát và chuẩn hóa (${docCategory} - Loại: ${docType}):\n\n${text}`,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          temperature: 0.2
+        }
+      });
+      content = response.text || '';
+    } catch (apiErr: any) {
+      console.warn('[Vercel API] Gemini API timed out or unavailable, safely falling back:', apiErr?.message || apiErr);
+      res.status(200).json({
+        useOfflineFallback: true,
+        message: 'Kích hoạt bộ quy tắc Offline chuyên sâu theo Nghị định 30 & Hướng dẫn 05'
+      });
+      return;
+    }
+
     res.status(200).setHeader('Content-Type', 'application/json').send(content);
   } catch (err: any) {
-    console.error('Gemini API Error in Vercel handler:', err);
+    console.warn('[Vercel Handler] Handler notice:', err?.message || err);
     res.status(200).json({
       useOfflineFallback: true,
       error: err?.message || 'Lỗi kết nối Gemini API, chuyển sang quy tắc Offline'

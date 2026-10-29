@@ -21,35 +21,51 @@ export function detectIllogicalAdministrativeText(
   const findings: IllogicalSegment[] = [];
   let idCounter = 1;
 
-  // 1. Trùng lặp Tiêu đề quốc ngữ hoặc Tiêu đề Đảng trong thân bài
-  // Xác định vị trí bắt đầu phần thân văn bản/căn cứ/tiêu đề (nơi tiêu đề quốc ngữ không được phép lọt vào)
+  // 1. Nhận diện các đoạn sắp xếp không phù hợp vị trí (Tiêu đề quốc ngữ, Tiêu ngữ, Tiêu đề Đảng, Địa danh ngày tháng, Tên loại văn bản lọt vào thân bài)
+  // Xác định vị trí bắt đầu phần thân văn bản/căn cứ/tiêu đề (nơi các thành phần đầu văn bản không được phép lọt vào)
   const bodyStartRegex = /(?:^|\n)\s*(?:Căn\s+cứ\b|Kính\s*(?:gửi|trình):|QUYẾT\s+ĐỊNH\b|QUYẾT\s+NGHỊ\b|KẾT\s+LUẬN\b|CHỈ\s+THỊ\b|THÔNG\s+BÁO\b|BÁO\s+CÁO\b|KẾ\s+HOẠCH\b|TỜ\s+TRÌNH\b|NGHỊ\s+QUYẾT\b|Điều\s+\d+|Phần\s+[IVXLCDM\d]|Chương\s+[IVXLCDM\d])/i;
   const bodyStartMatch = text.match(bodyStartRegex);
   const bodyStartIndex = bodyStartMatch && bodyStartMatch.index !== undefined ? bodyStartMatch.index : -1;
 
-  const duplicateHeaderRules = [
+  const misplacedHeaderRules = [
     {
       regex: /CỘNG\s+H[ÒO]A\s+XÃ\s+HỘI\s+CHỦ\s+NGHĨA\s+VIỆT\s+NAM/gi,
-      reason: 'Tiêu đề Quốc hiệu bị trùng lặp hoặc lọt vào phần nội dung/trước phần Căn cứ.',
+      reason: 'Đoạn sắp xếp không phù hợp vị trí: Tiêu đề Quốc hiệu bị trùng lặp hoặc lọt vào phần nội dung/sau phần Căn cứ.',
       suggestion: 'Xóa bỏ tiêu đề quốc ngữ thừa này'
     },
     {
       regex: /Độc\s+lập\s*[-–—]\s*Tự\s+do\s*[-–—]\s*Hạnh\s+phúc[\.:]?/gi,
-      reason: 'Tiêu ngữ "Độc lập - Tự do - Hạnh phúc" bị lọt vào phần nội dung văn bản.',
+      reason: 'Đoạn sắp xếp không phù hợp vị trí: Tiêu ngữ "Độc lập - Tự do - Hạnh phúc" bị lọt vào phần nội dung văn bản.',
       suggestion: 'Xóa bỏ tiêu ngữ thừa này'
     },
     {
       regex: /ĐẢNG\s+CỘNG\s+SẢN\s+VIỆT\s+NAM/gi,
-      reason: 'Tiêu đề "Đảng Cộng sản Việt Nam" bị lọt vào phần nội dung thân văn bản.',
+      reason: 'Đoạn sắp xếp không phù hợp vị trí: Tiêu đề "Đảng Cộng sản Việt Nam" bị lọt vào phần nội dung thân văn bản.',
       suggestion: 'Xóa bỏ tiêu đề Đảng thừa này'
+    },
+    {
+      regex: /(?:^|\n)\s*([a-zA-ZÀ-ỹ\s]+,\s*ngày\s+[\d\w\s.…]+\s+tháng\s+[\d\w\s.…]+\s+năm\s+[\d\w.…]+)(?:\n|$)/gi,
+      reason: 'Đoạn sắp xếp không phù hợp vị trí: Dòng địa danh, ngày tháng năm bị lặp lại hoặc đặt sai vị trí trong thân bài.',
+      suggestion: 'Xóa bỏ dòng địa danh ngày tháng bị lặp này'
+    },
+    {
+      regex: /(?:^|\n)\s*(Số\s*:\s*[\d\w\/\-–\.]+)(?:\n|$)/gi,
+      reason: 'Đoạn sắp xếp không phù hợp vị trí: Dòng số văn bản bị lặp lại hoặc đặt sai vị trí trong thân bài.',
+      suggestion: 'Xóa bỏ dòng số hiệu thừa này'
+    },
+    {
+      regex: /(?:^|\n)\s*(V\/v\s+[^\n]+)(?:\n|$)/gi,
+      reason: 'Đoạn sắp xếp không phù hợp vị trí: Dòng trích yếu V/v bị lặp lại trong nội dung thân văn bản.',
+      suggestion: 'Xóa bỏ trích yếu lặp lại này'
     }
   ];
 
-  for (const rule of duplicateHeaderRules) {
+  for (const rule of misplacedHeaderRules) {
     const matches = Array.from(text.matchAll(rule.regex));
     if (matches.length > 0) {
       matches.forEach((m, idx) => {
         const mIdx = m.index !== undefined ? m.index : 0;
+        const targetStr = (m[1] || m[0]).trim();
         // Lần xuất hiện đầu tiên (idx === 0) trước phần thân/căn cứ/tiêu đề là Tiêu ngữ / Quốc hiệu chuẩn theo NĐ 30 & HD 05
         // TUYỆT ĐỐI KHÔNG BÔI VÀNG VÀ KHÔNG COI LÀ LỖI
         const isLegitimateHeader = idx === 0 && (bodyStartIndex === -1 || mIdx < bodyStartIndex);
@@ -62,7 +78,7 @@ export function detectIllogicalAdministrativeText(
         if (isLeakedIntoBody) {
           findings.push({
             id: `illogical_dup_${idCounter++}`,
-            target: m[0],
+            target: targetStr,
             reason: rule.reason,
             suggestion: rule.suggestion,
             category: 'duplicate_header'
